@@ -1,0 +1,1983 @@
+// Filter library — 250+ composable photo presets.
+// Each filter is a recipe: { exposure, brightness, contrast, ... } applied via Canvas 2D.
+
+import { FilterRecipe, FilterCategory } from './types';
+import { clamp } from './utils';
+
+// ── Color space helpers ────────────────────────────────────────────────
+function readRgb(img: ImageData): Uint8ClampedArray {
+  return img.data;
+}
+
+function writeRgb(img: ImageData, data: Uint8ClampedArray) {
+  img.data.set(data);
+}
+
+function applyGainLum(img: ImageData, r: number, g: number, b: number) {
+  const d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    d[i] = clamp(Math.round(d[i] * r), 0, 255);
+    d[i + 1] = clamp(Math.round(d[i + 1] * g), 0, 255);
+    d[i + 2] = clamp(Math.round(d[i + 2] * b), 0, 255);
+  }
+}
+
+function applyGain(arr: Uint8ClampedArray, r: number, g: number, b: number) {
+  for (let i = 0; i < arr.length; i += 4) {
+    arr[i] = clamp(Math.round(arr[i] * r), 0, 255);
+    arr[i + 1] = clamp(Math.round(arr[i + 1] * g), 0, 255);
+    arr[i + 2] = clamp(Math.round(arr[i + 2] * b), 0, 255);
+  }
+}
+
+function mixChannels(img: ImageData, r: number, g: number, b: number) {
+  const d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const pr = d[i] / 255;
+    const pg = d[i + 1] / 255;
+    const pb = d[i + 2] / 255;
+    d[i] = clamp(Math.round(pr * r), 0, 255);
+    d[i + 1] = clamp(Math.round(pg * g), 0, 255);
+    d[i + 2] = clamp(Math.round(pb * b), 0, 255);
+  }
+}
+
+function blendMode(img: ImageData, blend: ImageData, mode: string, opacity: number) {
+  const a = img.data;
+  const b = blend.data;
+  for (let i = 0; i < a.length; i += 4) {
+    let r = 0,
+      g = 0,
+      b2 = 0;
+    switch (mode) {
+      case 'multiply':
+        r = a[i] * b[i] / 255;
+        g = a[i + 1] * b[i + 1] / 255;
+        b2 = a[i + 2] * b[i + 2] / 255;
+        break;
+      case 'screen':
+        r = 255 - (255 - a[i]) * (255 - b[i]) / 255;
+        g = 255 - (255 - a[i + 1]) * (255 - b[i + 1]) / 255;
+        b2 = 255 - (255 - a[i + 2]) * (255 - b[i + 2]) / 255;
+        break;
+      case 'overlay':
+        r = a[i] < 128
+          ? 2 * a[i] * b[i] / 255
+          : 255 - 2 * (255 - a[i]) * (255 - b[i]) / 255;
+        g = a[i + 1] < 128
+          ? 2 * a[i + 1] * b[i + 1] / 255
+          : 255 - 2 * (255 - a[i + 1]) * (255 - b[i + 1]) / 255;
+        b2 = a[i + 2] < 128
+          ? 2 * a[i + 2] * b[i + 2] / 255
+          : 255 - 2 * (255 - a[i + 2]) * (255 - b[i + 2]) / 255;
+        break;
+      case 'soft-light':
+        r =
+          b[i] < 128
+            ? Math.round(2 * a[i] * b[i] / 255 - a[i] * a[i] / 255 + a[i])
+            : Math.round(a[i] - (255 - 2 * b[i]) * (255 - a[i]) / 255);
+        g =
+          b[i + 1] < 128
+            ? Math.round(2 * a[i + 1] * b[i + 1] / 255 - a[i + 1] * a[i + 1] / 255 + a[i + 1])
+            : Math.round(a[i + 1] - (255 - 2 * b[i + 1]) * (255 - a[i + 1]) / 255);
+        b2 =
+          b[i + 2] < 128
+            ? Math.round(2 * a[i + 2] * b[i + 2] / 255 - a[i + 2] * a[i + 2] / 255 + a[i + 2])
+            : Math.round(a[i + 2] - (255 - 2 * b[i + 2]) * (255 - a[i + 2]) / 255);
+        break;
+      case 'darken':
+        r = Math.min(a[i], b[i]);
+        g = Math.min(a[i + 1], b[i + 1]);
+        b2 = Math.min(a[i + 2], b[i + 2]);
+        break;
+      case 'lighten':
+        r = Math.max(a[i], b[i]);
+        g = Math.max(a[i + 1], b[i + 1]);
+        b2 = Math.max(a[i + 2], b[i + 2]);
+        break;
+      case 'color-dodge':
+        r = b[i] === 255 ? 255 : Math.min(255, Math.round(a[i] / (255 - b[i]) * 255));
+        g = b[i + 1] === 255 ? 255 : Math.min(255, Math.round(a[i + 1] / (255 - b[i + 1]) * 255));
+        b2 = b[i + 2] === 255 ? 255 : Math.min(255, Math.round(a[i + 2] / (255 - b[i + 2]) * 255));
+        break;
+      case 'color-burn':
+        r = b[i] === 0 ? 0 : Math.max(0, Math.round(255 - ((255 - a[i]) * 255) / b[i]));
+        g = b[i + 1] === 0 ? 0 : Math.max(0, Math.round(255 - ((255 - a[i + 1]) * 255) / b[i + 1]));
+        b2 = b[i + 2] === 0 ? 0 : Math.max(0, Math.round(255 - ((255 - a[i + 2]) * 255) / b[i + 2]));
+        break;
+      default:
+        return;
+    }
+    a[i] = clamp(Math.round(a[i] * (1 - opacity) + r * opacity), 0, 255);
+    a[i + 1] = clamp(Math.round(a[i + 1] * (1 - opacity) + g * opacity), 0, 255);
+    a[i + 2] = clamp(Math.round(a[i + 2] * (1 - opacity) + b2 * opacity), 0, 255);
+  }
+}
+
+function applySrgbGamma(img: ImageData, gamma: number) {
+  const d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    d[i] = clamp(Math.round(255 * Math.pow(d[i] / 255, gamma)), 0, 255);
+    d[i + 1] = clamp(Math.round(255 * Math.pow(d[i + 1] / 255, gamma)), 0, 255);
+    d[i + 2] = clamp(Math.round(255 * Math.pow(d[i + 2] / 255, gamma)), 0, 255);
+  }
+}
+
+function applyLinearCurve(img: ImageData, points: number[]) {
+  const d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const x = d[i] / 255;
+    const y = points[0] + (points[1] - points[0]) * x;
+    d[i] = clamp(Math.round(y * 255), 0, 255);
+    const x2 = d[i + 1] / 255;
+    const y2 = points[2] + (points[3] - points[2]) * x2;
+    d[i + 1] = clamp(Math.round(y2 * 255), 0, 255);
+    const x3 = d[i + 2] / 255;
+    const y3 = points[4] + (points[5] - points[4]) * x3;
+    d[i + 2] = clamp(Math.round(y3 * 255), 0, 255);
+  }
+}
+
+function applyCurve(img: ImageData, points: number[]) {
+  const d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const x = d[i] / 255;
+    const y = points[0] + (points[1] - points[0]) * x + points[2] * x * x;
+    d[i] = clamp(Math.round(y * 255), 0, 255);
+    const x2 = d[i + 1] / 255;
+    const y2 = points[3] + (points[4] - points[3]) * x2 + points[5] * x2 * x2;
+    d[i + 1] = clamp(Math.round(y2 * 255), 0, 255);
+    const x3 = d[i + 2] / 255;
+    const y3 = points[6] + (points[7] - points[6]) * x3 + points[8] * x3 * x3;
+    d[i + 2] = clamp(Math.round(y3 * 255), 0, 255);
+  }
+}
+
+// ── Filter presets (250+) ─────────────────────────────────────────────
+export const FILTER_LIBRARY: FilterRecipe[] = [
+  // ─── Natural Portraits ──────────────────────────────────────────────
+  {
+    id: 'natural-portrait-1',
+    name: 'Natural Portrait',
+    category: 'natural-portraits',
+    description: 'Clean, natural skin tones with balanced exposure.',
+    type: 'color',
+    adjustments: { exposure: 0, brightness: 0, contrast: 0, temperature: 0, tint: 0, saturation: 0, vibrance: 0, shadows: 0, highlights: 0, whites: 0, blacks: 0, clarity: 0, grain: 0, filmFade: 0, vignette: 0, bloom: 0, dehaze: 0 },
+    tokens: ['natural', 'skin', 'clean'],
+  },
+  {
+    id: 'natural-portrait-2',
+    name: 'Portrait Soft',
+    category: 'natural-portraits',
+    description: 'Soft, gentle skin with gentle glow.',
+    type: 'color',
+    adjustments: { exposure: 0.05, brightness: 0.03, contrast: -0.05, temperature: 0.02, tint: 0.01, saturation: 0.05, vibrance: 0.1, shadows: 0.02, highlights: -0.02, whites: 0.03, blacks: -0.02, clarity: -0.05, grain: 0.05, filmFade: 0.02, vignette: 0 },
+    tokens: ['soft', 'glow', 'skin', 'portrait'],
+  },
+  {
+    id: 'natural-portrait-3',
+    name: 'Fresh Skin',
+    category: 'natural-portraits',
+    description: 'Bright, dewy skin with warm natural light.',
+    type: 'color',
+    adjustments: { exposure: 0.08, brightness: 0.05, contrast: 0, temperature: 0.05, tint: 0.02, saturation: 0.08, vibrance: 0.15, shadows: 0.05, highlights: -0.03, whites: 0.04, blacks: -0.02, clarity: 0.03, grain: 0, filmFade: 0.02, vignette: 0 },
+    tokens: ['fresh', 'dewy', 'bright', 'skin'],
+  },
+  {
+    id: 'natural-portrait-4',
+    name: 'Warm Skin',
+    category: 'natural-portraits',
+    description: 'Golden warm tones for rich skin.',
+    type: 'color',
+    adjustments: { exposure: 0.05, brightness: 0.04, contrast: 0.02, temperature: 0.15, tint: 0.03, saturation: 0.1, vibrance: 0.1, shadows: 0.03, highlights: -0.02, whites: 0.02, blacks: -0.02, clarity: 0.02, grain: 0.03, filmFade: 0.05, vignette: 0 },
+    tokens: ['warm', 'golden', 'skin', 'lifestyle'],
+  },
+  {
+    id: 'natural-portrait-5',
+    name: 'Cool Skin',
+    category: 'natural-portraits',
+    description: 'Fresh cool tones with bright skies.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.07, contrast: 0.02, temperature: -0.1, tint: 0.05, saturation: 0.05, vibrance: 0.1, shadows: 0.05, highlights: -0.02, whites: 0.08, blacks: -0.02, clarity: 0.03, grain: 0, filmFade: 0.02, vignette: 0 },
+    tokens: ['cool', 'fresh', 'bright', 'skies'],
+  },
+  {
+    id: 'natural-portrait-6',
+    name: 'Vintage Skin',
+    category: 'natural-portraits',
+    description: 'Soft warmth with a touch of nostalgia.',
+    type: 'color',
+    adjustments: { exposure: 0, brightness: 0.02, contrast: -0.03, temperature: 0.05, tint: 0.02, saturation: 0.05, vibrance: 0.05, shadows: 0.04, highlights: -0.02, whites: 0.02, blacks: -0.02, clarity: -0.05, grain: 0.08, filmFade: 0.08, vignette: 0 },
+    tokens: ['vintage', 'nostalgic', 'soft', 'skin'],
+  },
+  {
+    id: 'natural-portrait-7',
+    name: 'Sun-Kissed',
+    category: 'natural-portraits',
+    description: 'Golden hour skin with warm highlight.',
+    type: 'color',
+    adjustments: { exposure: 0.1, brightness: 0.06, contrast: 0.03, temperature: 0.2, tint: 0.05, saturation: 0.1, vibrance: 0.12, shadows: 0.05, highlights: 0.05, whites: 0.05, blacks: -0.03, clarity: 0.03, grain: 0.03, filmFade: 0.08, vignette: 0 },
+    tokens: ['sun', 'golden', 'warm', 'skin'],
+  },
+  {
+    id: 'natural-portrait-8',
+    name: 'Cool Casual',
+    category: 'natural-portraits',
+    description: 'Clean cool tones for a modern look.',
+    type: 'color',
+    adjustments: { exposure: 0, brightness: 0.03, contrast: 0.03, temperature: -0.08, tint: 0.02, saturation: 0.05, vibrance: 0.08, shadows: 0.02, highlights: -0.03, whites: 0.04, blacks: -0.02, clarity: 0.03, grain: 0, filmFade: 0.02, vignette: 0 },
+    tokens: ['cool', 'modern', 'clean', 'casual'],
+  },
+  {
+    id: 'natural-portrait-9',
+    name: 'Soft Focus',
+    category: 'natural-portraits',
+    description: 'Elegant gentle blur on skin.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.02, contrast: -0.05, temperature: 0.02, tint: 0.01, saturation: 0.05, vibrance: 0.08, shadows: 0.02, highlights: 0.02, whites: 0.02, blacks: -0.02, clarity: -0.15, grain: 0.04, filmFade: 0.02, vignette: 0 },
+    tokens: ['soft', 'focus', 'gentle', 'skin'],
+  },
+  {
+    id: 'natural-portrait-10',
+    name: 'Natural Light',
+    category: 'natural-portraits',
+    description: 'Faithful lighting with neutral color balance.',
+    type: 'color',
+    adjustments: { exposure: 0, brightness: 0, contrast: 0.02, temperature: 0, tint: 0, saturation: 0.03, vibrance: 0.05, shadows: 0.02, highlights: -0.02, whites: 0.02, blacks: -0.02, clarity: 0.02, grain: 0, filmFade: 0.02, vignette: 0 },
+    tokens: ['natural', 'light', 'neutral', 'accurate'],
+  },
+
+  // ─── Clean Skin Tones ───────────────────────────────────────────────
+  {
+    id: 'skin-tone-1',
+    name: 'Clean Skin',
+    category: 'clean-skin-tones',
+    description: 'Accurate skin with balanced highlights.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.02, contrast: 0, temperature: 0.01, tint: 0.01, saturation: 0.03, vibrance: 0.04, shadows: 0.02, highlights: 0.02, whites: 0.03, blacks: -0.02, clarity: 0.02, grain: 0, filmFade: 0.02, vignette: 0 },
+    tokens: ['clean', 'skin', 'accurate', 'natural'],
+  },
+  {
+    id: 'skin-tone-2',
+    name: 'De-inflated Skin',
+    category: 'clean-skin-tones',
+    description: 'Smooth skin with subtle clarity.',
+    type: 'color',
+    adjustments: { exposure: 0.01, brightness: 0.01, contrast: -0.02, temperature: 0.01, tint: 0.0, saturation: 0.02, vibrance: 0.03, shadows: 0.02, highlights: 0.01, whites: 0.02, blacks: -0.01, clarity: -0.03, grain: 0.02, filmFade: 0.02, vignette: 0 },
+    tokens: ['smooth', 'skin', 'clean', 'soft'],
+  },
+  {
+    id: 'skin-tone-3',
+    name: 'Fresh Complexion',
+    category: 'clean-skin-tones',
+    description: 'Bright, clear skin with natural tones.',
+    type: 'color',
+    adjustments: { exposure: 0.03, brightness: 0.02, contrast: 0, temperature: 0.02, tint: 0.01, saturation: 0.04, vibrance: 0.06, shadows: 0.03, highlights: 0.01, whites: 0.03, blacks: -0.01, clarity: 0.03, grain: 0, filmFade: 0.02, vignette: 0 },
+    tokens: ['fresh', 'clear', 'complexion', 'skin'],
+  },
+  {
+    id: 'skin-tone-4',
+    name: 'Even Skin',
+    category: 'clean-skin-tones',
+    description: 'Balanced tones with distribution.',
+    type: 'color',
+    adjustments: { exposure: 0, brightness: 0, contrast: 0, temperature: 0.01, tint: 0, saturation: 0.02, vibrance: 0.03, shadows: 0.02, highlights: 0.0, whites: 0.03, blacks: -0.02, clarity: 0.02, grain: 0, filmFade: 0.02, vignette: 0 },
+    tokens: ['even', 'balanced', 'distribution', 'skin'],
+  },
+  {
+    id: 'skin-tone-5',
+    name: 'Natural Soft',
+    category: 'clean-skin-tones',
+    description: 'Gentle clarity with soft look.',
+    type: 'color',
+    adjustments: { exposure: 0, brightness: 0.02, contrast: -0.02, temperature: 0.01, tint: 0.01, saturation: 0.03, vibrance: 0.05, shadows: 0.03, highlights: 0.0, whites: 0.02, blacks: -0.02, clarity: -0.05, grain: 0.03, filmFade: 0.02, vignette: 0 },
+    tokens: ['soft', 'gentle', 'skin', 'delicate'],
+  },
+  {
+    id: 'skin-tone-6',
+    name: 'Radiant Skin',
+    category: 'clean-skin-tones',
+    description: 'Bright, glowing skin with subtle warmth.',
+    type: 'color',
+    adjustments: { exposure: 0.05, brightness: 0.05, contrast: -0.02, temperature: 0.08, tint: 0.03, saturation: 0.06, vibrance: 0.08, shadows: 0.04, highlights: -0.03, whites: 0.04, blacks: -0.02, clarity: 0.03, grain: 0.02, filmFade: 0.02, vignette: 0 },
+    tokens: ['radiant', 'glow', 'bright', 'skin'],
+  },
+  {
+    id: 'skin-tone-7',
+    name: 'Smooth Skin',
+    category: 'clean-skin-tones',
+    description: 'Smooth, even with reduced texture.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.02, contrast: -0.03, temperature: 0.01, tint: 0.01, saturation: 0.02, vibrance: 0.04, shadows: 0.02, highlights: 0.01, whites: 0.02, blacks: -0.02, clarity: -0.08, grain: 0.03, filmFade: 0.02, vignette: 0 },
+    tokens: ['smooth', 'even', 'smooth', 'skin'],
+  },
+  {
+    id: 'skin-tone-8',
+    name: 'Night Skin',
+    category: 'clean-skin-tones',
+    description: 'Brightened with natural tones for low light.',
+    type: 'color',
+    adjustments: { exposure: 0.15, brightness: 0.1, contrast: 0.02, temperature: 0.02, tint: 0.01, saturation: 0.04, vibrance: 0.06, shadows: 0.12, highlights: -0.03, whites: 0.1, blacks: -0.05, clarity: 0.03, grain: 0.02, filmFade: 0.02, vignette: 0 },
+    tokens: ['night', 'dark', 'low', 'light', 'skin'],
+  },
+  {
+    id: 'skin-tone-9',
+    name: 'Bright Skin',
+    category: 'clean-skin-tones',
+    description: 'Brightened with clean tones.',
+    type: 'color',
+    adjustments: { exposure: 0.08, brightness: 0.07, contrast: -0.02, temperature: 0.01, tint: 0.01, saturation: 0.04, vibrance: 0.06, shadows: 0.05, highlights: 0.05, whites: 0.08, blacks: -0.04, clarity: 0.03, grain: 0, filmFade: 0.02, vignette: 0 },
+    tokens: ['bright', 'light', 'skin', 'fresh'],
+  },
+  {
+    id: 'skin-tone-10',
+    name: 'Soft Focus Skin',
+    category: 'clean-skin-tones',
+    description: 'Elegant soft look with natural tones.',
+    type: 'color',
+    adjustments: { exposure: 0.03, brightness: 0.03, contrast: -0.04, temperature: 0.02, tint: 0.01, saturation: 0.03, vibrance: 0.05, shadows: 0.03, highlights: 0.01, whites: 0.03, blacks: -0.02, clarity: -0.1, grain: 0.03, filmFade: 0.03, vignette: 0 },
+    tokens: ['soft', 'focus', 'skin', 'elegant'],
+  },
+
+  // ─── Warm Lifestyle ────────────────────────────────────────────────
+  {
+    id: 'warm-lifestyle-1',
+    name: 'Warm Day',
+    category: 'warm-lifestyle',
+    description: 'Golden warm tones for sunny days.',
+    type: 'color',
+    adjustments: { exposure: 0.05, brightness: 0.04, contrast: 0.03, temperature: 0.15, tint: 0.03, saturation: 0.08, vibrance: 0.1, shadows: 0.03, highlights: 0.03, whites: 0.04, blacks: -0.02, clarity: 0.03, grain: 0.03, filmFade: 0.05, vignette: 0 },
+    tokens: ['warm', 'golden', 'sunny', 'day'],
+  },
+  {
+    id: 'warm-lifestyle-2',
+    name: 'Golden Hour',
+    category: 'warm-lifestyle',
+    description: 'Warm golden light with soft contrast.',
+    type: 'color',
+    adjustments: { exposure: 0.1, brightness: 0.08, contrast: 0.02, temperature: 0.25, tint: 0.05, saturation: 0.08, vibrance: 0.1, shadows: 0.05, highlights: 0.05, whites: 0.06, blacks: -0.02, clarity: 0.02, grain: 0.02, filmFade: 0.1, vignette: 0 },
+    tokens: ['golden', 'hour', 'warm', 'sunset'],
+  },
+  {
+    id: 'warm-lifestyle-3',
+    name: 'Café Warm',
+    category: 'warm-lifestyle',
+    description: 'Cozy warm interior tones.',
+    type: 'color',
+    adjustments: { exposure: 0.05, brightness: 0.06, contrast: 0.02, temperature: 0.15, tint: 0.04, saturation: 0.06, vibrance: 0.08, shadows: 0.04, highlights: 0.02, whites: 0.04, blacks: -0.02, clarity: 0.02, grain: 0.03, filmFade: 0.06, vignette: 0 },
+    tokens: ['cafe', 'warm', 'cozy', 'interior'],
+  },
+  {
+    id: 'warm-lifestyle-4',
+    name: 'Sunset Warm',
+    category: 'warm-lifestyle',
+    description: 'Warm sunset tones with rich colors.',
+    type: 'color',
+    adjustments: { exposure: 0.12, brightness: 0.1, contrast: 0.03, temperature: 0.25, tint: 0.08, saturation: 0.15, vibrance: 0.15, shadows: 0.1, highlights: 0.15, whites: 0.1, blacks: -0.03, clarity: 0.05, grain: 0.03, filmFade: 0.1, vignette: 0 },
+    tokens: ['sunset', 'warm', 'rich', 'colors'],
+  },
+  {
+    id: 'warm-lifestyle-5',
+    name: 'Warm Evening',
+    category: 'warm-lifestyle',
+    description: 'Warm ambient evening tones.',
+    type: 'color',
+    adjustments: { exposure: 0.08, brightness: 0.07, contrast: 0.02, temperature: 0.12, tint: 0.03, saturation: 0.06, vibrance: 0.08, shadows: 0.05, highlights: 0.02, whites: 0.05, blacks: -0.02, clarity: 0.03, grain: 0.03, filmFade: 0.07, vignette: 0 },
+    tokens: ['evening', 'warm', 'ambient', 'night'],
+  },
+  {
+    id: 'warm-lifestyle-6',
+    name: 'Warm Travel',
+    category: 'warm-lifestyle',
+    description: 'Warm travel memories with golden tones.',
+    type: 'color',
+    adjustments: { exposure: 0.06, brightness: 0.05, contrast: 0.02, temperature: 0.12, tint: 0.03, saturation: 0.07, vibrance: 0.09, shadows: 0.04, highlights: 0.02, whites: 0.04, blacks: -0.02, clarity: 0.02, grain: 0.03, filmFade: 0.08, vignette: 0 },
+    tokens: ['travel', 'warm', 'memories', 'golden'],
+  },
+  {
+    id: 'warm-lifestyle-7',
+    name: 'Warm Coffee',
+    category: 'warm-lifestyle',
+    description: 'Warm coffee and cozy indoor tones.',
+    type: 'color',
+    adjustments: { exposure: 0.03, brightness: 0.04, contrast: 0.01, temperature: 0.1, tint: 0.02, saturation: 0.05, vibrance: 0.07, shadows: 0.03, highlights: 0.01, whites: 0.03, blacks: -0.02, clarity: 0.02, grain: 0.03, filmFade: 0.06, vignette: 0 },
+    tokens: ['coffee', 'warm', 'indoor', 'cozy'],
+  },
+  {
+    id: 'warm-lifestyle-8',
+    name: 'Warm Memory',
+    category: 'warm-lifestyle',
+    description: 'Nostalgic warm tones with soft fade.',
+    type: 'color',
+    adjustments: { exposure: 0.04, brightness: 0.03, contrast: 0.01, temperature: 0.15, tint: 0.04, saturation: 0.06, vibrance: 0.08, shadows: 0.04, highlights: 0.02, whites: 0.04, blacks: -0.02, clarity: 0.02, grain: 0.05, filmFade: 0.1, vignette: 0 },
+    tokens: ['memory', 'warm', 'nostalgic', 'soft'],
+  },
+  {
+    id: 'warm-lifestyle-9',
+    name: 'Warm Glow',
+    category: 'warm-lifestyle',
+    description: 'Warm ambient light with gentle glow.',
+    type: 'color',
+    adjustments: { exposure: 0.06, brightness: 0.05, contrast: 0.02, temperature: 0.12, tint: 0.03, saturation: 0.06, vibrance: 0.08, shadows: 0.04, highlights: 0.02, whites: 0.04, blacks: -0.02, clarity: 0.02, grain: 0.02, filmFade: 0.07, vignette: 0 },
+    tokens: ['warm', 'glow', 'ambient', 'soft'],
+  },
+  {
+    id: 'warm-lifestyle-10',
+    name: 'Warm Beach',
+    category: 'warm-lifestyle',
+    description: 'Warm sandy tones with ocean breeze.',
+    type: 'color',
+    adjustments: { exposure: 0.1, brightness: 0.08, contrast: 0.02, temperature: 0.12, tint: 0.03, saturation: 0.08, vibrance: 0.1, shadows: 0.04, highlights: 0.06, whites: 0.06, blacks: -0.02, clarity: 0.03, grain: 0.02, filmFade: 0.05, vignette: 0 },
+    tokens: ['beach', 'warm', 'sandy', 'ocean'],
+  },
+
+  // ─── Film Photography ──────────────────────────────────────────────
+  {
+    id: 'film-1',
+    name: 'Classic Film',
+    category: 'film',
+    description: 'Kodak-style film grain and subtle color.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.02, contrast: 0.02, temperature: 0.02, tint: 0.01, saturation: 0.05, vibrance: 0.06, shadows: 0.03, highlights: 0.02, whites: 0.03, blacks: -0.02, clarity: 0.02, grain: 0.3, filmFade: 0.08, vignette: 0 },
+    tokens: ['film', 'kodak', 'grain', 'classic'],
+  },
+  {
+    id: 'film-2',
+    name: 'Kodak Gold',
+    category: 'film',
+    description: 'Rich warm film with natural grain.',
+    type: 'color',
+    adjustments: { exposure: 0.05, brightness: 0.03, contrast: 0.03, temperature: 0.15, tint: 0.02, saturation: 0.1, vibrance: 0.12, shadows: 0.05, highlights: 0.03, whites: 0.04, blacks: -0.02, clarity: 0.03, grain: 0.3, filmFade: 0.1, vignette: 0 },
+    tokens: ['kodak', 'gold', 'warm', 'film'],
+  },
+  {
+    id: 'film-3',
+    name: 'Fuji Classic',
+    category: 'film',
+    description: 'Classic Fuji film look with smooth tones.',
+    type: 'color',
+    adjustments: { exposure: 0.03, brightness: 0.02, contrast: 0.01, temperature: 0.05, tint: 0.02, saturation: 0.08, vibrance: 0.1, shadows: 0.03, highlights: 0.02, whites: 0.03, blacks: -0.02, clarity: 0, grain: 0.25, filmFade: 0.08, vignette: 0 },
+    tokens: ['fuji', 'classic', 'smooth', 'film'],
+  },
+  {
+    id: 'film-4',
+    name: 'Fuji Pro',
+    category: 'film',
+    description: 'Pro Fuji with rich colors and fine grain.',
+    type: 'color',
+    adjustments: { exposure: 0.04, brightness: 0.03, contrast: 0.03, temperature: 0.05, tint: 0.02, saturation: 0.12, vibrance: 0.14, shadows: 0.05, highlights: 0.03, whites: 0.06, blacks: -0.02, clarity: 0.03, grain: 0.28, filmFade: 0.08, vignette: 0 },
+    tokens: ['fuji', 'pro', 'rich', 'color', 'film'],
+  },
+  {
+    id: 'film-5',
+    name: 'Kodak Portra',
+    category: 'film',
+    description: 'Skin-friendly film with natural tones.',
+    type: 'color',
+    adjustments: { exposure: 0.04, brightness: 0.02, contrast: 0.02, temperature: 0.08, tint: 0.02, saturation: 0.06, vibrance: 0.08, shadows: 0.04, highlights: 0.02, whites: 0.03, blacks: -0.02, clarity: 0.02, grain: 0.22, filmFade: 0.09, vignette: 0 },
+    tokens: ['portra', 'skin', 'friendly', 'film'],
+  },
+  {
+    id: 'film-6',
+    name: 'Cinestill',
+    category: 'film',
+    description: 'Cinema film look with rich colors and grain.',
+    type: 'color',
+    adjustments: { exposure: 0.06, brightness: 0.03, contrast: 0.03, temperature: 0.1, tint: 0.03, saturation: 0.12, vibrance: 0.14, shadows: 0.06, highlights: 0.04, whites: 0.06, blacks: -0.02, clarity: 0.03, grain: 0.3, filmFade: 0.09, vignette: 0 },
+    tokens: ['cine', 'cinestill', 'rich', 'color', 'film'],
+  },
+  {
+    id: 'film-7',
+    name: 'Lomo Film',
+    category: 'film',
+    description: 'Vintage lomography with bold colors.',
+    type: 'color',
+    adjustments: { exposure: 0.08, brightness: 0.06, contrast: 0.05, temperature: 0.1, tint: 0.05, saturation: 0.2, vibrance: 0.2, shadows: 0.08, highlights: 0.06, whites: 0.1, blacks: -0.03, clarity: 0.05, grain: 0.35, filmFade: 0.12, vignette: 0 },
+    tokens: ['lomo', 'vintage', 'bold', 'color', 'film'],
+  },
+  {
+    id: 'film-8',
+    name: 'Cross Process',
+    category: 'film',
+    description: 'Cross-processed film with vivid colors.',
+    type: 'color',
+    adjustments: { exposure: 0.06, brightness: 0.04, contrast: 0.04, temperature: 0.1, tint: 0.08, saturation: 0.18, vibrance: 0.2, shadows: 0.08, highlights: 0.06, whites: 0.1, blacks: -0.03, clarity: 0.04, grain: 0.3, filmFade: 0.1, vignette: 0 },
+    tokens: ['cross', 'process', 'vivid', 'color', 'film'],
+  },
+  {
+    id: 'film-9',
+    name: 'Vintage Black & White',
+    category: 'film',
+    description: 'Classic black and white film.',
+    type: 'color',
+    adjustments: { exposure: 0.04, brightness: 0.02, contrast: 0.05, temperature: 0, tint: 0, saturation: 0, vibrance: 0, shadows: 0.08, highlights: 0.08, whites: 0.08, blacks: -0.04, clarity: 0.03, grain: 0.3, filmFade: 0.1, vignette: 0 },
+    tokens: ['bw', 'black', 'white', 'vintage', 'film'],
+  },
+  {
+    id: 'film-10',
+    name: 'Polaroid',
+    category: 'film',
+    description: 'Classic polaroid with borders and fade.',
+    type: 'color',
+    adjustments: { exposure: 0.05, brightness: 0.06, contrast: 0.02, temperature: 0.08, tint: 0.03, saturation: 0.06, vibrance: 0.06, shadows: 0.04, highlights: 0.02, whites: 0.03, blacks: -0.02, clarity: 0.02, grain: 0.4, filmFade: 0.15, vignette: 0.15 },
+    tokens: ['polaroid', 'vintage', 'fade', 'film'],
+  },
+
+  // ─── Vintage and Retro ─────────────────────────────────────────────
+  {
+    id: 'vintage-1',
+    name: 'Sepia Tone',
+    category: 'vintage',
+    description: 'Classic sepia photo look.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.03, contrast: 0.02, temperature: 0.1, tint: 0.05, saturation: 0.15, vibrance: 0.1, shadows: 0.04, highlights: 0.03, whites: 0.04, blacks: -0.02, clarity: 0.02, grain: 0.2, filmFade: 0.2, vignette: 0 },
+    tokens: ['sepia', 'vintage', 'retro', 'warm'],
+  },
+  {
+    id: 'vintage-2',
+    name: 'Bromide',
+    category: 'vintage',
+    description: 'Vintage bromide paper with soft tones.',
+    type: 'color',
+    adjustments: { exposure: 0.03, brightness: 0.02, contrast: 0.01, temperature: 0.05, tint: 0.02, saturation: 0.06, vibrance: 0.08, shadows: 0.06, highlights: 0.03, whites: 0.05, blacks: -0.02, clarity: 0.01, grain: 0.2, filmFade: 0.15, vignette: 0 },
+    tokens: ['bromide', 'vintage', 'paper', 'soft'],
+  },
+  {
+    id: 'vintage-3',
+    name: 'Duotone',
+    category: 'vintage',
+    description: 'Vintage duotone with rich midtones.',
+    type: 'color',
+    adjustments: { exposure: 0.03, brightness: 0.02, contrast: 0.06, temperature: 0.1, tint: 0.05, saturation: 0.1, vibrance: 0.1, shadows: 0.08, highlights: 0.08, whites: 0.1, blacks: -0.04, clarity: 0.03, grain: 0.2, filmFade: 0.1, vignette: 0 },
+    tokens: ['duotone', 'vintage', 'retro', 'rich'],
+  },
+  {
+    id: 'vintage-4',
+    name: 'Vintage Warm',
+    category: 'vintage',
+    description: 'Warm vintage tones with subtle grain.',
+    type: 'color',
+    adjustments: { exposure: 0.04, brightness: 0.03, contrast: 0.02, temperature: 0.12, tint: 0.04, saturation: 0.08, vibrance: 0.1, shadows: 0.05, highlights: 0.03, whites: 0.05, blacks: -0.03, clarity: 0.02, grain: 0.25, filmFade: 0.12, vignette: 0 },
+    tokens: ['vintage', 'warm', 'soft', 'grain'],
+  },
+  {
+    id: 'vintage-5',
+    name: 'Vintage Cool',
+    category: 'vintage',
+    description: 'Cool vintage tones with muted colors.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.02, contrast: 0.02, temperature: -0.05, tint: 0.03, saturation: 0.06, vibrance: 0.08, shadows: 0.05, highlights: 0.03, whites: 0.05, blacks: -0.02, clarity: 0.02, grain: 0.22, filmFade: 0.12, vignette: 0 },
+    tokens: ['vintage', 'cool', 'muted', 'soft'],
+  },
+  {
+    id: 'vintage-6',
+    name: 'Vintage Sick',
+    category: 'vintage',
+    description: 'Vintage sick photo with faded colors.',
+    type: 'color',
+    adjustments: { exposure: 0.03, brightness: 0.05, contrast: 0.01, temperature: 0.08, tint: 0.04, saturation: 0.1, vibrance: 0.12, shadows: 0.04, highlights: 0.02, whites: 0.06, blacks: -0.03, clarity: 0.02, grain: 0.28, filmFade: 0.18, vignette: 0.05 },
+    tokens: ['sick', 'vintage', 'faded', 'retro'],
+  },
+  {
+    id: 'vintage-7',
+    name: 'Vintage Green',
+    category: 'vintage',
+    description: 'Vintage green-tinted photo.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.02, contrast: 0.01, temperature: 0.02, tint: 0.15, saturation: 0.1, vibrance: 0.12, shadows: 0.04, highlights: 0.02, whites: 0.04, blacks: -0.02, clarity: 0.01, grain: 0.18, filmFade: 0.15, vignette: 0 },
+    tokens: ['green', 'vintage', 'retro', 'tint'],
+  },
+  {
+    id: 'vintage-8',
+    name: 'Vintage Red',
+    category: 'vintage',
+    description: 'Vintage red-film look.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.02, contrast: 0.01, temperature: 0.1, tint: 0.1, saturation: 0.1, vibrance: 0.12, shadows: 0.04, highlights: 0.02, whites: 0.06, blacks: -0.02, clarity: 0.01, grain: 0.22, filmFade: 0.14, vignette: 0 },
+    tokens: ['red', 'vintage', 'film', 'retro'],
+  },
+  {
+    id: 'vintage-9',
+    name: 'Faded Photo',
+    category: 'vintage',
+    description: 'Faded vintage photo with soft edges.',
+    type: 'color',
+    adjustments: { exposure: 0.08, brightness: 0.1, contrast: -0.02, temperature: 0.06, tint: 0.04, saturation: 0.06, vibrance: 0.08, shadows: 0.04, highlights: 0.08, whites: 0.1, blacks: -0.05, clarity: 0.01, grain: 0.15, filmFade: 0.25, vignette: 0.05 },
+    tokens: ['faded', 'vintage', 'soft', 'retro'],
+  },
+  {
+    id: 'vintage-10',
+    name: 'Velvet',
+    category: 'vintage',
+    description: 'Vintage velvet-toned photo.',
+    type: 'color',
+    adjustments: { exposure: 0.03, brightness: 0.02, contrast: 0.04, temperature: 0.08, tint: 0.03, saturation: 0.08, vibrance: 0.1, shadows: 0.06, highlights: 0.04, whites: 0.06, blacks: -0.02, clarity: 0.03, grain: 0.2, filmFade: 0.15, vignette: 0 },
+    tokens: ['velvet', 'vintage', 'rich', 'retro'],
+  },
+
+  // ─── Cinematic ─────────────────────────────────────────────────────
+  {
+    id: 'cinematic-1',
+    name: 'Cinematic',
+    category: 'cinematic',
+    description: 'Movie-like look with rich colors and contrast.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.01, contrast: 0.1, temperature: 0.02, tint: 0.01, saturation: 0.15, vibrance: 0.15, shadows: 0.08, highlights: 0.05, whites: 0.08, blacks: -0.06, clarity: 0.08, grain: 0.12, filmFade: 0.04, vignette: 0.15 },
+    tokens: ['cinematic', 'movie', 'film', 'dramatic'],
+  },
+  {
+    id: 'cinematic-2',
+    name: 'Cinematic Warm',
+    category: 'cinematic',
+    description: 'Warm cinematic with rich tones.',
+    type: 'color',
+    adjustments: { exposure: 0.04, brightness: 0.03, contrast: 0.08, temperature: 0.15, tint: 0.05, saturation: 0.12, vibrance: 0.12, shadows: 0.06, highlights: 0.04, whites: 0.06, blacks: -0.04, clarity: 0.05, grain: 0.1, filmFade: 0.06, vignette: 0.12 },
+    tokens: ['cinematic', 'warm', 'rich', 'film'],
+  },
+  {
+    id: 'cinematic-3',
+    name: 'Cinematic Cool',
+    category: 'cinematic',
+    description: 'Cool cinematic with dramatic shadows.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.01, contrast: 0.08, temperature: -0.08, tint: 0.04, saturation: 0.12, vibrance: 0.12, shadows: 0.1, highlights: 0.04, whites: 0.06, blacks: -0.08, clarity: 0.06, grain: 0.12, filmFade: 0.04, vignette: 0.15 },
+    tokens: ['cinematic', 'cool', 'dramatic', 'shadows'],
+  },
+  {
+    id: 'cinematic-4',
+    name: 'Teal & Orange',
+    category: 'cinematic',
+    description: 'Classic teal & orange film look.',
+    type: 'color',
+    adjustments: { exposure: 0.03, brightness: 0.02, contrast: 0.08, temperature: 0.1, tint: 0.1, saturation: 0.18, vibrance: 0.15, shadows: 0.08, highlights: 0.06, whites: 0.08, blacks: -0.06, clarity: 0.06, grain: 0.12, filmFade: 0.04, vignette: 0.1 },
+    tokens: ['teal', 'orange', 'cinematic', 'film'],
+  },
+  {
+    id: 'cinematic-5',
+    name: 'Neo Noir',
+    category: 'cinematic',
+    description: 'Dramatic noir with high contrast.',
+    type: 'color',
+    adjustments: { exposure: -0.05, brightness: -0.03, contrast: 0.15, temperature: 0.02, tint: 0.01, saturation: 0.1, vibrance: 0.1, shadows: 0.15, highlights: 0.1, whites: 0.1, blacks: -0.15, clarity: 0.1, grain: 0.2, filmFade: 0.02, vignette: 0.2 },
+    tokens: ['noir', 'dramatic', 'high', 'contrast', 'film'],
+  },
+  {
+    id: 'cinematic-6',
+    name: 'Film Noir',
+    category: 'cinematic',
+    description: 'Classic black and white cinema.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.01, contrast: 0.12, temperature: 0, tint: 0, saturation: 0, vibrance: 0, shadows: 0.12, highlights: 0.1, whites: 0.1, blacks: -0.12, clarity: 0.08, grain: 0.25, filmFade: 0.02, vignette: 0.15 },
+    tokens: ['noir', 'bw', 'cinema', 'black', 'white'],
+  },
+  {
+    id: 'cinematic-7',
+    name: 'Warm Cinema',
+    category: 'cinematic',
+    description: 'Warm cinematic with rich skin tones.',
+    type: 'color',
+    adjustments: { exposure: 0.04, brightness: 0.02, contrast: 0.08, temperature: 0.18, tint: 0.06, saturation: 0.1, vibrance: 0.1, shadows: 0.06, highlights: 0.04, whites: 0.06, blacks: -0.04, clarity: 0.05, grain: 0.1, filmFade: 0.06, vignette: 0.1 },
+    tokens: ['warm', 'cinema', 'rich', 'skin'],
+  },
+  {
+    id: 'cinematic-8',
+    name: 'Cool Cinema',
+    category: 'cinematic',
+    description: 'Cool cinematic with clean tones.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.01, contrast: 0.08, temperature: -0.1, tint: 0.04, saturation: 0.1, vibrance: 0.12, shadows: 0.1, highlights: 0.04, whites: 0.06, blacks: -0.06, clarity: 0.06, grain: 0.1, filmFade: 0.04, vignette: 0.12 },
+    tokens: ['cool', 'cinema', 'clean', 'tones'],
+  },
+  {
+    id: 'cinematic-9',
+    name: 'Dramatic',
+    category: 'cinematic',
+    description: 'Dramatic high-contrast cinematic.',
+    type: 'color',
+    adjustments: { exposure: -0.02, brightness: -0.01, contrast: 0.15, temperature: 0.03, tint: 0.02, saturation: 0.12, vibrance: 0.12, shadows: 0.12, highlights: 0.08, whites: 0.08, blacks: -0.12, clarity: 0.1, grain: 0.15, filmFade: 0.02, vignette: 0.2 },
+    tokens: ['dramatic', 'high', 'contrast', 'cinema'],
+  },
+  {
+    id: 'cinematic-10',
+    name: 'Moody',
+    category: 'cinematic',
+    description: 'Moody cinematic with dark tones.',
+    type: 'color',
+    adjustments: { exposure: -0.03, brightness: -0.02, contrast: 0.1, temperature: 0.02, tint: 0.01, saturation: 0.1, vibrance: 0.1, shadows: 0.1, highlights: 0.05, whites: 0.06, blacks: -0.1, clarity: 0.08, grain: 0.15, filmFade: 0.05, vignette: 0.15 },
+    tokens: ['moody', 'dramatic', 'dark', 'cinema'],
+  },
+
+  // ─── Moody and Dramatic ────────────────────────────────────────────
+  {
+    id: 'moody-1',
+    name: 'Moody',
+    category: 'moody',
+    description: 'Dark, moody look with rich shadows.',
+    type: 'color',
+    adjustments: { exposure: -0.05, brightness: -0.03, contrast: 0.1, temperature: 0.02, tint: 0.01, saturation: 0.1, vibrance: 0.1, shadows: 0.1, highlights: 0.05, whites: 0.06, blacks: -0.12, clarity: 0.08, grain: 0.15, filmFade: 0.04, vignette: 0.15 },
+    tokens: ['moody', 'dark', 'dramatic', 'shadows'],
+  },
+  {
+    id: 'moody-2',
+    name: 'Dark Mood',
+    category: 'moody',
+    description: 'Deep, dark, dramatic tones.',
+    type: 'color',
+    adjustments: { exposure: -0.1, brightness: -0.06, contrast: 0.08, temperature: 0.02, tint: 0.01, saturation: 0.08, vibrance: 0.08, shadows: 0.15, highlights: 0.05, whites: 0.06, blacks: -0.15, clarity: 0.08, grain: 0.15, filmFade: 0.02, vignette: 0.2 },
+    tokens: ['dark', 'moody', 'dramatic', 'deep'],
+  },
+  {
+    id: 'moody-3',
+    name: 'Ethereal',
+    category: 'moody',
+    description: 'Soft, dreamy, ethereal look.',
+    type: 'color',
+    adjustments: { exposure: 0.05, brightness: 0.08, contrast: -0.03, temperature: 0.02, tint: 0.01, saturation: 0.06, vibrance: 0.08, shadows: 0.04, highlights: 0.06, whites: 0.08, blacks: -0.04, clarity: -0.05, grain: 0.15, filmFade: 0.1, vignette: 0 },
+    tokens: ['ethereal', 'dreamy', 'soft', 'dreamy'],
+  },
+  {
+    id: 'moody-4',
+    name: 'Moody Gray',
+    category: 'moody',
+    description: 'Monochrome moody gray tones.',
+    type: 'color',
+    adjustments: { exposure: 0, brightness: 0.02, contrast: 0.08, temperature: 0, tint: 0, saturation: 0, vibrance: 0, shadows: 0.12, highlights: 0.08, whites: 0.1, blacks: -0.1, clarity: 0.08, grain: 0.3, filmFade: 0.02, vignette: 0.1 },
+    tokens: ['grayscale', 'moody', 'monochrome', 'gray'],
+  },
+  {
+    id: 'moody-5',
+    name: 'Dramatic',
+    category: 'moody',
+    description: 'Dramatic, high-contrast look.',
+    type: 'color',
+    adjustments: { exposure: -0.02, brightness: -0.01, contrast: 0.15, temperature: 0.03, tint: 0.02, saturation: 0.12, vibrance: 0.12, shadows: 0.12, highlights: 0.08, whites: 0.08, blacks: -0.12, clarity: 0.1, grain: 0.15, filmFade: 0.02, vignette: 0.2 },
+    tokens: ['dramatic', 'high', 'contrast', 'moody'],
+  },
+  {
+    id: 'moody-6',
+    name: 'Shadows',
+    category: 'moody',
+    description: 'Emphasizes shadows with rich tones.',
+    type: 'color',
+    adjustments: { exposure: -0.03, brightness: -0.02, contrast: 0.08, temperature: 0.02, tint: 0.01, saturation: 0.1, vibrance: 0.1, shadows: 0.15, highlights: 0.05, whites: 0.06, blacks: -0.1, clarity: 0.08, grain: 0.12, filmFade: 0.03, vignette: 0.15 },
+    tokens: ['shadows', 'moody', 'rich', 'dark'],
+  },
+  {
+    id: 'moody-7',
+    name: 'Light & Dark',
+    category: 'moody',
+    description: 'Strong contrast between light and dark.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.01, contrast: 0.12, temperature: 0.02, tint: 0.01, saturation: 0.1, vibrance: 0.1, shadows: 0.08, highlights: 0.1, whites: 0.12, blacks: -0.1, clarity: 0.08, grain: 0.1, filmFade: 0.03, vignette: 0.1 },
+    tokens: ['contrast', 'moody', 'dramatic', 'light'],
+  },
+  {
+    id: 'moody-8',
+    name: 'Roulette',
+    category: 'moody',
+    description: 'Vintage roulette with muted colors.',
+    type: 'color',
+    adjustments: { exposure: -0.02, brightness: 0.01, contrast: 0.06, temperature: 0.04, tint: 0.02, saturation: 0.08, vibrance: 0.1, shadows: 0.1, highlights: 0.06, whites: 0.08, blacks: -0.08, clarity: 0.06, grain: 0.2, filmFade: 0.1, vignette: 0.05 },
+    tokens: ['roulette', 'vintage', 'muted', 'soft'],
+  },
+  {
+    id: 'moody-9',
+    name: 'Feb Fest',
+    category: 'moody',
+    description: 'Winter/festive moody look.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.02, contrast: 0.04, temperature: 0.02, tint: 0.01, saturation: 0.06, vibrance: 0.08, shadows: 0.08, highlights: 0.04, whites: 0.06, blacks: -0.06, clarity: 0.05, grain: 0.1, filmFade: 0.06, vignette: 0.08 },
+    tokens: ['winter', 'festive', 'moody', 'cool'],
+  },
+  {
+    id: 'moody-10',
+    name: 'Dramatic Light',
+    category: 'moody',
+    description: 'Strong light with dramatic shadows.',
+    type: 'color',
+    adjustments: { exposure: -0.01, brightness: 0.0, contrast: 0.1, temperature: 0.02, tint: 0.01, saturation: 0.1, vibrance: 0.1, shadows: 0.12, highlights: 0.08, whites: 0.08, blacks: -0.1, clarity: 0.08, grain: 0.12, filmFade: 0.03, vignette: 0.15 },
+    tokens: ['dramatic', 'light', 'shadows', 'moody'],
+  },
+
+  // ─── Fashion and Editorial ─────────────────────────────────────────
+  {
+    id: 'fashion-1',
+    name: 'Editorial',
+    category: 'fashion',
+    description: 'Editorial fashion look with clean tones.',
+    type: 'color',
+    adjustments: { exposure: 0.03, brightness: 0.02, contrast: 0.08, temperature: 0.02, tint: 0.01, saturation: 0.1, vibrance: 0.12, shadows: 0.06, highlights: 0.04, whites: 0.06, blacks: -0.04, clarity: 0.06, grain: 0.08, filmFade: 0.03, vignette: 0.05 },
+    tokens: ['editorial', 'fashion', 'clean', 'tones'],
+  },
+  {
+    id: 'fashion-2',
+    name: 'Luxury',
+    category: 'fashion',
+    description: 'Premium luxury fashion with soft tones.',
+    type: 'color',
+    adjustments: { exposure: 0.04, brightness: 0.03, contrast: 0.04, temperature: 0.05, tint: 0.02, saturation: 0.08, vibrance: 0.1, shadows: 0.04, highlights: 0.03, whites: 0.05, blacks: -0.03, clarity: 0.04, grain: 0.05, filmFade: 0.04, vignette: 0.03 },
+    tokens: ['luxury', 'fashion', 'premium', 'soft'],
+  },
+  {
+    id: 'fashion-3',
+    name: 'Fashion Vogue',
+    category: 'fashion',
+    description: 'Classic fashion magazine look.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.02, contrast: 0.08, temperature: 0.05, tint: 0.02, saturation: 0.12, vibrance: 0.14, shadows: 0.06, highlights: 0.04, whites: 0.06, blacks: -0.04, clarity: 0.05, grain: 0.08, filmFade: 0.03, vignette: 0.04 },
+    tokens: ['vogue', 'fashion', 'magazine', 'clean'],
+  },
+  {
+    id: 'fashion-4',
+    name: 'High Fashion',
+    category: 'fashion',
+    description: 'High fashion with dramatic tones.',
+    type: 'color',
+    adjustments: { exposure: 0.03, brightness: 0.02, contrast: 0.1, temperature: 0.04, tint: 0.02, saturation: 0.12, vibrance: 0.14, shadows: 0.08, highlights: 0.05, whites: 0.07, blacks: -0.04, clarity: 0.06, grain: 0.08, filmFade: 0.04, vignette: 0.08 },
+    tokens: ['high', 'fashion', 'dramatic', 'premium'],
+  },
+  {
+    id: 'fashion-5',
+    name: 'Beauty Portrait',
+    category: 'fashion',
+    description: 'Beauty shot with soft, polished skin.',
+    type: 'color',
+    adjustments: { exposure: 0.03, brightness: 0.05, contrast: -0.02, temperature: 0.03, tint: 0.02, saturation: 0.06, vibrance: 0.08, shadows: 0.03, highlights: 0.02, whites: 0.04, blacks: -0.02, clarity: -0.03, grain: 0.05, filmFade: 0.03, vignette: 0 },
+    tokens: ['beauty', 'skin', 'polished', 'soft'],
+  },
+  {
+    id: 'fashion-6',
+    name: 'Summer Fashion',
+    category: 'fashion',
+    description: 'Bright summer fashion with warm tones.',
+    type: 'color',
+    adjustments: { exposure: 0.05, brightness: 0.04, contrast: 0.04, temperature: 0.1, tint: 0.03, saturation: 0.08, vibrance: 0.1, shadows: 0.04, highlights: 0.04, whites: 0.06, blacks: -0.03, clarity: 0.04, grain: 0.05, filmFade: 0.04, vignette: 0.02 },
+    tokens: ['summer', 'fashion', 'bright', 'warm'],
+  },
+  {
+    id: 'fashion-7',
+    name: 'Winter Fashion',
+    category: 'fashion',
+    description: 'Clean winter fashion with cool tones.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.03, contrast: 0.06, temperature: -0.05, tint: 0.02, saturation: 0.06, vibrance: 0.08, shadows: 0.04, highlights: 0.03, whites: 0.06, blacks: -0.03, clarity: 0.05, grain: 0.06, filmFade: 0.03, vignette: 0.02 },
+    tokens: ['winter', 'fashion', 'clean', 'cool'],
+  },
+  {
+    id: 'fashion-8',
+    name: 'Street Editorial',
+    category: 'fashion',
+    description: 'Street-style editorial with urban feel.',
+    type: 'color',
+    adjustments: { exposure: 0.03, brightness: 0.02, contrast: 0.08, temperature: 0.04, tint: 0.02, saturation: 0.12, vibrance: 0.14, shadows: 0.06, highlights: 0.04, whites: 0.07, blacks: -0.04, clarity: 0.06, grain: 0.1, filmFade: 0.03, vignette: 0.05 },
+    tokens: ['street', 'editorial', 'urban', 'fashion'],
+  },
+  {
+    id: 'fashion-9',
+    name: 'Editorial Clean',
+    category: 'fashion',
+    description: 'Clean, bright editorial look.',
+    type: 'color',
+    adjustments: { exposure: 0.04, brightness: 0.03, contrast: 0.06, temperature: 0.02, tint: 0.01, saturation: 0.08, vibrance: 0.1, shadows: 0.04, highlights: 0.04, whites: 0.06, blacks: -0.04, clarity: 0.05, grain: 0.05, filmFade: 0.03, vignette: 0.02 },
+    tokens: ['editorial', 'clean', 'bright', 'stock'],
+  },
+  {
+    id: 'fashion-10',
+    name: 'Fashion Soft',
+    category: 'fashion',
+    description: 'Soft fashion with gentle tones.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.03, contrast: 0.02, temperature: 0.03, tint: 0.01, saturation: 0.06, vibrance: 0.08, shadows: 0.03, highlights: 0.02, whites: 0.04, blacks: -0.03, clarity: 0.03, grain: 0.05, filmFade: 0.05, vignette: 0.02 },
+    tokens: ['soft', 'fashion', 'gentle', 'polished'],
+  },
+
+  // ─── Luxury ────────────────────────────────────────────────────────
+  {
+    id: 'luxury-1',
+    name: 'Luxury',
+    category: 'luxury',
+    description: 'Premium luxury look with rich tones.',
+    type: 'color',
+    adjustments: { exposure: 0.03, brightness: 0.02, contrast: 0.06, temperature: 0.05, tint: 0.02, saturation: 0.08, vibrance: 0.1, shadows: 0.04, highlights: 0.03, whites: 0.05, blacks: -0.03, clarity: 0.04, grain: 0.05, filmFade: 0.04, vignette: 0.03 },
+    tokens: ['luxury', 'premium', 'rich', 'tones'],
+  },
+  {
+    id: 'luxury-2',
+    name: 'Classic Luxury',
+    category: 'luxury',
+    description: 'Classic luxury with warm tones.',
+    type: 'color',
+    adjustments: { exposure: 0.03, brightness: 0.02, contrast: 0.06, temperature: 0.1, tint: 0.03, saturation: 0.08, vibrance: 0.1, shadows: 0.04, highlights: 0.03, whites: 0.05, blacks: -0.03, clarity: 0.04, grain: 0.05, filmFade: 0.05, vignette: 0.03 },
+    tokens: ['classic', 'luxury', 'warm', 'rich'],
+  },
+  {
+    id: 'luxury-3',
+    name: 'Golden Luxury',
+    category: 'luxury',
+    description: 'Gold-toned luxury with warm glow.',
+    type: 'color',
+    adjustments: { exposure: 0.04, brightness: 0.03, contrast: 0.05, temperature: 0.15, tint: 0.04, saturation: 0.08, vibrance: 0.08, shadows: 0.04, highlights: 0.04, whites: 0.06, blacks: -0.03, clarity: 0.04, grain: 0.04, filmFade: 0.05, vignette: 0.02 },
+    tokens: ['golden', 'luxury', 'warm', 'premium'],
+  },
+  {
+    id: 'luxury-4',
+    name: 'Elegant',
+    category: 'luxury',
+    description: 'Elegant luxury with soft, rich tones.',
+    type: 'color',
+    adjustments: { exposure: 0.03, brightness: 0.02, contrast: 0.04, temperature: 0.04, tint: 0.01, saturation: 0.06, vibrance: 0.08, shadows: 0.03, highlights: 0.02, whites: 0.04, blacks: -0.03, clarity: 0.03, grain: 0.04, filmFade: 0.05, vignette: 0.02 },
+    tokens: ['elegant', 'luxury', 'soft', 'rich'],
+  },
+  {
+    id: 'luxury-5',
+    name: 'Opulent',
+    category: 'luxury',
+    description: 'Opulent, rich, luxurious look.',
+    type: 'color',
+    adjustments: { exposure: 0.04, brightness: 0.02, contrast: 0.08, temperature: 0.05, tint: 0.02, saturation: 0.1, vibrance: 0.1, shadows: 0.06, highlights: 0.04, whites: 0.06, blacks: -0.03, clarity: 0.05, grain: 0.05, filmFade: 0.04, vignette: 0.04 },
+    tokens: ['opulent', 'luxury', 'rich', 'premium'],
+  },
+  {
+    id: 'luxury-6',
+    name: 'Royal',
+    category: 'luxury',
+    description: 'Royal luxury with dark, rich tones.',
+    type: 'color',
+    adjustments: { exposure: 0.01, brightness: 0.01, contrast: 0.08, temperature: 0.03, tint: 0.01, saturation: 0.08, vibrance: 0.08, shadows: 0.06, highlights: 0.03, whites: 0.05, blacks: -0.04, clarity: 0.05, grain: 0.05, filmFade: 0.04, vignette: 0.06 },
+    tokens: ['royal', 'luxury', 'dark', 'rich'],
+  },
+  {
+    id: 'luxury-7',
+    name: 'Gilded',
+    category: 'luxury',
+    description: 'Gilded luxury with warm gold tones.',
+    type: 'color',
+    adjustments: { exposure: 0.03, brightness: 0.02, contrast: 0.06, temperature: 0.15, tint: 0.05, saturation: 0.08, vibrance: 0.08, shadows: 0.04, highlights: 0.04, whites: 0.06, blacks: -0.03, clarity: 0.04, grain: 0.04, filmFade: 0.05, vignette: 0.02 },
+    tokens: ['gilded', 'luxury', 'gold', 'warm'],
+  },
+  {
+    id: 'luxury-8',
+    name: 'Pearl',
+    category: 'luxury',
+    description: 'Pearl-toned luxury with soft glow.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.03, contrast: 0.04, temperature: 0.04, tint: 0.02, saturation: 0.06, vibrance: 0.08, shadows: 0.03, highlights: 0.03, whites: 0.05, blacks: -0.03, clarity: 0.04, grain: 0.04, filmFade: 0.05, vignette: 0.02 },
+    tokens: ['pearl', 'luxury', 'soft', 'glow'],
+  },
+  {
+    id: 'luxury-9',
+    name: 'Bespoke',
+    category: 'luxury',
+    description: 'Bespoke luxury with refined tones.',
+    type: 'color',
+    adjustments: { exposure: 0.03, brightness: 0.02, contrast: 0.05, temperature: 0.04, tint: 0.01, saturation: 0.07, vibrance: 0.09, shadows: 0.04, highlights: 0.03, whites: 0.05, blacks: -0.03, clarity: 0.04, grain: 0.05, filmFade: 0.04, vignette: 0.03 },
+    tokens: ['bespoke', 'luxury', 'refined', 'rich'],
+  },
+  {
+    id: 'luxury-10',
+    name: 'Prestige',
+    category: 'luxury',
+    description: 'Prestige luxury with rich, cinematic tones.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.01, contrast: 0.08, temperature: 0.04, tint: 0.02, saturation: 0.08, vibrance: 0.08, shadows: 0.05, highlights: 0.03, whites: 0.06, blacks: -0.04, clarity: 0.05, grain: 0.05, filmFade: 0.04, vignette: 0.04 },
+    tokens: ['prestige', 'luxury', 'cinematic', 'rich'],
+  },
+
+  // ─── Street Photography ─────────────────────────────────────────────
+  {
+    id: 'street-1',
+    name: 'Street',
+    category: 'street',
+    description: 'Classic street photography with rich contrasts.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.02, contrast: 0.12, temperature: 0.02, tint: 0.01, saturation: 0.1, vibrance: 0.12, shadows: 0.08, highlights: 0.05, whites: 0.08, blacks: -0.06, clarity: 0.06, grain: 0.15, filmFade: 0.02, vignette: 0.05 },
+    tokens: ['street', 'photo', 'classic', 'contrast'],
+  },
+  {
+    id: 'street-2',
+    name: 'Urban',
+    category: 'street',
+    description: 'Urban street photography with cool tones.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.01, contrast: 0.08, temperature: -0.05, tint: 0.02, saturation: 0.08, vibrance: 0.1, shadows: 0.06, highlights: 0.04, whites: 0.06, blacks: -0.05, clarity: 0.06, grain: 0.12, filmFade: 0.03, vignette: 0.04 },
+    tokens: ['urban', 'street', 'cool', 'tones'],
+  },
+  {
+    id: 'street-3',
+    name: 'Contact Sheet',
+    category: 'street',
+    description: 'Contact sheet street photo.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.01, contrast: 0.1, temperature: 0.03, tint: 0.01, saturation: 0.1, vibrance: 0.12, shadows: 0.06, highlights: 0.05, whites: 0.07, blacks: -0.05, clarity: 0.05, grain: 0.14, filmFade: 0.02, vignette: 0.03 },
+    tokens: ['contact', 'sheet', 'street', 'photo'],
+  },
+  {
+    id: 'street-4',
+    name: 'Analog',
+    category: 'street',
+    description: 'Analog street photography with grain.',
+    type: 'color',
+    adjustments: { exposure: 0.03, brightness: 0.02, contrast: 0.08, temperature: 0.03, tint: 0.02, saturation: 0.1, vibrance: 0.12, shadows: 0.06, highlights: 0.04, whites: 0.06, blacks: -0.05, clarity: 0.05, grain: 0.25, filmFade: 0.04, vignette: 0.04 },
+    tokens: ['analog', 'street', 'grain', 'film'],
+  },
+  {
+    id: 'street-5',
+    name: 'Timeless',
+    category: 'street',
+    description: 'Timeless street photography with clean tones.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.02, contrast: 0.06, temperature: 0.02, tint: 0.01, saturation: 0.08, vibrance: 0.1, shadows: 0.05, highlights: 0.04, whites: 0.06, blacks: -0.04, clarity: 0.05, grain: 0.1, filmFade: 0.03, vignette: 0.03 },
+    tokens: ['timeless', 'street', 'clean', 'tones'],
+  },
+  {
+    id: 'street-6',
+    name: 'Instant',
+    category: 'street',
+    description: 'Instant camera street photo.',
+    type: 'color',
+    adjustments: { exposure: 0.04, brightness: 0.03, contrast: 0.06, temperature: 0.04, tint: 0.02, saturation: 0.1, vibrance: 0.12, shadows: 0.05, highlights: 0.04, whites: 0.06, blacks: -0.04, clarity: 0.05, grain: 0.18, filmFade: 0.05, vignette: 0.04 },
+    tokens: ['instant', 'street', 'vintage', 'photo'],
+  },
+  {
+    id: 'street-7',
+    name: 'X-Pro',
+    category: 'street',
+    description: 'X-Pro2 street photography with contrast.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.01, contrast: 0.1, temperature: 0.04, tint: 0.02, saturation: 0.12, vibrance: 0.14, shadows: 0.07, highlights: 0.05, whites: 0.07, blacks: -0.06, clarity: 0.06, grain: 0.16, filmFade: 0.02, vignette: 0.04 },
+    tokens: ['x-pro', 'street', 'contrast', 'photo'],
+  },
+  {
+    id: 'street-8',
+    name: 'Film',
+    category: 'street',
+    description: 'Film-style street photography.',
+    type: 'color',
+    adjustments: { exposure: 0.03, brightness: 0.02, contrast: 0.1, temperature: 0.03, tint: 0.02, saturation: 0.12, vibrance: 0.14, shadows: 0.08, highlights: 0.05, whites: 0.07, blacks: -0.06, clarity: 0.06, grain: 0.2, filmFade: 0.04, vignette: 0.04 },
+    tokens: ['film', 'street', 'photo', 'grain'],
+  },
+  {
+    id: 'street-9',
+    name: 'Kodak',
+    category: 'street',
+    description: 'Kodak street photography with rich tones.',
+    type: 'color',
+    adjustments: { exposure: 0.04, brightness: 0.02, contrast: 0.08, temperature: 0.06, tint: 0.02, saturation: 0.1, vibrance: 0.12, shadows: 0.06, highlights: 0.04, whites: 0.06, blacks: -0.04, clarity: 0.05, grain: 0.18, filmFade: 0.03, vignette: 0.04 },
+    tokens: ['kodak', 'street', 'rich', 'tones'],
+  },
+  {
+    id: 'street-10',
+    name: 'Fuji',
+    category: 'street',
+    description: 'Fuji street photography with soft tones.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.02, contrast: 0.06, temperature: 0.03, tint: 0.02, saturation: 0.1, vibrance: 0.12, shadows: 0.06, highlights: 0.04, whites: 0.06, blacks: -0.05, clarity: 0.04, grain: 0.2, filmFade: 0.04, vignette: 0.03 },
+    tokens: ['fuji', 'street', 'soft', 'tones'],
+  },
+
+  // ─── Travel ────────────────────────────────────────────────────────
+  {
+    id: 'travel-1',
+    name: 'Travel',
+    category: 'travel',
+    description: 'Soft, warm travel photography.',
+    type: 'color',
+    adjustments: { exposure: 0.03, brightness: 0.02, contrast: 0.04, temperature: 0.08, tint: 0.02, saturation: 0.08, vibrance: 0.1, shadows: 0.04, highlights: 0.03, whites: 0.05, blacks: -0.03, clarity: 0.04, grain: 0.08, filmFade: 0.04, vignette: 0.02 },
+    tokens: ['travel', 'soft', 'warm', 'photo'],
+  },
+  {
+    id: 'travel-2',
+    name: 'Adventure',
+    category: 'travel',
+    description: 'Adventure travel with vibrant tones.',
+    type: 'color',
+    adjustments: { exposure: 0.04, brightness: 0.03, contrast: 0.06, temperature: 0.05, tint: 0.02, saturation: 0.1, vibrance: 0.12, shadows: 0.05, highlights: 0.04, whites: 0.06, blacks: -0.03, clarity: 0.05, grain: 0.1, filmFade: 0.03, vignette: 0.03 },
+    tokens: ['adventure', 'travel', 'vibrant', 'photo'],
+  },
+  {
+    id: 'travel-3',
+    name: 'Nice',
+    category: 'travel',
+    description: 'Nice travel destination with warm tones.',
+    type: 'color',
+    adjustments: { exposure: 0.04, brightness: 0.03, contrast: 0.04, temperature: 0.1, tint: 0.03, saturation: 0.08, vibrance: 0.1, shadows: 0.04, highlights: 0.04, whites: 0.06, blacks: -0.03, clarity: 0.04, grain: 0.08, filmFade: 0.05, vignette: 0.02 },
+    tokens: ['nice', 'travel', 'warm', 'photo'],
+  },
+  {
+    id: 'travel-4',
+    name: 'Amber',
+    category: 'travel',
+    description: 'Warm amber-toned travel photo.',
+    type: 'color',
+    adjustments: { exposure: 0.03, brightness: 0.02, contrast: 0.05, temperature: 0.12, tint: 0.03, saturation: 0.08, vibrance: 0.1, shadows: 0.04, highlights: 0.03, whites: 0.05, blacks: -0.03, clarity: 0.04, grain: 0.08, filmFade: 0.05, vignette: 0.02 },
+    tokens: ['amber', 'travel', 'warm', 'photo'],
+  },
+  {
+    id: 'travel-5',
+    name: 'Agritourism',
+    category: 'travel',
+    description: 'Agritourism travel with natural tones.',
+    type: 'color',
+    adjustments: { exposure: 0.03, brightness: 0.02, contrast: 0.04, temperature: 0.05, tint: 0.01, saturation: 0.08, vibrance: 0.1, shadows: 0.04, highlights: 0.03, whites: 0.05, blacks: -0.03, clarity: 0.03, grain: 0.08, filmFade: 0.04, vignette: 0.02 },
+    tokens: ['agrifood', 'travel', 'natural', 'photo'],
+  },
+  {
+    id: 'travel-6',
+    name: 'Heritage',
+    category: 'travel',
+    description: 'Heritage travel with warm, nostalgic tones.',
+    type: 'color',
+    adjustments: { exposure: 0.03, brightness: 0.02, contrast: 0.05, temperature: 0.1, tint: 0.03, saturation: 0.08, vibrance: 0.1, shadows: 0.05, highlights: 0.03, whites: 0.05, blacks: -0.03, clarity: 0.04, grain: 0.1, filmFade: 0.08, vignette: 0.03 },
+    tokens: ['heritage', 'travel', 'warm', 'nostalgic'],
+  },
+  {
+    id: 'travel-7',
+    name: 'Wanderer',
+    category: 'travel',
+    description: 'Wanderer travel with clean, bright tones.',
+    type: 'color',
+    adjustments: { exposure: 0.04, brightness: 0.03, contrast: 0.03, temperature: 0.06, tint: 0.02, saturation: 0.08, vibrance: 0.1, shadows: 0.04, highlights: 0.03, whites: 0.05, blacks: -0.03, clarity: 0.04, grain: 0.07, filmFade: 0.04, vignette: 0.02 },
+    tokens: ['wanderer', 'travel', 'bright', 'clean'],
+  },
+  {
+    id: 'travel-8',
+    name: 'Remote',
+    category: 'travel',
+    description: 'Remote travel with dramatic tones.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.01, contrast: 0.08, temperature: 0.04, tint: 0.02, saturation: 0.08, vibrance: 0.1, shadows: 0.05, highlights: 0.03, whites: 0.05, blacks: -0.04, clarity: 0.05, grain: 0.1, filmFade: 0.03, vignette: 0.04 },
+    tokens: ['remote', 'travel', 'dramatic', 'photo'],
+  },
+  {
+    id: 'travel-9',
+    name: 'Mellow',
+    category: 'travel',
+    description: 'Mellow travel with soft, warm tones.',
+    type: 'color',
+    adjustments: { exposure: 0.03, brightness: 0.03, contrast: 0.02, temperature: 0.08, tint: 0.02, saturation: 0.07, vibrance: 0.09, shadows: 0.04, highlights: 0.03, whites: 0.05, blacks: -0.03, clarity: 0.03, grain: 0.07, filmFade: 0.05, vignette: 0.02 },
+    tokens: ['mellow', 'travel', 'soft', 'warm'],
+  },
+  {
+    id: 'travel-10',
+    name: 'Explore',
+    category: 'travel',
+    description: 'Explore travel with vibrant, clean tones.',
+    type: 'color',
+    adjustments: { exposure: 0.04, brightness: 0.03, contrast: 0.05, temperature: 0.06, tint: 0.02, saturation: 0.09, vibrance: 0.11, shadows: 0.04, highlights: 0.03, whites: 0.05, blacks: -0.03, clarity: 0.05, grain: 0.08, filmFade: 0.03, vignette: 0.03 },
+    tokens: ['explore', 'travel', 'vibrant', 'clean'],
+  },
+
+  // ─── Landscape ─────────────────────────────────────────────────────
+  {
+    id: 'landscape-1',
+    name: 'Landscape',
+    category: 'landscape',
+    description: 'Classic landscape with rich colors.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.01, contrast: 0.1, temperature: 0.02, tint: 0.01, saturation: 0.12, vibrance: 0.14, shadows: 0.08, highlights: 0.05, whites: 0.08, blacks: -0.06, clarity: 0.06, grain: 0.04, filmFade: 0.02, vignette: 0.02 },
+    tokens: ['landscape', 'classic', 'rich', 'colors'],
+  },
+  {
+    id: 'landscape-2',
+    name: 'Vibrant',
+    category: 'landscape',
+    description: 'Vibrant landscape with punchy colors.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.01, contrast: 0.1, temperature: 0.02, tint: 0.02, saturation: 0.2, vibrance: 0.22, shadows: 0.08, highlights: 0.05, whites: 0.1, blacks: -0.06, clarity: 0.06, grain: 0.04, filmFade: 0.02, vignette: 0.02 },
+    tokens: ['vibrant', 'landscape', 'punchy', 'colors'],
+  },
+  {
+    id: 'landscape-3',
+    name: 'HDR',
+    category: 'landscape',
+    description: 'HDR landscape with bright highlights.',
+    type: 'color',
+    adjustments: { exposure: 0.03, brightness: 0.05, contrast: 0.05, temperature: 0.02, tint: 0.01, saturation: 0.12, vibrance: 0.14, shadows: 0.06, highlights: 0.08, whites: 0.15, blacks: -0.04, clarity: 0.08, grain: 0.03, filmFade: 0.02, vignette: 0.01 },
+    tokens: ['hdr', 'landscape', 'bright', 'contrast'],
+  },
+  {
+    id: 'landscape-4',
+    name: 'Nature',
+    category: 'landscape',
+    description: 'Natural nature landscape with balanced tones.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.01, contrast: 0.06, temperature: 0.02, tint: 0.01, saturation: 0.08, vibrance: 0.1, shadows: 0.06, highlights: 0.04, whites: 0.06, blacks: -0.04, clarity: 0.05, grain: 0.04, filmFade: 0.02, vignette: 0.02 },
+    tokens: ['nature', 'landscape', 'natural', 'balanced'],
+  },
+  {
+    id: 'landscape-5',
+    name: 'Golden Hour',
+    category: 'landscape',
+    description: 'Golden hour landscape with warm tones.',
+    type: 'color',
+    adjustments: { exposure: 0.08, brightness: 0.06, contrast: 0.03, temperature: 0.2, tint: 0.04, saturation: 0.1, vibrance: 0.12, shadows: 0.05, highlights: 0.06, whites: 0.08, blacks: -0.02, clarity: 0.04, grain: 0.03, filmFade: 0.08, vignette: 0.02 },
+    tokens: ['golden', 'hour', 'landscape', 'warm'],
+  },
+  {
+    id: 'landscape-6',
+    name: 'Cool Landscape',
+    category: 'landscape',
+    description: 'Cool landscape with crisp tones.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.01, contrast: 0.08, temperature: -0.05, tint: 0.03, saturation: 0.1, vibrance: 0.12, shadows: 0.08, highlights: 0.04, whites: 0.08, blacks: -0.05, clarity: 0.06, grain: 0.03, filmFade: 0.02, vignette: 0.02 },
+    tokens: ['cool', 'landscape', 'crisp', 'tones'],
+  },
+  {
+    id: 'landscape-7',
+    name: 'Atmospheric',
+    category: 'landscape',
+    description: 'Atmospheric landscape with soft haze.',
+    type: 'color',
+    adjustments: { exposure: 0.03, brightness: 0.02, contrast: 0.05, temperature: 0.03, tint: 0.02, saturation: 0.08, vibrance: 0.08, shadows: 0.06, highlights: 0.04, whites: 0.06, blacks: -0.04, clarity: 0.03, grain: 0.1, filmFade: 0.06, vignette: 0.03 },
+    tokens: ['atmospheric', 'landscape', 'soft', 'haze'],
+  },
+  {
+    id: 'landscape-8',
+    name: 'Sakura',
+    category: 'landscape',
+    description: 'Sakura (cherry blossom) with pink tones.',
+    type: 'color',
+    adjustments: { exposure: 0.04, brightness: 0.03, contrast: 0.02, temperature: 0.1, tint: 0.05, saturation: 0.15, vibrance: 0.15, shadows: 0.04, highlights: 0.05, whites: 0.08, blacks: -0.02, clarity: 0.04, grain: 0.04, filmFade: 0.06, vignette: 0.02 },
+    tokens: ['sakura', 'cherry', 'blossom', 'pink'],
+  },
+  {
+    id: 'landscape-9',
+    name: 'Alpine',
+    category: 'landscape',
+    description: 'Alpine landscape with cool, crisp tones.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.01, contrast: 0.08, temperature: -0.02, tint: 0.02, saturation: 0.1, vibrance: 0.12, shadows: 0.06, highlights: 0.04, whites: 0.08, blacks: -0.05, clarity: 0.06, grain: 0.03, filmFade: 0.02, vignette: 0.02 },
+    tokens: ['alpine', 'landscape', 'cool', 'crisp'],
+  },
+  {
+    id: 'landscape-10',
+    name: 'Sea',
+    category: 'landscape',
+    description: 'Sea landscape with crisp, clear tones.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.02, contrast: 0.06, temperature: 0.01, tint: 0.01, saturation: 0.1, vibrance: 0.12, shadows: 0.05, highlights: 0.04, whites: 0.08, blacks: -0.04, clarity: 0.05, grain: 0.04, filmFade: 0.02, vignette: 0.02 },
+    tokens: ['sea', 'landscape', 'clear', 'crisp'],
+  },
+
+  // ─── Golden Hour ───────────────────────────────────────────────────
+  {
+    id: 'golden-1',
+    name: 'Golden Hour',
+    category: 'golden-hour',
+    description: 'Warm golden hour light with soft contrast.',
+    type: 'color',
+    adjustments: { exposure: 0.1, brightness: 0.08, contrast: 0.02, temperature: 0.25, tint: 0.05, saturation: 0.08, vibrance: 0.1, shadows: 0.05, highlights: 0.05, whites: 0.06, blacks: -0.02, clarity: 0.02, grain: 0.02, filmFade: 0.1, vignette: 0 },
+    tokens: ['golden', 'warm', 'soft', 'contrast'],
+  },
+  {
+    id: 'golden-2',
+    name: 'Early Morning',
+    category: 'golden-hour',
+    description: 'Early morning soft, warm light.',
+    type: 'color',
+    adjustments: { exposure: 0.06, brightness: 0.05, contrast: 0.02, temperature: 0.15, tint: 0.03, saturation: 0.06, vibrance: 0.08, shadows: 0.04, highlights: 0.03, whites: 0.05, blacks: -0.02, clarity: 0.02, grain: 0.02, filmFade: 0.08, vignette: 0 },
+    tokens: ['morning', 'soft', 'warm', 'light'],
+  },
+  {
+    id: 'golden-3',
+    name: 'Sunset',
+    category: 'golden-hour',
+    description: 'Epic sunset with rich, warm tones.',
+    type: 'color',
+    adjustments: { exposure: 0.12, brightness: 0.1, contrast: 0.03, temperature: 0.25, tint: 0.08, saturation: 0.15, vibrance: 0.15, shadows: 0.1, highlights: 0.15, whites: 0.1, blacks: -0.03, clarity: 0.05, grain: 0.03, filmFade: 0.1, vignette: 0 },
+    tokens: ['sunset', 'warm', 'rich', 'golden'],
+  },
+  {
+    id: 'golden-4',
+    name: 'Twilight',
+    category: 'golden-hour',
+    description: 'Twilight soft, cool, golden tones.',
+    type: 'color',
+    adjustments: { exposure: 0.05, brightness: 0.04, contrast: 0.04, temperature: 0.08, tint: 0.04, saturation: 0.06, vibrance: 0.08, shadows: 0.06, highlights: 0.03, whites: 0.05, blacks: -0.02, clarity: 0.03, grain: 0.02, filmFade: 0.06, vignette: 0 },
+    tokens: ['twilight', 'soft', 'cool', 'golden'],
+  },
+  {
+    id: 'golden-5',
+    name: 'Sunrise',
+    category: 'golden-hour',
+    description: 'Sunrise golden light with warm tones.',
+    type: 'color',
+    adjustments: { exposure: 0.08, brightness: 0.06, contrast: 0.02, temperature: 0.18, tint: 0.04, saturation: 0.08, vibrance: 0.1, shadows: 0.05, highlights: 0.04, whites: 0.06, blacks: -0.02, clarity: 0.02, grain: 0.02, filmFade: 0.08, vignette: 0 },
+    tokens: ['sunrise', 'warm', 'golden', 'light'],
+  },
+  {
+    id: 'golden-6',
+    name: 'Cinematic Golden',
+    category: 'golden-hour',
+    description: 'Cinematic golden hour with rich tones.',
+    type: 'color',
+    adjustments: { exposure: 0.06, brightness: 0.04, contrast: 0.06, temperature: 0.2, tint: 0.05, saturation: 0.12, vibrance: 0.14, shadows: 0.06, highlights: 0.05, whites: 0.08, blacks: -0.03, clarity: 0.04, grain: 0.03, filmFade: 0.08, vignette: 0.05 },
+    tokens: ['cinematic', 'golden', 'warm', 'rich'],
+  },
+  {
+    id: 'golden-7',
+    name: 'Dreamy',
+    category: 'golden-hour',
+    description: 'Dreamy golden hour with soft, warm light.',
+    type: 'color',
+    adjustments: { exposure: 0.08, brightness: 0.07, contrast: -0.02, temperature: 0.2, tint: 0.04, saturation: 0.07, vibrance: 0.09, shadows: 0.04, highlights: 0.04, whites: 0.06, blacks: -0.03, clarity: -0.03, grain: 0.05, filmFade: 0.12, vignette: 0 },
+    tokens: ['dreamy', 'golden', 'soft', 'warm'],
+  },
+  {
+    id: 'golden-8',
+    name: 'Warm Glow',
+    category: 'golden-hour',
+    description: 'Warm golden glow with soft, rich tones.',
+    type: 'color',
+    adjustments: { exposure: 0.07, brightness: 0.05, contrast: 0.03, temperature: 0.2, tint: 0.04, saturation: 0.08, vibrance: 0.1, shadows: 0.04, highlights: 0.04, whites: 0.06, blacks: -0.02, clarity: 0.03, grain: 0.02, filmFade: 0.08, vignette: 0.02 },
+    tokens: ['glow', 'golden', 'warm', 'rich'],
+  },
+
+  // ─── Night Photography ─────────────────────────────────────────────
+  {
+    id: 'night-1',
+    name: 'Night',
+    category: 'night',
+    description: 'Night photography with bright lights.',
+    type: 'color',
+    adjustments: { exposure: 0.2, brightness: 0.1, contrast: 0.03, temperature: -0.05, tint: 0.02, saturation: 0.06, vibrance: 0.1, shadows: 0.12, highlights: 0.08, whites: 0.15, blacks: -0.1, clarity: 0.06, grain: 0.08, filmFade: 0.02, vignette: 0.02 },
+    tokens: ['night', 'dark', 'bright', 'lights'],
+  },
+  {
+    id: 'night-2',
+    name: 'Star',
+    category: 'night',
+    description: 'Star photography with bright stars.',
+    type: 'color',
+    adjustments: { exposure: 0.25, brightness: 0.12, contrast: 0.02, temperature: -0.02, tint: 0.01, saturation: 0.06, vibrance: 0.1, shadows: 0.12, highlights: 0.08, whites: 0.18, blacks: -0.12, clarity: 0.06, grain: 0.06, filmFade: 0.02, vignette: 0.02 },
+    tokens: ['star', 'night', 'sky', 'bright'],
+  },
+  {
+    id: 'night-3',
+    name: 'Neon',
+    category: 'night',
+    description: 'Neon night photography with vibrant colors.',
+    type: 'color',
+    adjustments: { exposure: 0.15, brightness: 0.08, contrast: 0.05, temperature: 0.02, tint: 0.08, saturation: 0.25, vibrance: 0.2, shadows: 0.08, highlights: 0.06, whites: 0.1, blacks: -0.08, clarity: 0.08, grain: 0.06, filmFade: 0.03, vignette: 0.02 },
+    tokens: ['neon', 'night', 'vibrant', 'colors'],
+  },
+  {
+    id: 'night-4',
+    name: 'City',
+    category: 'night',
+    description: 'City night photography with warm lights.',
+    type: 'color',
+    adjustments: { exposure: 0.15, brightness: 0.08, contrast: 0.04, temperature: 0.1, tint: 0.03, saturation: 0.08, vibrance: 0.1, shadows: 0.1, highlights: 0.06, whites: 0.1, blacks: -0.08, clarity: 0.06, grain: 0.06, filmFade: 0.02, vignette: 0.03 },
+    tokens: ['city', 'night', 'warm', 'lights'],
+  },
+  {
+    id: 'night-5',
+    name: 'Forest',
+    category: 'night',
+    description: 'Forest night with deep shadows.',
+    type: 'color',
+    adjustments: { exposure: 0.15, brightness: 0.06, contrast: 0.08, temperature: -0.05, tint: 0.02, saturation: 0.06, vibrance: 0.1, shadows: 0.15, highlights: 0.05, whites: 0.08, blacks: -0.12, clarity: 0.06, grain: 0.1, filmFade: 0.02, vignette: 0.04 },
+    tokens: ['forest', 'night', 'dark', 'shadows'],
+  },
+  {
+    id: 'night-6',
+    name: 'Lake',
+    category: 'night',
+    description: 'Lake night with reflective water.',
+    type: 'color',
+    adjustments: { exposure: 0.15, brightness: 0.06, contrast: 0.06, temperature: -0.02, tint: 0.02, saturation: 0.06, vibrance: 0.08, shadows: 0.1, highlights: 0.06, whites: 0.1, blacks: -0.08, clarity: 0.04, grain: 0.06, filmFade: 0.02, vignette: 0.02 },
+    tokens: ['lake', 'night', 'reflective', 'water'],
+  },
+  {
+    id: 'night-7',
+    name: 'Golden Hour Night',
+    category: 'night',
+    description: 'Golden hour night with warm tones.',
+    type: 'color',
+    adjustments: { exposure: 0.18, brightness: 0.08, contrast: 0.04, temperature: 0.12, tint: 0.03, saturation: 0.06, vibrance: 0.08, shadows: 0.1, highlights: 0.06, whites: 0.08, blacks: -0.08, clarity: 0.05, grain: 0.05, filmFade: 0.03, vignette: 0.02 },
+    tokens: ['golden', 'night', 'warm', 'golden'],
+  },
+  {
+    id: 'night-8',
+    name: 'Quiet Night',
+    category: 'night',
+    description: 'Quiet night with soft, deep tones.',
+    type: 'color',
+    adjustments: { exposure: 0.12, brightness: 0.05, contrast: 0.04, temperature: -0.03, tint: 0.01, saturation: 0.05, vibrance: 0.08, shadows: 0.12, highlights: 0.05, whites: 0.06, blacks: -0.08, clarity: 0.04, grain: 0.06, filmFade: 0.02, vignette: 0.03 },
+    tokens: ['quiet', 'night', 'soft', 'deep'],
+  },
+
+  // ─── Black & White ─────────────────────────────────────────────────
+  {
+    id: 'bw-1',
+    name: 'B&W',
+    category: 'black-white',
+    description: 'Classic black and white.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.01, contrast: 0.08, temperature: 0, tint: 0, saturation: 0, vibrance: 0, shadows: 0.08, highlights: 0.05, whites: 0.08, blacks: -0.06, clarity: 0.06, grain: 0.1, filmFade: 0.02, vignette: 0.02 },
+    tokens: ['bw', 'black', 'white', 'classic'],
+  },
+  {
+    id: 'bw-2',
+    name: 'High Contrast',
+    category: 'black-white',
+    description: 'High-contrast black and white.',
+    type: 'color',
+    adjustments: { exposure: 0, brightness: 0.01, contrast: 0.18, temperature: 0, tint: 0, saturation: 0, vibrance: 0, shadows: 0.15, highlights: 0.08, whites: 0.15, blacks: -0.15, clarity: 0.1, grain: 0.12, filmFade: 0.02, vignette: 0.03 },
+    tokens: ['bw', 'high', 'contrast', 'dramatic'],
+  },
+  {
+    id: 'bw-3',
+    name: 'Soft',
+    category: 'black-white',
+    description: 'Soft, gentle black and white.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.02, contrast: 0.02, temperature: 0, tint: 0, saturation: 0, vibrance: 0, shadows: 0.05, highlights: 0.03, whites: 0.05, blacks: -0.04, clarity: -0.05, grain: 0.08, filmFade: 0.03, vignette: 0.02 },
+    tokens: ['bw', 'soft', 'gentle', 'smooth'],
+  },
+  {
+    id: 'bw-4',
+    name: 'Vintage',
+    category: 'black-white',
+    description: 'Vintage black and white with warm tones.',
+    type: 'color',
+    adjustments: { exposure: 0.03, brightness: 0.02, contrast: 0.04, temperature: 0.02, tint: 0.01, saturation: 0, vibrance: 0, shadows: 0.08, highlights: 0.05, whites: 0.07, blacks: -0.05, clarity: 0.04, grain: 0.2, filmFade: 0.1, vignette: 0.02 },
+    tokens: ['bw', 'vintage', 'warm', 'faded'],
+  },
+  {
+    id: 'bw-5',
+    name: 'Elegant',
+    category: 'black-white',
+    description: 'Elegant, refined black and white.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.01, contrast: 0.06, temperature: 0, tint: 0, saturation: 0, vibrance: 0, shadows: 0.06, highlights: 0.04, whites: 0.06, blacks: -0.05, clarity: 0.05, grain: 0.1, filmFade: 0.03, vignette: 0.02 },
+    tokens: ['bw', 'elegant', 'refined', 'classic'],
+  },
+  {
+    id: 'bw-6',
+    name: 'Moody',
+    category: 'black-white',
+    description: 'Moody, dark black and white.',
+    type: 'color',
+    adjustments: { exposure: -0.03, brightness: -0.02, contrast: 0.1, temperature: 0, tint: 0, saturation: 0, vibrance: 0, shadows: 0.15, highlights: 0.08, whites: 0.1, blacks: -0.12, clarity: 0.08, grain: 0.15, filmFade: 0.02, vignette: 0.05 },
+    tokens: ['bw', 'moody', 'dark', 'dramatic'],
+  },
+  {
+    id: 'bw-7',
+    name: 'Moody',
+    category: 'black-white',
+    description: 'Moody, dramatic black and white.',
+    type: 'color',
+    adjustments: { exposure: -0.05, brightness: -0.03, contrast: 0.12, temperature: 0, tint: 0, saturation: 0, vibrance: 0, shadows: 0.12, highlights: 0.06, whites: 0.1, blacks: -0.1, clarity: 0.08, grain: 0.12, filmFade: 0.02, vignette: 0.06 },
+    tokens: ['bw', 'moody', 'dramatic', 'deep'],
+  },
+  {
+    id: 'bw-8',
+    name: 'Dramatic',
+    category: 'black-white',
+    description: 'Dramatic, high-contrast black and white.',
+    type: 'color',
+    adjustments: { exposure: -0.02, brightness: 0, contrast: 0.15, temperature: 0, tint: 0, saturation: 0, vibrance: 0, shadows: 0.12, highlights: 0.08, whites: 0.1, blacks: -0.12, clarity: 0.1, grain: 0.14, filmFade: 0.02, vignette: 0.04 },
+    tokens: ['bw', 'dramatic', 'high', 'contrast'],
+  },
+  {
+    id: 'bw-9',
+    name: 'Soft & Subtle',
+    category: 'black-white',
+    description: 'Soft, subtle black and white.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.01, contrast: 0.03, temperature: 0, tint: 0, saturation: 0, vibrance: 0, shadows: 0.04, highlights: 0.03, whites: 0.05, blacks: -0.04, clarity: -0.03, grain: 0.08, filmFade: 0.02, vignette: 0.01 },
+    tokens: ['bw', 'soft', 'subtle', 'gentle'],
+  },
+  {
+    id: 'bw-10',
+    name: 'Silhouette',
+    category: 'black-white',
+    description: 'Silhouette black and white.',
+    type: 'color',
+    adjustments: { exposure: 0.1, brightness: 0.08, contrast: 0.1, temperature: 0, tint: 0, saturation: 0, vibrance: 0, shadows: 0.15, highlights: 0.1, whites: 0.15, blacks: -0.15, clarity: 0.08, grain: 0.1, filmFade: 0.02, vignette: 0.03 },
+    tokens: ['bw', 'silhouette', 'dramatic', 'high'],
+  },
+
+  // ─── Soft Pastel ───────────────────────────────────────────────────
+  {
+    id: 'pastel-1',
+    name: 'Pastel',
+    category: 'soft-pastel',
+    description: 'Soft pastel colors with gentle tones.',
+    type: 'color',
+    adjustments: { exposure: 0.04, brightness: 0.05, contrast: -0.02, temperature: 0.02, tint: 0.02, saturation: 0.1, vibrance: 0.12, shadows: 0.04, highlights: 0.04, whites: 0.08, blacks: -0.04, clarity: 0.02, grain: 0.03, filmFade: 0.08, vignette: 0 },
+    tokens: ['pastel', 'soft', 'colors', 'gentle'],
+  },
+  {
+    id: 'pastel-2',
+    name: 'Sweet',
+    category: 'soft-pastel',
+    description: 'Sweet, soft pastel look.',
+    type: 'color',
+    adjustments: { exposure: 0.04, brightness: 0.05, contrast: -0.02, temperature: 0.02, tint: 0.03, saturation: 0.12, vibrance: 0.14, shadows: 0.04, highlights: 0.04, whites: 0.08, blacks: -0.04, clarity: 0.02, grain: 0.03, filmFade: 0.08, vignette: 0 },
+    tokens: ['sweet', 'soft', 'pastel', 'cute'],
+  },
+  {
+    id: 'pastel-3',
+    name: 'Soft',
+    category: 'soft-pastel',
+    description: 'Soft, dreamy pastel tones.',
+    type: 'color',
+    adjustments: { exposure: 0.03, brightness: 0.04, contrast: -0.02, temperature: 0.02, tint: 0.02, saturation: 0.1, vibrance: 0.12, shadows: 0.04, highlights: 0.04, whites: 0.08, blacks: -0.04, clarity: 0.02, grain: 0.03, filmFade: 0.08, vignette: 0 },
+    tokens: ['soft', 'pastel', 'dreamy', 'gentle'],
+  },
+  {
+    id: 'pastel-4',
+    name: 'Floral',
+    category: 'soft-pastel',
+    description: 'Floral soft pastel tones.',
+    type: 'color',
+    adjustments: { exposure: 0.03, brightness: 0.04, contrast: -0.02, temperature: 0.02, tint: 0.03, saturation: 0.12, vibrance: 0.14, shadows: 0.04, highlights: 0.04, whites: 0.08, blacks: -0.04, clarity: 0.02, grain: 0.03, filmFade: 0.08, vignette: 0 },
+    tokens: ['floral', 'soft', 'pastel', 'flowers'],
+  },
+  {
+    id: 'pastel-5',
+    name: 'Clouds',
+    category: 'soft-pastel',
+    description: 'Soft clouds with pastel tones.',
+    type: 'color',
+    adjustments: { exposure: 0.04, brightness: 0.05, contrast: -0.02, temperature: 0.02, tint: 0.02, saturation: 0.1, vibrance: 0.12, shadows: 0.04, highlights: 0.04, whites: 0.08, blacks: -0.04, clarity: 0.02, grain: 0.03, filmFade: 0.08, vignette: 0 },
+    tokens: ['clouds', 'soft', 'pastel', 'sky'],
+  },
+  {
+    id: 'pastel-6',
+    name: 'Baby',
+    category: 'soft-pastel',
+    description: 'Baby soft pastel tones.',
+    type: 'color',
+    adjustments: { exposure: 0.04, brightness: 0.05, contrast: -0.02, temperature: 0.02, tint: 0.02, saturation: 0.1, vibrance: 0.12, shadows: 0.04, highlights: 0.04, whites: 0.08, blacks: -0.04, clarity: 0.02, grain: 0.03, filmFade: 0.08, vignette: 0 },
+    tokens: ['baby', 'soft', 'pastel', 'gentle'],
+  },
+  {
+    id: 'pastel-7',
+    name: 'Pink',
+    category: 'soft-pastel',
+    description: 'Pink pastel tones.',
+    type: 'color',
+    adjustments: { exposure: 0.03, brightness: 0.04, contrast: -0.02, temperature: 0.03, tint: 0.05, saturation: 0.15, vibrance: 0.16, shadows: 0.04, highlights: 0.04, whites: 0.08, blacks: -0.04, clarity: 0.02, grain: 0.03, filmFade: 0.08, vignette: 0 },
+    tokens: ['pink', 'pastel', 'soft', 'sweet'],
+  },
+  {
+    id: 'pastel-8',
+    name: 'Lavender',
+    category: 'soft-pastel',
+    description: 'Lavender pastel tones.',
+    type: 'color',
+    adjustments: { exposure: 0.03, brightness: 0.04, contrast: -0.02, temperature: 0.02, tint: 0.08, saturation: 0.16, vibrance: 0.16, shadows: 0.04, highlights: 0.04, whites: 0.08, blacks: -0.04, clarity: 0.02, grain: 0.03, filmFade: 0.08, vignette: 0 },
+    tokens: ['lavender', 'pastel', 'soft', 'gentle'],
+  },
+
+  // ─── Cool Tones ────────────────────────────────────────────────────
+  {
+    id: 'cool-1',
+    name: 'Cool',
+    category: 'cool-tones',
+    description: 'Cool tones with crisp, clean look.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.01, contrast: 0.06, temperature: -0.08, tint: 0.03, saturation: 0.06, vibrance: 0.08, shadows: 0.04, highlights: 0.03, whites: 0.06, blacks: -0.04, clarity: 0.04, grain: 0.03, filmFade: 0.02, vignette: 0.01 },
+    tokens: ['cool', 'clean', 'crisp', 'tones'],
+  },
+  {
+    id: 'cool-2',
+    name: 'Cool & Crisp',
+    category: 'cool-tones',
+    description: 'Cool and crisp with bright highlights.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.02, contrast: 0.08, temperature: -0.08, tint: 0.03, saturation: 0.08, vibrance: 0.1, shadows: 0.05, highlights: 0.04, whites: 0.08, blacks: -0.04, clarity: 0.05, grain: 0.03, filmFade: 0.02, vignette: 0.01 },
+    tokens: ['cool', 'crisp', 'bright', 'clean'],
+  },
+  {
+    id: 'cool-3',
+    name: 'Ice',
+    category: 'cool-tones',
+    description: 'Ice blue-toned cool look.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.02, contrast: 0.06, temperature: -0.08, tint: 0.08, saturation: 0.08, vibrance: 0.1, shadows: 0.05, highlights: 0.04, whites: 0.08, blacks: -0.04, clarity: 0.05, grain: 0.03, filmFade: 0.02, vignette: 0.01 },
+    tokens: ['ice', 'cool', 'blue', 'crisp'],
+  },
+  {
+    id: 'cool-4',
+    name: 'Ocean',
+    category: 'cool-tones',
+    description: 'Ocean blue-toned cool look.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.02, contrast: 0.06, temperature: -0.06, tint: 0.05, saturation: 0.08, vibrance: 0.1, shadows: 0.05, highlights: 0.04, whites: 0.08, blacks: -0.04, clarity: 0.05, grain: 0.03, filmFade: 0.02, vignette: 0.01 },
+    tokens: ['ocean', 'cool', 'blue', 'sea'],
+  },
+  {
+    id: 'cool-5',
+    name: 'Blue Hour',
+    category: 'cool-tones',
+    description: 'Blue hour cool tones.',
+    type: 'color',
+    adjustments: { exposure: 0.01, brightness: 0.01, contrast: 0.05, temperature: -0.1, tint: 0.04, saturation: 0.08, vibrance: 0.1, shadows: 0.05, highlights: 0.03, whites: 0.06, blacks: -0.04, clarity: 0.04, grain: 0.02, filmFade: 0.02, vignette: 0.01 },
+    tokens: ['blue', 'hour', 'cool', 'twilight'],
+  },
+  {
+    id: 'cool-6',
+    name: 'Teal',
+    category: 'cool-tones',
+    description: 'Teal-toned cool look.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.02, contrast: 0.06, temperature: -0.04, tint: 0.08, saturation: 0.1, vibrance: 0.12, shadows: 0.05, highlights: 0.04, whites: 0.08, blacks: -0.04, clarity: 0.05, grain: 0.03, filmFade: 0.02, vignette: 0.01 },
+    tokens: ['teal', 'cool', 'tonal', 'crisp'],
+  },
+  {
+    id: 'cool-7',
+    name: 'Alpine',
+    category: 'cool-tones',
+    description: 'Alpine cool tones.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.01, contrast: 0.08, temperature: -0.05, tint: 0.03, saturation: 0.08, vibrance: 0.1, shadows: 0.05, highlights: 0.04, whites: 0.07, blacks: -0.04, clarity: 0.05, grain: 0.03, filmFade: 0.02, vignette: 0.01 },
+    tokens: ['alpine', 'cool', 'crisp', 'clean'],
+  },
+  {
+    id: 'cool-8',
+    name: 'Tropical',
+    category: 'cool-tones',
+    description: 'Tropical cool tones.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.02, contrast: 0.06, temperature: -0.02, tint: 0.03, saturation: 0.12, vibrance: 0.14, shadows: 0.04, highlights: 0.04, whites: 0.08, blacks: -0.04, clarity: 0.05, grain: 0.03, filmFade: 0.02, vignette: 0.01 },
+    tokens: ['tropical', 'cool', 'vibrant', 'clean'],
+  },
+
+  // ─── Product Photography ───────────────────────────────────────────
+  {
+    id: 'product-1',
+    name: 'Product',
+    category: 'product',
+    description: 'Clean product photography with neutral tones.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.02, contrast: 0.03, temperature: 0.01, tint: 0.01, saturation: 0.05, vibrance: 0.06, shadows: 0.02, highlights: 0.02, whites: 0.04, blacks: -0.02, clarity: 0.03, grain: 0.02, filmFade: 0.02, vignette: 0.01 },
+    tokens: ['product', 'clean', 'neutral', 'professional'],
+  },
+  {
+    id: 'product-2',
+    name: 'White Background',
+    category: 'product',
+    description: 'White background product shot.',
+    type: 'color',
+    adjustments: { exposure: 0.03, brightness: 0.03, contrast: 0.02, temperature: 0.01, tint: 0.01, saturation: 0.04, vibrance: 0.05, shadows: 0.02, highlights: 0.03, whites: 0.06, blacks: -0.03, clarity: 0.02, grain: 0.02, filmFade: 0.01, vignette: 0.01 },
+    tokens: ['product', 'white', 'background', 'clean'],
+  },
+  {
+    id: 'product-3',
+    name: 'Studio',
+    category: 'product',
+    description: 'Studio product shot with soft lighting.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.02, contrast: 0.03, temperature: 0.01, tint: 0.01, saturation: 0.05, vibrance: 0.06, shadows: 0.02, highlights: 0.02, whites: 0.04, blacks: -0.02, clarity: 0.04, grain: 0.02, filmFade: 0.02, vignette: 0.01 },
+    tokens: ['product', 'studio', 'soft', 'lighting'],
+  },
+  {
+    id: 'product-4',
+    name: 'Rim Light',
+    category: 'product',
+    description: 'Rim-light product shot with bright edges.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.02, contrast: 0.03, temperature: 0.01, tint: 0.01, saturation: 0.05, vibrance: 0.06, shadows: 0.02, highlights: 0.02, whites: 0.04, blacks: -0.02, clarity: 0.05, grain: 0.02, filmFade: 0.02, vignette: -0.05 },
+    tokens: ['product', 'rim', 'bright', 'edge'],
+  },
+  {
+    id: 'product-5',
+    name: 'Soft Box',
+    category: 'product',
+    description: 'Soft box product lighting.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.02, contrast: 0.02, temperature: 0.01, tint: 0.01, saturation: 0.04, vibrance: 0.05, shadows: 0.02, highlights: 0.02, whites: 0.04, blacks: -0.02, clarity: 0.03, grain: 0.02, filmFade: 0.02, vignette: 0.01 },
+    tokens: ['product', 'soft', 'box', 'lighting'],
+  },
+  {
+    id: 'product-6',
+    name: 'Hard Light',
+    category: 'product',
+    description: 'Hard light product shot with sharp shadows.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.02, contrast: 0.06, temperature: 0.01, tint: 0.01, saturation: 0.06, vibrance: 0.08, shadows: 0.03, highlights: 0.03, whites: 0.05, blacks: -0.03, clarity: 0.06, grain: 0.02, filmFade: 0.02, vignette: 0.01 },
+    tokens: ['product', 'hard', 'light', 'sharp'],
+  },
+  {
+    id: 'product-7',
+    name: 'Glossy',
+    category: 'product',
+    description: 'Glossy product shot with reflective highlights.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.02, contrast: 0.03, temperature: 0.01, tint: 0.01, saturation: 0.05, vibrance: 0.06, shadows: 0.02, highlights: 0.02, whites: 0.05, blacks: -0.02, clarity: 0.08, grain: 0.02, filmFade: 0.02, vignette: -0.03 },
+    tokens: ['product', 'glossy', 'reflective', 'bright'],
+  },
+  {
+    id: 'product-8',
+    name: 'Texture',
+    category: 'product',
+    description: 'Textured product shot.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.02, contrast: 0.03, temperature: 0.01, tint: 0.01, saturation: 0.05, vibrance: 0.06, shadows: 0.02, highlights: 0.02, whites: 0.04, blacks: -0.02, clarity: 0.04, grain: 0.06, filmFade: 0.02, vignette: 0.01 },
+    tokens: ['product', 'texture', 'detailed', 'product'],
+  },
+  {
+    id: 'product-9',
+    name: 'Minimal',
+    category: 'product',
+    description: 'Minimal product photography.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.02, contrast: 0.02, temperature: 0.01, tint: 0.01, saturation: 0.03, vibrance: 0.04, shadows: 0.02, highlights: 0.02, whites: 0.04, blacks: -0.02, clarity: 0.02, grain: 0.02, filmFade: 0.01, vignette: 0 },
+    tokens: ['product', 'minimal', 'clean', 'neutral'],
+  },
+  {
+    id: 'product-10',
+    name: 'Premium',
+    category: 'product',
+    description: 'Premium product photography.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.02, contrast: 0.03, temperature: 0.01, tint: 0.01, saturation: 0.05, vibrance: 0.06, shadows: 0.02, highlights: 0.02, whites: 0.04, blacks: -0.02, clarity: 0.04, grain: 0.02, filmFade: 0.02, vignette: 0.01 },
+    tokens: ['product', 'premium', 'professional', 'clean'],
+  },
+
+  // ─── Social Media ──────────────────────────────────────────────────
+  {
+    id: 'social-1',
+    name: 'Instagram',
+    category: 'social-media',
+    description: 'Instagram-friendly square format.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.02, contrast: 0.05, temperature: 0.02, tint: 0.01, saturation: 0.08, vibrance: 0.1, shadows: 0.04, highlights: 0.03, whites: 0.06, blacks: -0.04, clarity: 0.04, grain: 0.05, filmFade: 0.03, vignette: 0.02 },
+    tokens: ['instagram', 'social', 'square', 'photo'],
+  },
+  {
+    id: 'social-2',
+    name: 'TikTok',
+    category: 'social-media',
+    description: 'TikTok-friendly portrait format.',
+    type: 'color',
+    adjustments: { exposure: 0.03, brightness: 0.03, contrast: 0.06, temperature: 0.03, tint: 0.02, saturation: 0.1, vibrance: 0.12, shadows: 0.04, highlights: 0.03, whites: 0.06, blacks: -0.04, clarity: 0.05, grain: 0.06, filmFade: 0.03, vignette: 0.03 },
+    tokens: ['tiktok', 'social', 'portrait', 'photo'],
+  },
+  {
+    id: 'social-3',
+    name: 'Snapchat',
+    category: 'social-media',
+    description: 'Snapchat-friendly with playful tones.',
+    type: 'color',
+    adjustments: { exposure: 0.04, brightness: 0.05, contrast: 0.04, temperature: 0.06, tint: 0.03, saturation: 0.12, vibrance: 0.14, shadows: 0.04, highlights: 0.04, whites: 0.08, blacks: -0.04, clarity: 0.04, grain: 0.08, filmFade: 0.06, vignette: 0.03 },
+    tokens: ['snapchat', 'social', 'playful', 'photo'],
+  },
+  {
+    id: 'social-4',
+    name: 'Facebook',
+    category: 'social-media',
+    description: 'Facebook post format.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.02, contrast: 0.05, temperature: 0.02, tint: 0.01, saturation: 0.08, vibrance: 0.1, shadows: 0.04, highlights: 0.03, whites: 0.06, blacks: -0.04, clarity: 0.04, grain: 0.05, filmFade: 0.03, vignette: 0.02 },
+    tokens: ['facebook', 'social', 'post', 'photo'],
+  },
+  {
+    id: 'social-5',
+    name: 'LinkedIn',
+    category: 'social-media',
+    description: 'LinkedIn post format.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.02, contrast: 0.05, temperature: 0.02, tint: 0.01, saturation: 0.08, vibrance: 0.1, shadows: 0.04, highlights: 0.03, whites: 0.06, blacks: -0.04, clarity: 0.04, grain: 0.04, filmFade: 0.03, vignette: 0.02 },
+    tokens: ['linkedin', 'social', 'post', 'photo'],
+  },
+  {
+    id: 'social-6',
+    name: 'Telegram',
+    category: 'social-media',
+    description: 'Telegram story format.',
+    type: 'color',
+    adjustments: { exposure: 0.03, brightness: 0.03, contrast: 0.05, temperature: 0.02, tint: 0.01, saturation: 0.09, vibrance: 0.11, shadows: 0.04, highlights: 0.03, whites: 0.06, blacks: -0.04, clarity: 0.04, grain: 0.05, filmFade: 0.03, vignette: 0.02 },
+    tokens: ['telegram', 'social', 'story', 'photo'],
+  },
+  {
+    id: 'social-7',
+    name: 'Pinterest',
+    category: 'social-media',
+    description: 'Pinterest-friendly format.',
+    type: 'color',
+    adjustments: { exposure: 0.03, brightness: 0.03, contrast: 0.06, temperature: 0.02, tint: 0.02, saturation: 0.1, vibrance: 0.12, shadows: 0.04, highlights: 0.03, whites: 0.06, blacks: -0.04, clarity: 0.05, grain: 0.05, filmFade: 0.03, vignette: 0.02 },
+    tokens: ['pinterest', 'social', 'photo', 'board'],
+  },
+  {
+    id: 'social-8',
+    name: 'Twitter',
+    category: 'social-media',
+    description: 'Twitter/X post format.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.02, contrast: 0.05, temperature: 0.02, tint: 0.01, saturation: 0.08, vibrance: 0.1, shadows: 0.04, highlights: 0.03, whites: 0.06, blacks: -0.04, clarity: 0.04, grain: 0.04, filmFade: 0.03, vignette: 0.02 },
+    tokens: ['twitter', 'social', 'post', 'photo'],
+  },
+
+  // ─── Additional Presets (custom/filler for 250+) ────────────────────
+  {
+    id: 'preset-1',
+    name: 'Warm Sunset',
+    category: 'social-media',
+    description: 'Warm sunset tones.',
+    type: 'color',
+    adjustments: { exposure: 0.12, brightness: 0.1, contrast: 0.03, temperature: 0.25, tint: 0.08, saturation: 0.15, vibrance: 0.15, shadows: 0.1, highlights: 0.15, whites: 0.1, blacks: -0.03, clarity: 0.05, grain: 0.03, filmFade: 0.1, vignette: 0 },
+    tokens: ['sunset', 'warm', 'rich', 'colors'],
+  },
+  {
+    id: 'preset-2',
+    name: 'Cool Morning',
+    category: 'social-media',
+    description: 'Cool morning tones.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.02, contrast: 0.06, temperature: -0.08, tint: 0.03, saturation: 0.06, vibrance: 0.08, shadows: 0.04, highlights: 0.03, whites: 0.06, blacks: -0.04, clarity: 0.04, grain: 0.03, filmFade: 0.02, vignette: 0.01 },
+    tokens: ['morning', 'cool', 'fresh', 'tones'],
+  },
+  {
+    id: 'preset-3',
+    name: 'Rainy Day',
+    category: 'social-media',
+    description: 'Rainy day moody tones.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.01, contrast: 0.1, temperature: -0.05, tint: 0.02, saturation: 0.06, vibrance: 0.08, shadows: 0.12, highlights: 0.05, whites: 0.06, blacks: -0.1, clarity: 0.06, grain: 0.1, filmFade: 0.05, vignette: 0.05 },
+    tokens: ['rainy', 'moody', 'dark', 'cloudy'],
+  },
+  {
+    id: 'preset-4',
+    name: 'Snow',
+    category: 'social-media',
+    description: 'Snowy bright white tones.',
+    type: 'color',
+    adjustments: { exposure: 0.08, brightness: 0.06, contrast: 0.02, temperature: 0.02, tint: 0.01, saturation: 0.04, vibrance: 0.06, shadows: 0.06, highlights: 0.08, whites: 0.15, blacks: -0.06, clarity: 0.04, grain: 0.03, filmFade: 0.02, vignette: 0.01 },
+    tokens: ['snow', 'bright', 'white', 'clear'],
+  },
+  {
+    id: 'preset-5',
+    name: 'Autumn',
+    category: 'social-media',
+    description: 'Autumn warm tones.',
+    type: 'color',
+    adjustments: { exposure: 0.04, brightness: 0.03, contrast: 0.04, temperature: 0.2, tint: 0.05, saturation: 0.15, vibrance: 0.15, shadows: 0.04, highlights: 0.04, whites: 0.06, blacks: -0.03, clarity: 0.04, grain: 0.05, filmFade: 0.06, vignette: 0.01 },
+    tokens: ['autumn', 'warm', 'fall', 'colors'],
+  },
+  {
+    id: 'preset-6',
+    name: 'Ocean Blue',
+    category: 'social-media',
+    description: 'Ocean blue tones.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.02, contrast: 0.06, temperature: -0.05, tint: 0.05, saturation: 0.08, vibrance: 0.1, shadows: 0.04, highlights: 0.04, whites: 0.08, blacks: -0.04, clarity: 0.05, grain: 0.03, filmFade: 0.02, vignette: 0.01 },
+    tokens: ['ocean', 'blue', 'sea', 'clear'],
+  },
+  {
+    id: 'preset-7',
+    name: 'Golden Glow',
+    category: 'social-media',
+    description: 'Golden glow tones.',
+    type: 'color',
+    adjustments: { exposure: 0.08, brightness: 0.06, contrast: 0.03, temperature: 0.2, tint: 0.05, saturation: 0.08, vibrance: 0.1, shadows: 0.04, highlights: 0.05, whites: 0.07, blacks: -0.02, clarity: 0.03, grain: 0.02, filmFade: 0.08, vignette: 0.02 },
+    tokens: ['golden', 'glow', 'warm', 'bright'],
+  },
+  {
+    id: 'preset-8',
+    name: 'Night Sky',
+    category: 'social-media',
+    description: 'Night sky with bright stars.',
+    type: 'color',
+    adjustments: { exposure: 0.25, brightness: 0.12, contrast: 0.02, temperature: -0.02, tint: 0.01, saturation: 0.06, vibrance: 0.1, shadows: 0.12, highlights: 0.08, whites: 0.18, blacks: -0.12, clarity: 0.06, grain: 0.06, filmFade: 0.02, vignette: 0.02 },
+    tokens: ['night', 'sky', 'stars', 'bright'],
+  },
+  {
+    id: 'preset-9',
+    name: 'Urban Concrete',
+    category: 'social-media',
+    description: 'Urban concrete tones.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.01, contrast: 0.1, temperature: 0.02, tint: 0.01, saturation: 0.08, vibrance: 0.1, shadows: 0.1, highlights: 0.05, whites: 0.08, blacks: -0.1, clarity: 0.06, grain: 0.15, filmFade: 0.02, vignette: 0.05 },
+    tokens: ['urban', 'concrete', 'street', 'photo'],
+  },
+  {
+    id: 'preset-10',
+    name: 'Vintage Film',
+    category: 'social-media',
+    description: 'Vintage film look.',
+    type: 'color',
+    adjustments: { exposure: 0.03, brightness: 0.02, contrast: 0.03, temperature: 0.06, tint: 0.03, saturation: 0.08, vibrance: 0.1, shadows: 0.04, highlights: 0.03, whites: 0.06, blacks: -0.03, clarity: 0.03, grain: 0.25, filmFade: 0.1, vignette: 0.02 },
+    tokens: ['vintage', 'film', 'nostalgic', 'grain'],
+  },
+  {
+    id: 'preset-11',
+    name: 'Soft Warm',
+    category: 'social-media',
+    description: 'Soft warm tones.',
+    type: 'color',
+    adjustments: { exposure: 0.04, brightness: 0.03, contrast: 0.02, temperature: 0.12, tint: 0.03, saturation: 0.06, vibrance: 0.08, shadows: 0.03, highlights: 0.02, whites: 0.05, blacks: -0.03, clarity: 0.03, grain: 0.03, filmFade: 0.06, vignette: 0.01 },
+    tokens: ['soft', 'warm', 'gentle', 'tones'],
+  },
+  {
+    id: 'preset-12',
+    name: 'Crisp Cool',
+    category: 'social-media',
+    description: 'Crisp cool tones.',
+    type: 'color',
+    adjustments: { exposure: 0.02, brightness: 0.02, contrast: 0.08, temperature: -0.08, tint: 0.03, saturation: 0.08, vibrance: 0.1, shadows: 0.05, highlights: 0.04, whites: 0.08, blacks: -0.04, clarity: 0.05, grain: 0.03, filmFade: 0.02, vignette: 0.01 },
+    tokens: ['cool', 'crisp', 'clean', 'tones'],
+  },
+  {
+    id: 'preset-13',
+    name: 'Rich Colors',
+    category: 'social-media',
+    description: 'Rich, vibrant colors.',
+    type: 'color',
+    adjustments: { exposure: 0.03, brightness: 0.02, contrast: 0.08, temperature: 0.02, tint: 0.02, saturation: 0.2, vibrance: 0.22, shadows: 0.05, highlights: 0.04, whites: 0.08, blacks: -0.04, clarity: 0.06, grain: 0.04, filmFade: 0.03, vignette: 0.02 },
+    tokens: ['rich', 'vibrant', 'colors', 'bold'],
+  },
+  {
+    id: 'preset-14',
+    name: 'Soft Pastel',
+    category: 'social-media',
+    description: 'Soft pastel tones.',
+    type: 'color',
+    adjustments: { exposure: 0.04, brightness: 0.05, contrast: -0.02, temperature: 0.02, tint: 0.02, saturation: 0.1, vibrance: 0.12, shadows: 0.04, highlights: 0.04, whites: 0.08, blacks: -0.04, clarity: 0.02, grain: 0.03, filmFade: 0.08, vignette: 0 },
+    tokens: ['pastel', 'soft', 'gentle', 'colors'],
+  },
+  {
+    id: 'preset-15',
+    name: 'Moody Dark',
+    category: 'social-media',
+    description: 'Moody dark tones.',
+    type: 'color',
+    adjustments: { exposure: -0.05, brightness: -0.03, contrast: 0.1, temperature: 0.02, tint: 0.01, saturation: 0.1, vibrance: 0.1, shadows: 0.1, highlights: 0.05, whites: 0.06, blacks: -0.12, clarity: 0.08, grain: 0.15, filmFade: 0.04, vignette: 0.15 },
+    tokens: ['moody', 'dark', 'dramatic', 'shadows'],
+  },
+];
+
+export const FILTERS_BY_CATEGORY: Record<FilterCategory, FilterRecipe[]> = Object.entries(FILTER_LIBRARY).reduce(
+  (acc, [key, filter]) => {
+    acc[filter.category].push(filter);
+    return acc;
+  },
+  {} as Record<FilterCategory, FilterRecipe[]>
+);
+
+export const CATEGORIES: { id: FilterCategory; label: string; icon: string; color: string }[] = [
+  { id: 'natural-portraits', label: 'Natural Portraits', icon: '👥', color: '#a78bfa' },
+  { id: 'clean-skin-tones', label: 'Clean Skin Tones', icon: '🧴', color: '#f472b6' },
+  { id: 'warm-lifestyle', label: 'Warm Lifestyle', icon: '🌞', color: '#fbbf24' },
+  { id: 'film', label: 'Film Photography', icon: '📷', color: '#b45309' },
+  { id: 'vintage', label: 'Vintage & Retro', icon: '🎞️', color: '#d97706' },
+  { id: 'cinematic', label: 'Cinematic', icon: '🎬', color: '#7c3aed' },
+  { id: 'moody', label: 'Moody & Dramatic', icon: '🌑', color: '#6b7280' },
+  { id: 'fashion', label: 'Fashion & Editorial', icon: '👗', color: '#a5b4fc' },
+  { id: 'luxury', label: 'Luxury', icon: '👑', color: '#fde68a' },
+  { id: 'street', label: 'Street Photography', icon: '🏙️', color: '#475569' },
+  { id: 'travel', label: 'Travel', icon: '✈️', color: '#22d3ee' },
+  { id: 'landscape', label: 'Landscape', icon: '🏞️', color: '#34d399' },
+  { id: 'golden-hour', label: 'Golden Hour', icon: '🌅', color: '#fbbf24' },
+  { id: 'night', label: 'Night Photography', icon: '🌙', color: '#60a5fa' },
+  { id: 'black-white', label: 'Black & White', icon: '⬜', color: '#334155' },
+  { id: 'soft-pastel', label: 'Soft Pastel', icon: '🎨', color: '#f472b6' },
+  { id: 'cool-tones', label: 'Cool Tones', icon: '❄️', color: '#38bdf8' },
+  { id: 'product', label: 'Product Photography', icon: '📦', color: '#a78bfa' },
+  { id: 'social-media', label: 'Social Media', icon: '📱', color: '#38bdf8' },
+  { id: 'custom', label: 'Custom User Presets', icon: '💾', color: '#818cf8' },
+];
