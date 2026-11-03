@@ -8,6 +8,8 @@ const MAX_MESSAGE_CHARS = 8000;
 const MAX_TOTAL_CHARS = 24000;
 const RATE_WINDOW_MS = 60000;
 const DEFAULT_RATE_LIMIT = 20;
+const MAX_RATE_BUCKETS = 10000;
+const RATE_BUCKET_CLEANUP_INTERVAL = 256;
 const UPSTREAM_TIMEOUT_MS = 30000;
 
 function sendJson(res, status, body, headers = {}) {
@@ -98,6 +100,11 @@ export function createAiGatewayServer({
   now = Date.now,
 } = {}) {
   const rateBuckets = new Map();
+  let requestsSinceCleanup = 0;
+  const maxRateBuckets =
+    Number.isSafeInteger(config.maxRateBuckets) && config.maxRateBuckets > 0
+      ? config.maxRateBuckets
+      : MAX_RATE_BUCKETS;
   return createServer(async (req, res) => {
     const requestId = randomUUID();
     res.setHeader('x-request-id', requestId);
@@ -140,13 +147,39 @@ export function createAiGatewayServer({
     }
 
     const timestamp = now();
-    const bucket = rateBuckets.get(userId) || { start: timestamp, count: 0 };
+    requestsSinceCleanup += 1;
+    const existingBucket = rateBuckets.get(userId);
+    if (
+      existingBucket === undefined &&
+      (rateBuckets.size >= maxRateBuckets ||
+        requestsSinceCleanup % RATE_BUCKET_CLEANUP_INTERVAL === 0)
+    ) {
+      for (const [id, candidate] of rateBuckets) {
+        if (timestamp - candidate.start >= RATE_WINDOW_MS) rateBuckets.delete(id);
+      }
+    }
+
+    let bucket = rateBuckets.get(userId);
+    if (!bucket) {
+      if (rateBuckets.size >= maxRateBuckets) {
+        return sendJson(
+          res,
+          503,
+          {
+            error: 'AI request capacity is temporarily unavailable. Try again shortly.',
+            requestId,
+          },
+          { 'retry-after': '60' },
+        );
+      }
+      bucket = { start: timestamp, count: 0 };
+      rateBuckets.set(userId, bucket);
+    }
     if (timestamp - bucket.start >= RATE_WINDOW_MS) {
       bucket.start = timestamp;
       bucket.count = 0;
     }
     bucket.count += 1;
-    rateBuckets.set(userId, bucket);
     if (bucket.count > (config.maxRequestsPerMinute || DEFAULT_RATE_LIMIT)) {
       return sendJson(
         res,

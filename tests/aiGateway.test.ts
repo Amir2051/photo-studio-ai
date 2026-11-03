@@ -142,6 +142,33 @@ describe('server-side AI gateway', () => {
     });
   });
 
+  it('bounds rate-limit memory and prunes expired user buckets', async () => {
+    let timestamp = 1000;
+    await withServer(
+      {
+        config: { ...config, maxRateBuckets: 2 },
+        verifyToken: async (token: string) => token,
+        now: () => timestamp,
+      },
+      async (base) => {
+        const request = (token: string) =>
+          fetch(base + '/api/ai/chat', {
+            method: 'POST',
+            headers: {
+              authorization: `Bearer ${token}`,
+              'content-type': 'application/json',
+            },
+            body: JSON.stringify({ messages: [{ role: 'user', content: 'hello' }] }),
+          });
+        expect((await request('user-a')).status).toBe(200);
+        expect((await request('user-b')).status).toBe(200);
+        expect((await request('user-c')).status).toBe(503);
+        timestamp += 60001;
+        expect((await request('user-c')).status).toBe(200);
+      },
+    );
+  });
+
   it('blocks cross-origin requests', async () => {
     await withServer({}, async (base) => {
       const response = await fetch(base + '/api/ai/chat', {

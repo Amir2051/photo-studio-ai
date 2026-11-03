@@ -115,3 +115,13 @@ export class OpenRouterProvider implements AiProvider {
     return data.scenes as ScenePrompt[];
   }
 }
+
+/**
+ * Creates the browser AI adapter using the current Firebase user's ID token.
+ * The token is fetched on demand so refreshed Firebase sessions are respected.
+ */
+export function createFirebaseAiProvider(
+  getIdToken: () => Promise<string | null>,
+): OpenRouterProvider {
+  return new OpenRouterProvider(undefined, 'server-configured-model', getIdToken);
+}

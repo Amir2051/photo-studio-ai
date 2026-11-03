@@ -11,16 +11,18 @@ import {
   AiMessage,
   ScenePrompt,
   BatchEdit,
+  StyleRecipe,
 } from './types';
 
 const DB_NAME = 'secureforge-lab-db';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_PHOTOS = 'photos';
 const STORE_FILTER_LIBRARY = 'filter_library';
 const STORE_USER_PREFERENCES = 'user_preferences';
 const STORE_AI_MESSAGES = 'ai_messages';
 const STORE_SCENE_PROMPTS = 'scene_prompts';
 const STORE_BATCH_EDITS = 'batch_edits';
+const STORE_STYLE_RECIPES = 'style_recipes';
 
 interface IDBRequests {
   request: IDBRequest<unknown>;
@@ -49,6 +51,9 @@ function openDB(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains(STORE_BATCH_EDITS)) {
         db.createObjectStore(STORE_BATCH_EDITS, { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains(STORE_STYLE_RECIPES)) {
+        db.createObjectStore(STORE_STYLE_RECIPES, { keyPath: 'id' });
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -261,6 +266,44 @@ export async function getBatchEdits(): Promise<BatchEdit[]> {
     const req = store.getAll();
     req.onsuccess = () => resolve(req.result as BatchEdit[]);
     req.onerror = () => reject(req.error);
+  });
+}
+
+// ── Reusable Style Recipes ───────────────────────────────────────────
+export async function saveStyleRecipe(recipe: StyleRecipe): Promise<StyleRecipe> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_STYLE_RECIPES, 'readwrite');
+    const request = tx.objectStore(STORE_STYLE_RECIPES).put(recipe);
+    request.onsuccess = () => resolve(recipe);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+export async function getStyleRecipes(): Promise<StyleRecipe[]> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const request = db
+      .transaction(STORE_STYLE_RECIPES, 'readonly')
+      .objectStore(STORE_STYLE_RECIPES)
+      .getAll();
+    request.onsuccess = () =>
+      resolve(
+        (request.result as StyleRecipe[]).sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+      );
+    request.onerror = () => reject(request.error);
+  });
+}
+
+export async function deleteStyleRecipe(id: string): Promise<void> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const request = db
+      .transaction(STORE_STYLE_RECIPES, 'readwrite')
+      .objectStore(STORE_STYLE_RECIPES)
+      .delete(id);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
   });
 }
 

@@ -88,6 +88,8 @@ export interface Photo {
   filterIntensity: number;
   isOriginalRequired: boolean;
   metadata?: PhotoMetadata;
+  localMasks?: import('./advancedEditing').LocalMask[];
+  healStrokes?: import('./advancedEditing').HealStroke[];
   tags: string[];
 }
 
@@ -151,6 +153,19 @@ export interface SceneAnalysis {
   backgroundType?: string;
   focalLength?: number;
   depthOfField?: number;
+}
+
+export interface StyleRecipe {
+  id: string;
+  name: string;
+  createdAt: string;
+  adjustments: { brightness: number; contrast: number; saturation: number; warmth: number };
+  filterIntensity: number;
+  selectedFilterId: string;
+  retouchStrength: number;
+  retouchEnabled: boolean;
+  manualAdjustments?: Record<string, number>;
+  localMasks?: import('./advancedEditing').LocalMask[];
 }
 
 export interface BatchEdit {
