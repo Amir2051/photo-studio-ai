@@ -39,7 +39,7 @@ The editor runs locally at the Vite URL printed by the dev server. Production ou
 
 ## Deployment
 
-The GitHub Actions workflow builds and tests pull requests but deploys only pushes to main. It configures GitHub Pages as part of the workflow. Merge the repair pull request after reviewing the diff and successful CI; deployment is intentionally not triggered from this working branch.
+The GitHub Actions workflow builds and tests pull requests and pushes to main. A Pages artifact is produced by the build. Deployment is manual: enable GitHub Pages in repository settings, add the repository variable ENABLE_GITHUB_PAGES=true, then run the workflow_dispatch event on main. This avoids failing pull-request checks when Pages has not yet been enabled or is unavailable on the repository plan. Merge the repair pull request after reviewing the diff and successful CI; deployment is intentionally not triggered from this working branch.
 
 ## AI gateway contract
 
