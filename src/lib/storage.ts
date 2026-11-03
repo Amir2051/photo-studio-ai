@@ -2,7 +2,16 @@
 // Persistence for photos, filters, projects, preferences, AI sessions
 
 import { v4 as uuidv4 } from 'uuid';
-import { Photo, UserPreferences, FilterPreset, PhotoMetadata, AiMessage, ScenePrompt, BatchEdit } from './types';
+import JSZip from 'jszip';
+import {
+  Photo,
+  UserPreferences,
+  FilterPreset,
+  PhotoMetadata,
+  AiMessage,
+  ScenePrompt,
+  BatchEdit,
+} from './types';
 
 const DB_NAME = 'secureforge-lab-db';
 const DB_VERSION = 1;
@@ -148,7 +157,9 @@ const DEFAULT_PREFERENCES: UserPreferences = {
   retouchIntensity: 0.3,
 };
 
-export async function saveUserPreferences(prefs: Partial<UserPreferences>): Promise<UserPreferences> {
+export async function saveUserPreferences(
+  prefs: Partial<UserPreferences>,
+): Promise<UserPreferences> {
   const db = await openDB();
   const existing = await getUserPreferences();
   const merged = { ...existing, ...prefs };
@@ -196,7 +207,9 @@ export async function getAiMessages(): Promise<AiMessage[]> {
 }
 
 // ── Scene Prompts ─────────────────────────────────────────────────────
-export async function saveScenePrompt(prompt: Omit<ScenePrompt, 'id' | 'createdAt'>): Promise<ScenePrompt> {
+export async function saveScenePrompt(
+  prompt: Omit<ScenePrompt, 'id' | 'createdAt'>,
+): Promise<ScenePrompt> {
   const db = await openDB();
   const full = {
     ...prompt,
@@ -253,11 +266,26 @@ export async function getBatchEdits(): Promise<BatchEdit[]> {
 
 // ── Export ────────────────────────────────────────────────────────────
 export async function exportPhotosToZip(photoIds: string[]): Promise<Blob> {
-  // For now, export as a single JSON manifest
-  // Full implementation would use a zip library
   const photos = await getAllPhotos();
-  const filtered = photos.filter((p) => photoIds.includes(p.id));
-  return new Blob([JSON.stringify(filtered, null, 2)], { type: 'application/json' });
+  const selected = photos.filter((photo) => photoIds.includes(photo.id));
+  if (!selected.length) throw new Error('No saved photos matched the requested export.');
+  const zip = new JSZip();
+  const folder = zip.folder('every-frame-first-photos');
+  if (!folder) throw new Error('Could not create the photo export archive.');
+  for (const photo of selected) {
+    const source = photo.dataUrlHigh || photo.dataUrl;
+    const match = source.match(/^data:([^;]+);base64,(.+)$/);
+    if (!match)
+      throw new Error('Saved photo "' + photo.name + '" has an unsupported stored image format.');
+    const extension = match[1].split('/')[1]?.replace('jpeg', 'jpg') || 'jpg';
+    const safeName = photo.name.replace(/[\\/:*?"<>|]+/g, '-').replace(/\.[^.]+$/, '') || photo.id;
+    folder.file(safeName + '.' + extension, match[2], { base64: true });
+  }
+  return zip.generateAsync({
+    type: 'blob',
+    compression: 'DEFLATE',
+    compressionOptions: { level: 6 },
+  });
 }
 
 // ── Initialization ────────────────────────────────────────────────────
