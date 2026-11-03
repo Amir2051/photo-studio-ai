@@ -25,11 +25,29 @@ describe('AI service security boundary', () => {
         });
       }),
     );
-    const provider = new OpenRouterProvider('sk-test-secret-that-must-not-leak', 'test-model');
+    const provider = new OpenRouterProvider(
+      'sk-test-secret-that-must-not-leak',
+      'test-model',
+      async () => 'short-lived-session-token',
+    );
     await expect(provider.chat([message])).resolves.toBe('Use a small warmth adjustment.');
     expect(requestUrl).toBe('/api/ai/chat');
-    expect(requestInit?.headers).toEqual({ 'Content-Type': 'application/json' });
+    expect(requestInit?.headers).toEqual({
+      'Content-Type': 'application/json',
+      Authorization: 'Bearer short-lived-session-token',
+    });
     expect(String(requestInit?.body)).not.toContain('sk-test-secret-that-must-not-leak');
+  });
+
+  it('requires a session token before making a cloud AI request', async () => {
+    const provider = new OpenRouterProvider();
+    await expect(provider.chat([message])).rejects.toThrow(/sign in is required/i);
+  });
+
+  it('does not advertise cloud image upload before scene generation exists', () => {
+    const provider = new OpenRouterProvider();
+    expect(provider.supportsImages).toBe(false);
+    expect(provider.canUploadToCloud()).toBe(false);
   });
 
   it('does not invent a scene when no image-generation gateway is configured', async () => {
@@ -44,7 +62,7 @@ describe('AI service security boundary', () => {
       'fetch',
       vi.fn(async () => new Response('unavailable', { status: 503 })),
     );
-    const provider = new OpenRouterProvider();
+    const provider = new OpenRouterProvider(undefined, undefined, async () => 'session-token');
     await expect(provider.chat([message])).rejects.toThrow(/503/);
   });
 });

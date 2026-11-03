@@ -43,24 +43,36 @@ export class OfflineProvider implements AiProvider {
  */
 export class OpenRouterProvider implements AiProvider {
   name = 'server-ai';
-  supportsImages = true;
+  supportsImages = false;
   private modelId: string;
   private endpoint: string;
-  constructor(_legacyApiKey?: string, modelId = 'configured-server-model') {
+  private accessTokenProvider?: () => Promise<string | null>;
+  constructor(
+    _legacyApiKey?: string,
+    modelId = 'configured-server-model',
+    accessTokenProvider?: () => Promise<string | null>,
+  ) {
     this.modelId = modelId;
+    this.accessTokenProvider = accessTokenProvider;
     this.endpoint = (import.meta.env.VITE_AI_API_BASE_URL || '/api/ai').replace(/\/$/, '');
+  }
+
+  private async authorizationHeaders(): Promise<Record<string, string>> {
+    const token = await this.accessTokenProvider?.();
+    if (!token) throw new Error('Sign in is required before using cloud AI.');
+    return { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
   }
   getModel(): string {
     return this.modelId;
   }
   canUploadToCloud(): boolean {
-    return true;
+    return false;
   }
 
   async chat(messages: AiMessage[]): Promise<string> {
     const response = await fetch(this.endpoint + '/chat', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await this.authorizationHeaders(),
       credentials: 'same-origin',
       body: JSON.stringify({
         model: this.modelId,
@@ -89,7 +101,7 @@ export class OpenRouterProvider implements AiProvider {
       throw new Error('A source image and scene description are required.');
     const response = await fetch(this.endpoint + '/scene', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await this.authorizationHeaders(),
       credentials: 'same-origin',
       body: JSON.stringify({ image: imageBase64, prompt, options }),
     });

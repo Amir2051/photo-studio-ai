@@ -5,16 +5,17 @@
   "description": "Every Frame First Studio — private-by-default photo editing",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
+    "dev": "vite --config vite.config.ts",
+    "build": "tsc -b && vite build --config vite.config.ts",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "build:analyze": "ANALYZE=true npm run build",
-    "format": "prettier --write src/App.tsx src/main.tsx src/pages/Home.tsx src/lib/aiService.ts src/lib/imageProcessor.ts src/lib/storage.ts tests index.html public README.md .github/workflows/deploy.yml tsconfig.json tsconfig.node.json vite.config.ts package.json",
-    "format:check": "prettier --check src/App.tsx src/main.tsx src/pages/Home.tsx src/lib/aiService.ts src/lib/imageProcessor.ts src/lib/storage.ts tests index.html public README.md .github/workflows/deploy.yml tsconfig.json tsconfig.node.json vite.config.ts package.json"
+    "format": "prettier --write src/App.tsx src/main.tsx src/pages/Home.tsx src/lib/aiService.ts src/lib/imageProcessor.ts src/lib/storage.ts tests server index.html public README.md .github/workflows/deploy.yml tsconfig.json tsconfig.node.json vite.config.ts package.json",
+    "format:check": "prettier --check src/App.tsx src/main.tsx src/pages/Home.tsx src/lib/aiService.ts src/lib/imageProcessor.ts src/lib/storage.ts tests server index.html public README.md .github/workflows/deploy.yml tsconfig.json tsconfig.node.json vite.config.ts package.json",
+    "gateway": "node --env-file-if-exists=.env server/ai-gateway.mjs"
   },
   "dependencies": {
     "@tailwindcss/postcss": "^4.3.3",
@@ -23,6 +24,7 @@
     "file-saver": "^2.0.5",
     "html2canvas": "^1.4.1",
     "immer": "^10.0.0",
+    "jose": "^6.2.15",
     "jpeg-js": "^0.4.4",
     "jszip": "^3.10.1",
     "lucide-react": "^1.59.0",
