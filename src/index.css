@@ -2369,3 +2369,64 @@ html {
     padding-bottom: max(40px, env(safe-area-inset-bottom));
   }
 }
+
+/* Accessibility fix: keep the editor in one continuous document scroll area. */
+html,
+body,
+#root {
+  min-height: 100%;
+  height: auto;
+  overflow-x: clip;
+  overflow-y: auto;
+}
+.studio-shell,
+.studio-main,
+.editor-layout {
+  height: auto;
+  min-height: 0;
+  overflow: visible;
+}
+.editor-layout {
+  align-items: start;
+}
+.tools-column {
+  position: static;
+  top: auto;
+  align-self: start;
+  height: auto;
+  min-height: 0;
+  max-height: none;
+  overflow: visible;
+  overflow-y: visible;
+  overflow-x: visible;
+  padding-right: 0;
+  overscroll-behavior: auto;
+}
+.workspace-switcher {
+  position: static;
+  top: auto;
+}
+@media (min-width: 761px) {
+  .tools-column {
+    position: static;
+    max-height: none;
+    overflow: visible;
+  }
+}
+@media (max-width: 760px) {
+  .studio-main {
+    min-height: 0;
+    height: auto;
+    overflow: visible;
+  }
+  .editor-layout {
+    grid-template-columns: minmax(0, 1fr);
+    overflow: visible;
+  }
+  .tools-column {
+    display: flex;
+    flex-direction: column;
+    max-height: none;
+    overflow: visible;
+  }
+}
