@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { applyHealing, applyLocalMasks, type LocalMask } from '../src/lib/advancedEditing';
+import {
+  applyHealing,
+  applyLocalMasks,
+  type LocalMask,
+  type SelectionState,
+} from '../src/lib/advancedEditing';
 import { applyDetailEffects, DEFAULT_MANUAL_ADJUSTMENTS } from '../src/lib/manualEditing';
 
 class TestImageData {
@@ -59,6 +64,87 @@ describe('advanced local editing tools', () => {
     applyLocalMasks(canvas, [mask]);
     expect(pixels()[(2 * 5 + 2) * 4]).toBe(160);
     expect(pixels()[0]).toBe(80);
+  });
+
+  it('restricts local exposure to an additive selection brush area', () => {
+    const values = Array(25)
+      .fill(0)
+      .flatMap(() => [80, 80, 80, 255]);
+    const { canvas, pixels } = fakeCanvas(5, 5, values);
+    const mask: LocalMask = {
+      id: 'm',
+      kind: 'radial',
+      points: [],
+      center: { x: 0.5, y: 0.5 },
+      end: { x: 0.5, y: 0.5 },
+      radius: 100,
+      feather: 100,
+      exposure: 100,
+      temperature: 0,
+      saturation: 0,
+      size: 30,
+    };
+    const selection: SelectionState = {
+      strokes: [{ points: [{ x: 0.5, y: 0.5 }], size: 240, operation: 'add' }],
+      inverted: false,
+      feather: 0,
+    };
+    applyLocalMasks(canvas, [mask], selection);
+    expect(pixels()[(2 * 5 + 2) * 4]).toBe(160);
+    expect(pixels()[0]).toBe(80);
+  });
+
+  it('supports subtractive and inverted selection coverage', () => {
+    const values = Array(25)
+      .fill(0)
+      .flatMap(() => [80, 80, 80, 255]);
+    const { canvas, pixels } = fakeCanvas(5, 5, values);
+    const mask: LocalMask = {
+      id: 'm',
+      kind: 'radial',
+      points: [],
+      center: { x: 0.5, y: 0.5 },
+      end: { x: 0.5, y: 0.5 },
+      radius: 100,
+      feather: 100,
+      exposure: 100,
+      temperature: 0,
+      saturation: 0,
+      size: 30,
+    };
+    const selection: SelectionState = {
+      strokes: [
+        { points: [{ x: 0.5, y: 0.5 }], size: 240, operation: 'add' },
+        { points: [{ x: 0.5, y: 0.5 }], size: 100, operation: 'subtract' },
+      ],
+      inverted: true,
+      feather: 0,
+    };
+    applyLocalMasks(canvas, [mask], selection);
+    expect(pixels()[(2 * 5 + 2) * 4]).toBe(160);
+  });
+
+  it('keeps a hidden local mask out of the rendered adjustment', () => {
+    const values = Array(25)
+      .fill(0)
+      .flatMap(() => [80, 80, 80, 255]);
+    const { canvas, pixels } = fakeCanvas(5, 5, values);
+    const mask: LocalMask = {
+      id: 'hidden-mask',
+      kind: 'radial',
+      points: [],
+      center: { x: 0.5, y: 0.5 },
+      end: { x: 0.5, y: 0.5 },
+      radius: 35,
+      feather: 70,
+      exposure: 100,
+      temperature: 0,
+      saturation: 0,
+      size: 30,
+      visible: false,
+    };
+    applyLocalMasks(canvas, [mask]);
+    expect(pixels()[(2 * 5 + 2) * 4]).toBe(80);
   });
 
   it('heals with a feathered sample from nearby original pixels', () => {

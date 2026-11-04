@@ -116,7 +116,8 @@ export function applyPortraitRetouch(
   feather.height = height;
   const featherContext = feather.getContext('2d');
   if (!featherContext) return;
-  featherContext.filter = `blur(${Math.max(2, Math.min(18, width / 300))}px)`;
+  const imageScale = Math.max(1, Math.max(width, height) / 2200);
+  featherContext.filter = `blur(${Math.max(3, Math.min(24, (width / 260) * imageScale))}px)`;
   featherContext.drawImage(mask, 0, 0);
   featherContext.filter = 'none';
 
@@ -125,7 +126,10 @@ export function applyPortraitRetouch(
   softened.height = height;
   const softenedContext = softened.getContext('2d');
   if (!softenedContext) return;
-  softenedContext.filter = `blur(${1 + (strength / 100) * 5}px)`;
+  // Scale the blur with image resolution so preview and full-resolution export
+  // retain a similar visual strength instead of making the export look untouched.
+  const blurRadius = (1.4 + (Math.min(100, strength) / 100) * 7.2) * imageScale;
+  softenedContext.filter = `blur(${blurRadius.toFixed(2)}px)`;
   softenedContext.drawImage(canvas, 0, 0);
   softenedContext.filter = 'none';
   softenedContext.globalCompositeOperation = 'destination-in';
@@ -134,7 +138,9 @@ export function applyPortraitRetouch(
   const context = canvas.getContext('2d');
   if (!context) return;
   context.save();
-  context.globalAlpha = Math.min(0.72, (strength / 100) * 0.72);
+  // A stronger but still bounded blend makes the result visible at normal
+  // working strengths while retaining the original image's structure.
+  context.globalAlpha = Math.min(0.68, 0.08 + (Math.min(100, strength) / 100) * 0.6);
   context.drawImage(softened, 0, 0);
   context.restore();
 }

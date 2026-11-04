@@ -89,7 +89,30 @@ export interface Photo {
   isOriginalRequired: boolean;
   metadata?: PhotoMetadata;
   localMasks?: import('./advancedEditing').LocalMask[];
+  selection?: import('./advancedEditing').SelectionState | null;
   healStrokes?: import('./advancedEditing').HealStroke[];
+  documentTransform?: {
+    crop: { x: number; y: number; width: number; height: number };
+    rotation: 0 | 90 | 180 | 270;
+    flipX: boolean;
+    flipY: boolean;
+  };
+  studioLayers?: Array<{
+    id: string;
+    name: string;
+    type: 'image' | 'adjustment' | 'text' | 'group';
+    groupId?: string | null;
+    expanded?: boolean;
+    visible: boolean;
+    opacity: number;
+    blendMode: GlobalCompositeOperation;
+    text?: string;
+    color?: string;
+    fontSize?: number;
+    adjustments?: { brightness: number; contrast: number; saturation: number; warmth: number };
+    mask?: import('./layerMasks').LayerMask | null;
+    masks?: import('./layerMasks').LayerMask[];
+  }>;
   tags: string[];
 }
 

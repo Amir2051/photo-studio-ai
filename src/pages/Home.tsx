@@ -9,12 +9,21 @@ import {
 } from '../lib/storage';
 import type { Photo, FilterRecipe, StyleRecipe } from '../lib/types';
 import { CATEGORIES, FILTER_LIBRARY } from '../lib/filters';
+import { reorderLayerSiblings } from '../lib/layerGroups';
+import {
+  applyLayerMask,
+  applyLayerMasks,
+  layerMaskWeight,
+  type LayerMask,
+} from '../lib/layerMasks';
 import { interpretStylePrompt, type StyleInterpretation } from '../lib/styleAssistant';
 import {
   applyHealing,
   applyLocalMasks,
+  renderSelectionOverlay,
   type HealStroke,
   type LocalMask,
+  type SelectionState,
 } from '../lib/advancedEditing';
 import {
   applyManualAdjustments,
@@ -30,11 +39,53 @@ import {
 
 type Adjustments = { brightness: number; contrast: number; saturation: number; warmth: number };
 type Preset = { id: string; name: string; values: Adjustments };
+type StudioLayer = {
+  id: string;
+  name: string;
+  type: 'image' | 'adjustment' | 'text' | 'group';
+  groupId?: string | null;
+  expanded?: boolean;
+  visible: boolean;
+  opacity: number;
+  blendMode: GlobalCompositeOperation;
+  text?: string;
+  color?: string;
+  fontSize?: number;
+  adjustments?: Adjustments;
+  mask?: LayerMask | null;
+  masks?: LayerMask[];
+};
+const BLEND_MODES: GlobalCompositeOperation[] = [
+  'source-over',
+  'multiply',
+  'screen',
+  'overlay',
+  'darken',
+  'lighten',
+];
+
+type DocumentTransform = {
+  crop: { x: number; y: number; width: number; height: number };
+  rotation: 0 | 90 | 180 | 270;
+  flipX: boolean;
+  flipY: boolean;
+};
+const DEFAULT_DOCUMENT_TRANSFORM: DocumentTransform = {
+  crop: { x: 0, y: 0, width: 1, height: 1 },
+  rotation: 0,
+  flipX: false,
+  flipY: false,
+};
+
 type EditorSnapshot = {
+  documentTransform?: DocumentTransform;
   adjustments: Adjustments;
   manualAdjustments: ManualAdjustmentSettings;
   localMasks: LocalMask[];
   healStrokes: HealStroke[];
+  selection?: SelectionState | null;
+  layers?: StudioLayer[];
+  selectedLayerId?: string;
 };
 const HSL_CHANNEL_OPTIONS = [
   'red',
@@ -187,6 +238,128 @@ function safeExportName(name: string, fallback: string): string {
   ).slice(0, 100);
 }
 
+function renderStudioDocument(
+  image: HTMLImageElement,
+  width: number,
+  height: number,
+  layers: StudioLayer[],
+  adjustments: Adjustments,
+  manualAdjustments: ManualAdjustmentSettings,
+  localMasks: LocalMask[],
+  healStrokes: HealStroke[],
+  retouchStrength: number,
+  faceLandmarks: NormalizedPoint[][],
+  retouchStrokes: BrushStroke[],
+  documentTransform: DocumentTransform = DEFAULT_DOCUMENT_TRANSFORM,
+  selection: SelectionState | null = null,
+): HTMLCanvasElement {
+  const output = document.createElement('canvas');
+  output.width = width;
+  output.height = height;
+  const ctx = output.getContext('2d');
+  if (!ctx) throw new Error('Your browser could not create an editing canvas.');
+  const drawStack = (target: CanvasRenderingContext2D, parentId: string | null) => {
+    const children = layers.filter((layer) => (layer.groupId || null) === parentId);
+    for (const layer of children) {
+      if (!layer.visible) continue;
+      if (layer.type === 'group') {
+        const groupCanvas = document.createElement('canvas');
+        groupCanvas.width = width;
+        groupCanvas.height = height;
+        const groupContext = groupCanvas.getContext('2d');
+        if (!groupContext) continue;
+        drawStack(groupContext, layer.id);
+        applyLayerMasks(groupCanvas, layer.masks || (layer.mask ? [layer.mask] : []));
+        target.save();
+        target.globalAlpha = Math.max(0, Math.min(100, layer.opacity)) / 100;
+        target.globalCompositeOperation = layer.blendMode;
+        target.drawImage(groupCanvas, 0, 0);
+        target.restore();
+        continue;
+      }
+
+      const layerCanvas = document.createElement('canvas');
+      layerCanvas.width = width;
+      layerCanvas.height = height;
+      const layerContext = layerCanvas.getContext('2d');
+      if (!layerContext) continue;
+      if (layer.type === 'image') {
+        const base = document.createElement('canvas');
+        base.width = width;
+        base.height = height;
+        const baseContext = base.getContext('2d');
+        if (baseContext) {
+          baseContext.drawImage(image, 0, 0, width, height);
+          applyManualAdjustments(base, manualAdjustments);
+          applyLocalMasks(base, localMasks, selection);
+          applyHealing(base, healStrokes);
+          applyPortraitRetouch(base, {
+            strength: retouchStrength,
+            faces: faceLandmarks,
+            strokes: retouchStrokes,
+          });
+          layerContext.drawImage(base, 0, 0);
+        }
+      } else if (layer.type === 'adjustment') {
+        const processed = document.createElement('canvas');
+        processed.width = width;
+        processed.height = height;
+        const pc = processed.getContext('2d');
+        if (pc) {
+          const layerAdjustments = layer.adjustments || adjustments;
+          pc.filter = adjustmentFilter(layerAdjustments);
+          pc.drawImage(target.canvas, 0, 0, width, height);
+          pc.filter = 'none';
+          if (layerAdjustments.warmth !== 0) {
+            pc.globalCompositeOperation = 'soft-light';
+            pc.fillStyle =
+              layerAdjustments.warmth > 0
+                ? `rgba(255, 164, 72, ${Math.min(0.22, layerAdjustments.warmth / 400)})`
+                : `rgba(78, 145, 255, ${Math.min(0.18, Math.abs(layerAdjustments.warmth) / 500)})`;
+            pc.fillRect(0, 0, width, height);
+            pc.globalCompositeOperation = 'source-over';
+          }
+          layerContext.drawImage(processed, 0, 0);
+        }
+      } else if (layer.type === 'text' && layer.text) {
+        const size =
+          Math.max(12, layer.fontSize || 64) *
+          (width / Math.max(image.naturalWidth, image.naturalHeight));
+        layerContext.font = `600 ${Math.max(12, size)}px Inter, sans-serif`;
+        layerContext.textAlign = 'center';
+        layerContext.textBaseline = 'middle';
+        layerContext.fillStyle = layer.color || '#ffffff';
+        layerContext.shadowColor = '#00000099';
+        layerContext.shadowBlur = Math.max(1, size * 0.12);
+        layerContext.fillText(layer.text, width / 2, height / 2, width * 0.84);
+      }
+      applyLayerMasks(layerCanvas, layer.masks || (layer.mask ? [layer.mask] : []));
+      target.save();
+      target.globalAlpha = Math.max(0, Math.min(100, layer.opacity)) / 100;
+      target.globalCompositeOperation = layer.blendMode;
+      target.drawImage(layerCanvas, 0, 0);
+      target.restore();
+    }
+  };
+  drawStack(ctx, null);
+  const crop = documentTransform.crop;
+  const sx = Math.max(0, Math.min(width - 1, Math.round(crop.x * width)));
+  const sy = Math.max(0, Math.min(height - 1, Math.round(crop.y * height)));
+  const sw = Math.max(1, Math.min(width - sx, Math.round(crop.width * width)));
+  const sh = Math.max(1, Math.min(height - sy, Math.round(crop.height * height)));
+  const quarterTurn = documentTransform.rotation === 90 || documentTransform.rotation === 270;
+  const transformed = document.createElement('canvas');
+  transformed.width = quarterTurn ? sh : sw;
+  transformed.height = quarterTurn ? sw : sh;
+  const transformContext = transformed.getContext('2d');
+  if (!transformContext) throw new Error('Your browser could not create the transformed canvas.');
+  transformContext.translate(transformed.width / 2, transformed.height / 2);
+  transformContext.rotate((documentTransform.rotation * Math.PI) / 180);
+  transformContext.scale(documentTransform.flipX ? -1 : 1, documentTransform.flipY ? -1 : 1);
+  transformContext.drawImage(output, sx, sy, sw, sh, -sw / 2, -sh / 2, sw, sh);
+  return transformed;
+}
+
 export default function Home(): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -198,13 +371,32 @@ export default function Home(): React.JSX.Element {
   const [sourceMime, setSourceMime] = useState('image/jpeg');
   const [sourceFileSize, setSourceFileSize] = useState(0);
   const [sourceSize, setSourceSize] = useState({ width: 0, height: 0 });
+  const [layers, setLayers] = useState<StudioLayer[]>([]);
+  const [documentTransform, setDocumentTransform] = useState<DocumentTransform>(
+    DEFAULT_DOCUMENT_TRANSFORM,
+  );
+  const [cropDraft, setCropDraft] = useState(DEFAULT_DOCUMENT_TRANSFORM.crop);
+  const [selectedLayerId, setSelectedLayerId] = useState('');
+  const [layerMaskTool, setLayerMaskTool] = useState<'off' | 'reveal' | 'hide' | 'position'>('off');
+  const [layerMaskBrushSize, setLayerMaskBrushSize] = useState(36);
+  const [layerMaskView, setLayerMaskView] = useState(false);
+  const [selectedLayerMaskId, setSelectedLayerMaskId] = useState('');
+  const maskThumbnailRef = useRef<HTMLCanvasElement>(null);
+  const [draggedLayerId, setDraggedLayerId] = useState<string | null>(null);
+  const [newLayerText, setNewLayerText] = useState('Your text');
   const [adjustments, setAdjustments] = useState<Adjustments>(DEFAULTS);
   const [manualAdjustments, setManualAdjustments] = useState<ManualAdjustmentSettings>(
     DEFAULT_MANUAL_ADJUSTMENTS,
   );
   const [localMasks, setLocalMasks] = useState<LocalMask[]>([]);
+  const [selectedMaskId, setSelectedMaskId] = useState<string | null>(null);
+  const [selection, setSelection] = useState<SelectionState | null>(null);
+  const [selectionMode, setSelectionMode] = useState<'off' | 'add' | 'subtract'>('off');
+  const [selectionBrushSize, setSelectionBrushSize] = useState(28);
+  const [selectionFeather, setSelectionFeather] = useState(20);
   const [healStrokes, setHealStrokes] = useState<HealStroke[]>([]);
   const [localTool, setLocalTool] = useState<'off' | 'brush' | 'linear' | 'radial' | 'heal'>('off');
+  const [tonalBrush, setTonalBrush] = useState<'dodge' | 'burn' | null>(null);
   const [localBrushSize, setLocalBrushSize] = useState(34);
   const [localExposure, setLocalExposure] = useState(30);
   const [localTemperature, setLocalTemperature] = useState(12);
@@ -222,6 +414,9 @@ export default function Home(): React.JSX.Element {
       manualAdjustments: DEFAULT_MANUAL_ADJUSTMENTS,
       localMasks: [],
       healStrokes: [],
+      selection: null,
+      layers: [],
+      selectedLayerId: '',
     },
   ]);
   const [historyIndex, setHistoryIndex] = useState(0);
@@ -237,8 +432,9 @@ export default function Home(): React.JSX.Element {
   const [prompt, setPrompt] = useState('');
   const [styleInterpretation, setStyleInterpretation] = useState<StyleInterpretation | null>(null);
   const [showSaved, setShowSaved] = useState(false);
+  const [activeSection, setActiveSection] = useState('home');
   const [retouchMode, setRetouchMode] = useState<'off' | 'brush'>('off');
-  const [retouchStrength, setRetouchStrength] = useState(35);
+  const [retouchStrength, setRetouchStrength] = useState(55);
   const [brushSize, setBrushSize] = useState(28);
   const [faceLandmarks, setFaceLandmarks] = useState<NormalizedPoint[][]>([]);
   const [retouchStrokes, setRetouchStrokes] = useState<BrushStroke[]>([]);
@@ -256,6 +452,19 @@ export default function Home(): React.JSX.Element {
     'image/jpeg',
   );
 
+  const navigateStudio = (section: string, target: string) => {
+    setActiveSection(section);
+    setShowSaved(false);
+    if (section === 'retouch') setActiveWorkspace('portrait');
+    if (['color', 'effects', 'compositing', 'assets'].includes(section))
+      setActiveWorkspace('professional');
+    if (section === 'library') setShowSaved(true);
+    window.setTimeout(
+      () => document.getElementById(target)?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+      40,
+    );
+  };
+
   const render = useCallback(
     (next: Adjustments, showOriginal = false) => {
       const canvas = canvasRef.current;
@@ -263,40 +472,124 @@ export default function Home(): React.JSX.Element {
       if (!canvas || !image) return;
       const maxPreviewEdge = 2200;
       const scale = Math.min(1, maxPreviewEdge / Math.max(image.naturalWidth, image.naturalHeight));
-      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
-      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+      const width = Math.max(1, Math.round(image.naturalWidth * scale));
+      const height = Math.max(1, Math.round(image.naturalHeight * scale));
+      canvas.width = width;
+      canvas.height = height;
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.filter = showOriginal ? 'none' : adjustmentFilter(next);
-      ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-      ctx.filter = 'none';
-      if (!showOriginal && next.warmth !== 0) {
-        ctx.globalCompositeOperation = 'soft-light';
-        ctx.fillStyle =
-          next.warmth > 0
-            ? `rgba(255, 164, 72, ${Math.min(0.22, next.warmth / 400)})`
-            : `rgba(78, 145, 255, ${Math.min(0.18, Math.abs(next.warmth) / 500)})`;
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.globalCompositeOperation = 'source-over';
+      ctx.clearRect(0, 0, width, height);
+      if (showOriginal) {
+        ctx.drawImage(image, 0, 0, width, height);
+        return;
       }
-      if (!showOriginal) {
-        applyManualAdjustments(canvas, manualAdjustments);
-        applyLocalMasks(canvas, localMasks);
-        applyHealing(canvas, healStrokes);
-        applyPortraitRetouch(canvas, {
-          strength: retouchStrength,
-          faces: faceLandmarks,
-          strokes: retouchStrokes,
-        });
+      const rendered = renderStudioDocument(
+        image,
+        width,
+        height,
+        layers,
+        next,
+        manualAdjustments,
+        localMasks,
+        healStrokes,
+        retouchStrength,
+        faceLandmarks,
+        retouchStrokes,
+        documentTransform,
+        selection,
+      );
+      canvas.width = rendered.width;
+      canvas.height = rendered.height;
+      if (
+        layerMaskView &&
+        (layers
+          .find((layer) => layer.id === selectedLayerId)
+          ?.masks?.find((mask) => mask.id === selectedLayerMaskId) ||
+          layers.find((layer) => layer.id === selectedLayerId)?.mask)
+      ) {
+        const activeLayer = layers.find((layer) => layer.id === selectedLayerId)!;
+        const mask =
+          activeLayer.masks?.find((item) => item.id === selectedLayerMaskId) || activeLayer.mask!;
+        const imageData = ctx.createImageData(rendered.width, rendered.height);
+        for (let y = 0; y < rendered.height; y++) {
+          for (let x = 0; x < rendered.width; x++) {
+            const gray = Math.round(
+              layerMaskWeight(mask, x, y, rendered.width, rendered.height) * 255,
+            );
+            const index = (y * rendered.width + x) * 4;
+            imageData.data[index] = gray;
+            imageData.data[index + 1] = gray;
+            imageData.data[index + 2] = gray;
+            imageData.data[index + 3] = 255;
+          }
+        }
+        ctx.putImageData(imageData, 0, 0);
+      } else {
+        ctx.drawImage(rendered, 0, 0);
+        renderSelectionOverlay(canvas, selection);
       }
     },
-    [faceLandmarks, retouchStrokes, retouchStrength, manualAdjustments, localMasks, healStrokes],
+    [
+      layers,
+      faceLandmarks,
+      retouchStrokes,
+      retouchStrength,
+      manualAdjustments,
+      localMasks,
+      healStrokes,
+      documentTransform,
+      selection,
+    ],
   );
 
   useEffect(() => {
     render(adjustments, compare);
   }, [adjustments, compare, render, sourceUrl, showSaved]);
+  useEffect(() => {
+    const canvas = maskThumbnailRef.current;
+    const activeLayer = layers.find((layer) => layer.id === selectedLayerId);
+    const mask =
+      activeLayer?.masks?.find((item) => item.id === selectedLayerMaskId) || activeLayer?.mask;
+    if (!canvas || !mask) return;
+    const context = canvas.getContext('2d');
+    if (!context) return;
+    const width = 112;
+    const height = 64;
+    canvas.width = width;
+    canvas.height = height;
+    const pixels = context.createImageData(width, height);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const gray = Math.round(layerMaskWeight(mask, x, y, width, height) * 255);
+        const index = (y * width + x) * 4;
+        pixels.data[index] = gray;
+        pixels.data[index + 1] = gray;
+        pixels.data[index + 2] = gray;
+        pixels.data[index + 3] = 255;
+      }
+    }
+    context.putImageData(pixels, 0, 0);
+    const allMasks = activeLayer?.masks || (activeLayer?.mask ? [activeLayer.mask] : []);
+    document.querySelectorAll<HTMLCanvasElement>('[data-layer-mask-thumb]').forEach((thumb) => {
+      const thumbMask = allMasks.find((item) => item.id === thumb.dataset.layerMaskThumb);
+      if (!thumbMask) return;
+      const thumbContext = thumb.getContext('2d');
+      if (!thumbContext) return;
+      const thumbPixels = thumbContext.createImageData(thumb.width, thumb.height);
+      for (let y = 0; y < thumb.height; y++)
+        for (let x = 0; x < thumb.width; x++) {
+          const gray = Math.round(
+            layerMaskWeight(thumbMask, x, y, thumb.width, thumb.height) * 255,
+          );
+          const i = (y * thumb.width + x) * 4;
+          thumbPixels.data[i] = gray;
+          thumbPixels.data[i + 1] = gray;
+          thumbPixels.data[i + 2] = gray;
+          thumbPixels.data[i + 3] = 255;
+        }
+      thumbContext.putImageData(thumbPixels, 0, 0);
+    });
+  }, [layers, selectedLayerId, selectedLayerMaskId]);
   useEffect(() => {
     getAllPhotos()
       .then(setSavedPhotos)
@@ -358,6 +651,7 @@ export default function Home(): React.JSX.Element {
     nextManual: ManualAdjustmentSettings,
     nextMasks = localMasks,
     nextHeal = healStrokes,
+    nextSelection = selection,
   ) => {
     setAdjustments(nextAdjustments);
     setManualAdjustments(nextManual);
@@ -371,10 +665,97 @@ export default function Home(): React.JSX.Element {
           manualAdjustments: nextManual,
           localMasks: nextMasks,
           healStrokes: nextHeal,
+          selection: nextSelection,
+          documentTransform,
+          layers: layers.map((layer) => ({ ...layer })),
+          selectedLayerId,
         },
       ].slice(-60),
     );
     setHistoryIndex((index) => Math.min(index + 1, 59));
+  };
+
+  const commitLayers = (next: StudioLayer[], nextSelectedLayerId = selectedLayerId) => {
+    setLayers(next);
+    setSelectedLayerId(nextSelectedLayerId);
+    setHistory((current) =>
+      [
+        ...current.slice(0, historyIndex + 1),
+        {
+          adjustments,
+          manualAdjustments,
+          localMasks,
+          healStrokes,
+          selection,
+          documentTransform,
+          layers: next.map((layer) => ({ ...layer })),
+          selectedLayerId: nextSelectedLayerId,
+        },
+      ].slice(-60),
+    );
+    setHistoryIndex((index) => Math.min(index + 1, 59));
+  };
+
+  const updateSelectedMask = (patch: Partial<LocalMask>) => {
+    if (!selectedMaskId) return;
+    const next = localMasks.map((mask) =>
+      mask.id === selectedMaskId ? { ...mask, ...patch } : mask,
+    );
+    commitSnapshot(adjustments, manualAdjustments, next, healStrokes);
+  };
+
+  const commitSelection = (next: SelectionState | null) => {
+    setSelection(next);
+    setHistory((current) =>
+      [
+        ...current.slice(0, historyIndex + 1),
+        {
+          adjustments,
+          manualAdjustments,
+          localMasks,
+          healStrokes,
+          selection: next,
+          documentTransform,
+          layers: layers.map((layer) => ({ ...layer })),
+          selectedLayerId,
+        },
+      ].slice(-60),
+    );
+    setHistoryIndex((index) => Math.min(index + 1, 59));
+  };
+
+  const commitDocumentTransform = (next: DocumentTransform) => {
+    setDocumentTransform(next);
+    setCropDraft(next.crop);
+    setHistory((current) =>
+      [
+        ...current.slice(0, historyIndex + 1),
+        {
+          adjustments,
+          manualAdjustments,
+          localMasks,
+          healStrokes,
+          selection,
+          documentTransform: next,
+        },
+      ].slice(-60),
+    );
+    setHistoryIndex((index) => Math.min(index + 1, 59));
+    setCompare(false);
+  };
+  const rotateDocument = (degrees: 90 | -90) => {
+    const rotation = ((documentTransform.rotation + degrees + 360) % 360) as 0 | 90 | 180 | 270;
+    commitDocumentTransform({ ...documentTransform, rotation });
+  };
+  const applyCropDraft = () => {
+    const x = Math.max(0, Math.min(0.9, cropDraft.x));
+    const y = Math.max(0, Math.min(0.9, cropDraft.y));
+    const width = Math.max(0.1, Math.min(1 - x, cropDraft.width));
+    const height = Math.max(0.1, Math.min(1 - y, cropDraft.height));
+    commitDocumentTransform({ ...documentTransform, crop: { x, y, width, height } });
+    setMessage(
+      `Crop applied: ${Math.round(width * 100)}% × ${Math.round(height * 100)}% of the source.`,
+    );
   };
 
   const addHistory = (next: Adjustments) => {
@@ -384,6 +765,130 @@ export default function Home(): React.JSX.Element {
 
   const updateManualAdjustment = (key: keyof ManualAdjustmentSettings, value: number) => {
     commitSnapshot(adjustments, { ...manualAdjustments, [key]: value });
+  };
+
+  const selectedLayer = layers.find((layer) => layer.id === selectedLayerId) || null;
+  const updateLayer = (id: string, patch: Partial<StudioLayer>) => {
+    const next = layers.map((layer) => (layer.id === id ? { ...layer, ...patch } : layer));
+    commitLayers(next);
+  };
+  const selectedLayerMask =
+    selectedLayer?.masks?.find((mask) => mask.id === selectedLayerMaskId) ||
+    selectedLayer?.mask ||
+    null;
+  const addLayerMask = (kind: LayerMask['kind']) => {
+    if (!selectedLayer) return;
+    const mask: LayerMask = {
+      id: crypto.randomUUID(),
+      name:
+        kind === 'brush' ? 'Paint mask' : kind === 'linear' ? 'Linear gradient' : 'Radial gradient',
+      kind,
+      strokes: [],
+      start: { x: 0.5, y: 0.5 },
+      end: { x: 0.5, y: 0.95 },
+      radius: 35,
+      feather: 35,
+      inverted: false,
+      enabled: true,
+    };
+    const nextMasks = [
+      ...(selectedLayer.masks || (selectedLayer.mask ? [selectedLayer.mask] : [])),
+      mask,
+    ];
+    setSelectedLayerMaskId(mask.id);
+    updateLayer(selectedLayer.id, { mask, masks: nextMasks });
+    setLayerMaskTool(kind === 'brush' ? 'reveal' : 'off');
+    setMessage(kind + ' layer mask added to ' + selectedLayer.name + '.');
+  };
+  const updateSelectedLayerMask = (patch: Partial<LayerMask>) => {
+    if (!selectedLayer || !selectedLayerMask) return;
+    const nextMask = { ...selectedLayerMask, ...patch };
+    const currentMasks = selectedLayer.masks || (selectedLayer.mask ? [selectedLayer.mask] : []);
+    const nextMasks = currentMasks.map((mask) => (mask.id === nextMask.id ? nextMask : mask));
+    updateLayer(selectedLayer.id, { mask: nextMask, masks: nextMasks });
+  };
+  const addLayerGroup = () => {
+    const group: StudioLayer = {
+      id: crypto.randomUUID(),
+      name: 'Group',
+      type: 'group',
+      visible: true,
+      expanded: true,
+      opacity: 100,
+      blendMode: 'source-over',
+    };
+    if (selectedLayer?.type === 'group') group.groupId = selectedLayer.groupId || null;
+    const next = [...layers, group];
+    if (selectedLayer) {
+      const selectedIndex = next.findIndex((layer) => layer.id === selectedLayer.id);
+      if (selectedIndex >= 0) next[selectedIndex] = { ...selectedLayer, groupId: group.id };
+    }
+    commitLayers(next, group.id);
+    setMessage(
+      selectedLayer
+        ? 'Created a group and placed the selected layer inside it.'
+        : 'Created an empty layer group.',
+    );
+  };
+  const toggleGroupExpanded = (id: string) => {
+    const next = layers.map((layer) =>
+      layer.id === id && layer.type === 'group' ? { ...layer, expanded: !layer.expanded } : layer,
+    );
+    commitLayers(next);
+  };
+  const removeSelectedLayer = () => {
+    if (!selectedLayer || selectedLayer.type === 'image') return;
+    if (selectedLayer.type === 'group') {
+      const next = layers
+        .filter((layer) => layer.id !== selectedLayer.id)
+        .map((layer) =>
+          layer.groupId === selectedLayer.id
+            ? { ...layer, groupId: selectedLayer.groupId || null }
+            : layer,
+        );
+      commitLayers(next, next[next.length - 1]?.id || '');
+      return;
+    }
+    const next = layers.filter((layer) => layer.id !== selectedLayer.id);
+    commitLayers(next, next[next.length - 1]?.id || '');
+  };
+  const addAdjustmentLayer = () => {
+    const layer: StudioLayer = {
+      id: crypto.randomUUID(),
+      name: 'Color & tone',
+      type: 'adjustment',
+      visible: true,
+      opacity: 100,
+      blendMode: 'source-over',
+      adjustments: { ...adjustments },
+    };
+    commitLayers([...layers, layer], layer.id);
+  };
+  const addTextLayer = () => {
+    const layer: StudioLayer = {
+      id: crypto.randomUUID(),
+      name: 'Text',
+      type: 'text',
+      visible: true,
+      opacity: 100,
+      blendMode: 'source-over',
+      text: newLayerText.trim() || 'Your text',
+      color: '#ffffff',
+      fontSize: 72,
+    };
+    commitLayers([...layers, layer], layer.id);
+  };
+  const moveLayer = (id: string, direction: -1 | 1) => {
+    const index = layers.findIndex((layer) => layer.id === id);
+    const target = index + direction;
+    if (index < 0 || target < 0 || target >= layers.length) return;
+    const next = [...layers];
+    [next[index], next[target]] = [next[target], next[index]];
+    commitLayers(next);
+  };
+  const reorderLayer = (sourceId: string, targetId: string) => {
+    const next = reorderLayerSiblings(layers, sourceId, targetId);
+    if (next) commitLayers(next);
   };
 
   const openFiles = async (files: FileList | File[]) => {
@@ -415,6 +920,30 @@ export default function Home(): React.JSX.Element {
       setSourceMime(file.type);
       setSourceFileSize(file.size);
       setSourceSize({ width: image.naturalWidth, height: image.naturalHeight });
+      const initialLayers: StudioLayer[] = [
+        {
+          id: crypto.randomUUID(),
+          name: 'Background',
+          type: 'image',
+          visible: true,
+          opacity: 100,
+          blendMode: 'source-over',
+        },
+        {
+          id: crypto.randomUUID(),
+          name: 'Color & tone',
+          type: 'adjustment',
+          visible: true,
+          opacity: 100,
+          blendMode: 'source-over',
+        },
+      ];
+      setLayers(initialLayers);
+      setDocumentTransform(DEFAULT_DOCUMENT_TRANSFORM);
+      setCropDraft(DEFAULT_DOCUMENT_TRANSFORM.crop);
+      setSelectedLayerId(initialLayers[1].id);
+      setSelectedLayerMaskId('');
+      setLayerMaskView(false);
       setAdjustments(DEFAULTS);
       setManualAdjustments(DEFAULT_MANUAL_ADJUSTMENTS);
       setLocalMasks([]);
@@ -425,6 +954,8 @@ export default function Home(): React.JSX.Element {
           manualAdjustments: DEFAULT_MANUAL_ADJUSTMENTS,
           localMasks: [],
           healStrokes: [],
+          layers: initialLayers.map((layer) => ({ ...layer })),
+          selectedLayerId: initialLayers[1].id,
         },
       ]);
       setHistoryIndex(0);
@@ -465,6 +996,11 @@ export default function Home(): React.JSX.Element {
     setManualAdjustments(history[index].manualAdjustments);
     setLocalMasks(history[index].localMasks || []);
     setHealStrokes(history[index].healStrokes || []);
+    setSelection(history[index].selection || null);
+    setDocumentTransform(history[index].documentTransform || DEFAULT_DOCUMENT_TRANSFORM);
+    if (history[index].layers) setLayers(history[index].layers.map((layer) => ({ ...layer })));
+    if (history[index].selectedLayerId) setSelectedLayerId(history[index].selectedLayerId);
+    setCropDraft((history[index].documentTransform || DEFAULT_DOCUMENT_TRANSFORM).crop);
   };
   const redo = () => {
     if (!canRedo) return;
@@ -474,6 +1010,11 @@ export default function Home(): React.JSX.Element {
     setManualAdjustments(history[index].manualAdjustments);
     setLocalMasks(history[index].localMasks || []);
     setHealStrokes(history[index].healStrokes || []);
+    setSelection(history[index].selection || null);
+    setDocumentTransform(history[index].documentTransform || DEFAULT_DOCUMENT_TRANSFORM);
+    if (history[index].layers) setLayers(history[index].layers.map((layer) => ({ ...layer })));
+    if (history[index].selectedLayerId) setSelectedLayerId(history[index].selectedLayerId);
+    setCropDraft((history[index].documentTransform || DEFAULT_DOCUMENT_TRANSFORM).crop);
   };
   const reset = () => {
     setSelectedFilterId('');
@@ -485,31 +1026,21 @@ export default function Home(): React.JSX.Element {
     if (!image) return;
     setBusy(true);
     try {
-      const output = document.createElement('canvas');
-      output.width = image.naturalWidth;
-      output.height = image.naturalHeight;
-      const ctx = output.getContext('2d');
-      if (!ctx) throw new Error('Your browser could not create an export canvas.');
-      ctx.filter = adjustmentFilter(adjustments);
-      ctx.drawImage(image, 0, 0);
-      ctx.filter = 'none';
-      if (adjustments.warmth !== 0) {
-        ctx.globalCompositeOperation = 'soft-light';
-        ctx.fillStyle =
-          adjustments.warmth > 0
-            ? `rgba(255, 164, 72, ${Math.min(0.22, adjustments.warmth / 400)})`
-            : `rgba(78, 145, 255, ${Math.min(0.18, Math.abs(adjustments.warmth) / 500)})`;
-        ctx.fillRect(0, 0, output.width, output.height);
-        ctx.globalCompositeOperation = 'source-over';
-      }
-      applyManualAdjustments(output, manualAdjustments);
-      applyLocalMasks(output, localMasks);
-      applyHealing(output, healStrokes);
-      applyPortraitRetouch(output, {
-        strength: retouchStrength,
-        faces: faceLandmarks,
-        strokes: retouchStrokes,
-      });
+      const output = renderStudioDocument(
+        image,
+        image.naturalWidth,
+        image.naturalHeight,
+        layers,
+        adjustments,
+        manualAdjustments,
+        localMasks,
+        healStrokes,
+        retouchStrength,
+        faceLandmarks,
+        retouchStrokes,
+        documentTransform,
+        selection,
+      );
       const blob = await new Promise<Blob>((resolve, reject) =>
         output.toBlob(
           (b) => (b ? resolve(b) : reject(new Error('Image export failed.'))),
@@ -538,35 +1069,27 @@ export default function Home(): React.JSX.Element {
     if (!image) return;
     setBusy(true);
     try {
-      const preview = document.createElement('canvas');
       const scale = Math.min(1, 1800 / Math.max(image.naturalWidth, image.naturalHeight));
-      preview.width = Math.round(image.naturalWidth * scale);
-      preview.height = Math.round(image.naturalHeight * scale);
-      const ctx = preview.getContext('2d');
-      if (!ctx) throw new Error('Could not create a preview.');
-      ctx.filter = adjustmentFilter(adjustments);
-      ctx.drawImage(image, 0, 0, preview.width, preview.height);
-      ctx.filter = 'none';
-      if (adjustments.warmth !== 0) {
-        ctx.globalCompositeOperation = 'soft-light';
-        ctx.fillStyle =
-          adjustments.warmth > 0
-            ? `rgba(255, 164, 72, ${Math.min(0.22, adjustments.warmth / 400)})`
-            : `rgba(78, 145, 255, ${Math.min(0.18, Math.abs(adjustments.warmth) / 500)})`;
-        ctx.fillRect(0, 0, preview.width, preview.height);
-        ctx.globalCompositeOperation = 'source-over';
-      }
-      applyManualAdjustments(preview, manualAdjustments);
-      applyLocalMasks(preview, localMasks);
-      applyHealing(preview, healStrokes);
-      applyPortraitRetouch(preview, {
-        strength: retouchStrength,
-        faces: faceLandmarks,
-        strokes: retouchStrokes,
-      });
+      const preview = renderStudioDocument(
+        image,
+        Math.max(1, Math.round(image.naturalWidth * scale)),
+        Math.max(1, Math.round(image.naturalHeight * scale)),
+        layers,
+        adjustments,
+        manualAdjustments,
+        localMasks,
+        healStrokes,
+        retouchStrength,
+        faceLandmarks,
+        retouchStrokes,
+        documentTransform,
+        selection,
+      );
       const dataUrl = preview.toDataURL('image/jpeg', 0.88);
       const originalDataUrl = await readAsDataUrl(
-        new File([await (await fetch(sourceUrl!)).blob()], sourceName || 'photo'),
+        new File([await (await fetch(sourceUrl!)).blob()], sourceName || 'photo', {
+          type: sourceMime,
+        }),
       );
       const now = new Date().toISOString();
       const photo: Photo = {
@@ -592,6 +1115,7 @@ export default function Home(): React.JSX.Element {
         filterIntensity: 100,
         isOriginalRequired: true,
         tags: [],
+        selection: selection ? structuredClone(selection) : null,
         localMasks: localMasks.map((mask) => ({
           ...mask,
           points: mask.points.map((point) => ({ ...point })),
@@ -600,6 +1124,15 @@ export default function Home(): React.JSX.Element {
           ...stroke,
           points: stroke.points.map((point) => ({ ...point })),
         })),
+        studioLayers: layers.map((layer) => ({
+          ...layer,
+          adjustments: layer.adjustments ? { ...layer.adjustments } : undefined,
+          mask: layer.mask ? structuredClone(layer.mask) : null,
+          masks: (layer.masks || (layer.mask ? [layer.mask] : [])).map((mask) =>
+            structuredClone(mask),
+          ),
+        })),
+        documentTransform: structuredClone(documentTransform),
       };
       await savePhoto(photo);
       setSavedPhotos(await getAllPhotos());
@@ -614,7 +1147,13 @@ export default function Home(): React.JSX.Element {
   const openSavedPhoto = async (photo: Photo) => {
     setBusy(true);
     try {
-      const original = photo.dataUrlHigh || photo.dataUrl;
+      const savedOriginal = photo.dataUrlHigh || photo.dataUrl;
+      const imageMime =
+        photo.type === 'png' ? 'image/png' : photo.type === 'webp' ? 'image/webp' : 'image/jpeg';
+      // Older saves may have lost the Blob MIME type when converted to a File.
+      const original = savedOriginal.startsWith('data:application/octet-stream;')
+        ? savedOriginal.replace(/^data:application\/octet-stream;/, `data:${imageMime};`)
+        : savedOriginal;
       const image = await loadImage(original);
       imageRef.current = image;
       setSourceUrl(original);
@@ -624,8 +1163,45 @@ export default function Home(): React.JSX.Element {
       );
       setSourceFileSize(photo.size);
       setSourceSize({ width: image.naturalWidth, height: image.naturalHeight });
-      const valueFor = (key: string, fallback: number) =>
-        photo.edits.find((edit) => edit.type === key)?.value ?? fallback;
+      const restoredLayers = photo.studioLayers?.length
+        ? photo.studioLayers
+        : [
+            {
+              id: crypto.randomUUID(),
+              name: 'Background',
+              type: 'image' as const,
+              visible: true,
+              opacity: 100,
+              blendMode: 'source-over' as GlobalCompositeOperation,
+            },
+            {
+              id: crypto.randomUUID(),
+              name: 'Color & tone',
+              type: 'adjustment' as const,
+              visible: true,
+              opacity: 100,
+              blendMode: 'source-over' as GlobalCompositeOperation,
+            },
+          ];
+      setLayers(
+        restoredLayers.map((layer) => ({
+          ...layer,
+          masks: layer.masks || (layer.mask ? [layer.mask] : []),
+        })),
+      );
+      const restoredTransform = photo.documentTransform || DEFAULT_DOCUMENT_TRANSFORM;
+      setDocumentTransform(restoredTransform);
+      setCropDraft(restoredTransform.crop);
+      setSelectedLayerId(restoredLayers[restoredLayers.length - 1].id);
+      const restoredSelectedLayer = restoredLayers[restoredLayers.length - 1];
+      setSelectedLayerMaskId(
+        restoredSelectedLayer.masks?.[0]?.id || restoredSelectedLayer.mask?.id || '',
+      );
+      setLayerMaskView(false);
+      const valueFor = (key: string, fallback: number, preferLast = false) => {
+        const matches = preferLast ? [...photo.edits].reverse() : photo.edits;
+        return matches.find((edit) => edit.type === key)?.value ?? fallback;
+      };
       const restored: Adjustments = {
         brightness: valueFor('brightness', 100),
         contrast: valueFor('contrast', 100),
@@ -634,18 +1210,21 @@ export default function Home(): React.JSX.Element {
       };
       setAdjustments(restored);
       const restoredManual = Object.fromEntries(
-        Object.keys(DEFAULT_MANUAL_ADJUSTMENTS).map((key) => [key, valueFor(key, 0)]),
+        Object.keys(DEFAULT_MANUAL_ADJUSTMENTS).map((key) => [key, valueFor(key, 0, true)]),
       ) as unknown as ManualAdjustmentSettings;
       setManualAdjustments(restoredManual);
       const restoredMasks = photo.localMasks || [];
       const restoredHealing = photo.healStrokes || [];
       setLocalMasks(restoredMasks);
       setHealStrokes(restoredHealing);
+      const restoredSelection = photo.selection || null;
+      setSelection(restoredSelection);
       const isDefault =
         JSON.stringify(restored) === JSON.stringify(DEFAULTS) &&
         JSON.stringify(restoredManual) === JSON.stringify(DEFAULT_MANUAL_ADJUSTMENTS) &&
         !restoredMasks.length &&
-        !restoredHealing.length;
+        !restoredHealing.length &&
+        JSON.stringify(restoredTransform) === JSON.stringify(DEFAULT_DOCUMENT_TRANSFORM);
       setHistory(
         isDefault
           ? [
@@ -662,12 +1241,18 @@ export default function Home(): React.JSX.Element {
                 manualAdjustments: DEFAULT_MANUAL_ADJUSTMENTS,
                 localMasks: [],
                 healStrokes: [],
+                layers: restoredLayers.map((layer) => ({ ...layer })),
+                selectedLayerId: restoredLayers[restoredLayers.length - 1].id,
               },
               {
                 adjustments: restored,
                 manualAdjustments: restoredManual,
                 localMasks: restoredMasks,
                 healStrokes: restoredHealing,
+                selection: restoredSelection,
+                layers: restoredLayers.map((layer) => ({ ...layer })),
+                selectedLayerId: restoredLayers[restoredLayers.length - 1].id,
+                documentTransform: restoredTransform,
               },
             ],
       );
@@ -894,6 +1479,55 @@ export default function Home(): React.JSX.Element {
   const startBrushStroke = (event: React.PointerEvent<HTMLCanvasElement>) => {
     if (!hasImage) return;
     const point = pointerPoint(event);
+    if (selectionMode !== 'off') {
+      event.currentTarget.setPointerCapture(event.pointerId);
+      const stroke = {
+        points: [point],
+        size: selectionBrushSize,
+        operation: selectionMode,
+      };
+      setSelection((current) => ({
+        strokes: [...(current?.strokes || []), stroke],
+        inverted: current?.inverted || false,
+        feather: selectionFeather,
+      }));
+      return;
+    }
+    if (layerMaskTool === 'position' && selectedLayerMask) {
+      event.currentTarget.setPointerCapture(event.pointerId);
+      updateSelectedLayerMask({ start: point, end: point });
+      return;
+    }
+    if ((layerMaskTool === 'reveal' || layerMaskTool === 'hide') && selectedLayer) {
+      event.currentTarget.setPointerCapture(event.pointerId);
+      const current = selectedLayerMask || {
+        id: crypto.randomUUID(),
+        name: 'Paint mask',
+        kind: 'brush' as const,
+        strokes: [],
+        start: point,
+        end: point,
+        radius: 35,
+        feather: 35,
+        inverted: false,
+        enabled: true,
+      };
+      const nextMask: LayerMask = {
+        ...current,
+        kind: 'brush',
+        strokes: [
+          ...current.strokes,
+          { points: [point], size: layerMaskBrushSize, mode: layerMaskTool },
+        ],
+      };
+      const currentMasks = selectedLayer.masks || (selectedLayer.mask ? [selectedLayer.mask] : []);
+      const nextMasks = currentMasks.some((mask) => mask.id === nextMask.id)
+        ? currentMasks.map((mask) => (mask.id === nextMask.id ? nextMask : mask))
+        : [...currentMasks, nextMask];
+      setSelectedLayerMaskId(nextMask.id);
+      updateLayer(selectedLayer.id, { mask: nextMask, masks: nextMasks });
+      return;
+    }
     if (localTool === 'heal') {
       event.currentTarget.setPointerCapture(event.pointerId);
       commitSnapshot(adjustments, manualAdjustments, localMasks, [
@@ -906,6 +1540,8 @@ export default function Home(): React.JSX.Element {
       event.currentTarget.setPointerCapture(event.pointerId);
       const mask: LocalMask = {
         id: crypto.randomUUID(),
+        name: `${localTool === 'brush' ? 'Brush' : localTool === 'linear' ? 'Linear gradient' : 'Radial gradient'} ${localMasks.length + 1}`,
+        visible: true,
         kind: localTool,
         points: localTool === 'brush' ? [point] : [],
         center: point,
@@ -917,6 +1553,7 @@ export default function Home(): React.JSX.Element {
         saturation: localSaturation,
         size: localBrushSize,
       };
+      setSelectedMaskId(mask.id);
       commitSnapshot(adjustments, manualAdjustments, [...localMasks, mask], healStrokes);
       return;
     }
@@ -929,6 +1566,75 @@ export default function Home(): React.JSX.Element {
   };
   const continueBrushStroke = (event: React.PointerEvent<HTMLCanvasElement>) => {
     if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+    if (selectionMode !== 'off') {
+      const point = pointerPoint(event);
+      setSelection((current) => {
+        if (!current?.strokes.length) return current;
+        const strokes = current.strokes.map((stroke, i) =>
+          i === current.strokes.length - 1
+            ? { ...stroke, points: [...stroke.points, point] }
+            : stroke,
+        );
+        return { ...current, strokes };
+      });
+      return;
+    }
+    if (layerMaskTool === 'position' && selectedLayer && selectedLayerMask) {
+      const point = pointerPoint(event);
+      const mask = {
+        ...selectedLayerMask,
+        end: point,
+        radius: Math.max(
+          5,
+          Math.hypot(
+            (point.x - selectedLayerMask.start.x) * 100,
+            (point.y - selectedLayerMask.start.y) * 100,
+          ),
+        ),
+      };
+      const currentMasks = selectedLayer.masks || (selectedLayer.mask ? [selectedLayer.mask] : []);
+      const nextMasks = currentMasks.map((item) => (item.id === mask.id ? mask : item));
+      const next = layers.map((layer) =>
+        layer.id === selectedLayer.id ? { ...layer, mask, masks: nextMasks } : layer,
+      );
+      setLayers(next);
+      setHistory((items) =>
+        items.map((entry, index) =>
+          index === historyIndex
+            ? { ...entry, layers: next.map((layer) => ({ ...layer })) }
+            : entry,
+        ),
+      );
+      return;
+    }
+    if (
+      (layerMaskTool === 'reveal' || layerMaskTool === 'hide') &&
+      selectedLayer &&
+      selectedLayerMask
+    ) {
+      const point = pointerPoint(event);
+      const mask = selectedLayerMask;
+      const strokes = mask.strokes.map((stroke, index) =>
+        index === mask.strokes.length - 1
+          ? { ...stroke, points: [...stroke.points, point] }
+          : stroke,
+      );
+      const updatedMask = { ...mask, strokes };
+      const currentMasks = selectedLayer.masks || (selectedLayer.mask ? [selectedLayer.mask] : []);
+      const nextMasks = currentMasks.map((item) => (item.id === mask.id ? updatedMask : item));
+      const next = layers.map((layer) =>
+        layer.id === selectedLayer.id ? { ...layer, mask: updatedMask, masks: nextMasks } : layer,
+      );
+      setLayers(next);
+      setHistory((items) =>
+        items.map((entry, index) =>
+          index === historyIndex
+            ? { ...entry, layers: next.map((layer) => ({ ...layer })) }
+            : entry,
+        ),
+      );
+      return;
+    }
     if (localTool === 'linear' || localTool === 'radial') {
       const point = pointerPoint(event);
       const last = localMasks[localMasks.length - 1];
@@ -978,6 +1684,10 @@ export default function Home(): React.JSX.Element {
         index === current.length - 1 ? { ...stroke, points: [...stroke.points, point] } : stroke,
       ),
     );
+  };
+
+  const finishBrushStroke = () => {
+    if (selectionMode !== 'off' && selection) commitSelection(selection);
   };
 
   const suggestFromPrompt = () => {
@@ -1053,8 +1763,96 @@ export default function Home(): React.JSX.Element {
         />
       </header>
 
+      <aside className="studio-sidebar" aria-label="Studio navigation">
+        <div className="sidebar-workspace-label">WORKSPACE</div>
+        <button
+          className={`sidebar-link ${activeSection === 'home' ? 'active' : ''}`}
+          onClick={() => navigateStudio('home', 'studio-home')}
+        >
+          <span className="sidebar-icon">⌂</span>
+          <span>Overview</span>
+          <kbd>H</kbd>
+        </button>
+        <button
+          className={`sidebar-link ${activeSection === 'editor' ? 'active' : ''}`}
+          onClick={() => navigateStudio('editor', 'editor-canvas')}
+        >
+          <span className="sidebar-icon">▧</span>
+          <span>Photo editor</span>
+          <kbd>1</kbd>
+        </button>
+        <div className="sidebar-divider" />
+        <div className="sidebar-workspace-label">EDITING SUITES</div>
+        <button
+          className={`sidebar-link ${activeSection === 'retouch' ? 'active' : ''}`}
+          onClick={() => navigateStudio('retouch', 'retouch-workspace')}
+        >
+          <span className="sidebar-icon">✧</span>
+          <span>Retouch studio</span>
+        </button>
+        <button
+          className={`sidebar-link ${activeSection === 'color' ? 'active' : ''}`}
+          onClick={() => navigateStudio('color', 'color-workspace')}
+        >
+          <span className="sidebar-icon">◉</span>
+          <span>Color lab</span>
+        </button>
+        <button
+          className={`sidebar-link ${activeSection === 'compositing' ? 'active' : ''}`}
+          onClick={() => navigateStudio('compositing', 'layers-workspace')}
+        >
+          <span className="sidebar-icon">▤</span>
+          <span>Compositing</span>
+        </button>
+        <button
+          className={`sidebar-link ${activeSection === 'effects' ? 'active' : ''}`}
+          onClick={() => navigateStudio('effects', 'effects-workspace')}
+        >
+          <span className="sidebar-icon">✺</span>
+          <span>Effects</span>
+        </button>
+        <div className="sidebar-divider" />
+        <div className="sidebar-workspace-label">PROJECT</div>
+        <button
+          className={`sidebar-link ${activeSection === 'assets' ? 'active' : ''}`}
+          onClick={() => navigateStudio('assets', 'assets-workspace')}
+        >
+          <span className="sidebar-icon">▦</span>
+          <span>Assets & presets</span>
+        </button>
+        <button
+          className={`sidebar-link ${activeSection === 'history' ? 'active' : ''}`}
+          onClick={() => navigateStudio('history', 'history-workspace')}
+        >
+          <span className="sidebar-icon">◷</span>
+          <span>History</span>
+          <span className="sidebar-count">{Math.max(0, history.length - 1)}</span>
+        </button>
+        <button
+          className={`sidebar-link ${activeSection === 'library' ? 'active' : ''}`}
+          onClick={() => navigateStudio('library', 'studio-home')}
+        >
+          <span className="sidebar-icon">▣</span>
+          <span>Photo library</span>
+          <span className="sidebar-count">{savedPhotos.length}</span>
+        </button>
+        <button
+          className={`sidebar-link ${activeSection === 'export' ? 'active' : ''}`}
+          onClick={() => navigateStudio('export', 'export-workspace')}
+        >
+          <span className="sidebar-icon">⇧</span>
+          <span>Export center</span>
+        </button>
+        <div className="sidebar-bottom">
+          <div className="sidebar-status">
+            <i /> Local engine ready
+          </div>
+          <small>EVERY FRAME FIRST STUDIO</small>
+        </div>
+      </aside>
+
       <main className="studio-main">
-        <section className="workspace-heading">
+        <section className="workspace-heading" id="studio-home">
           <div>
             <p className="eyebrow">YOUR CREATIVE WORKSPACE</p>
             <h1>
@@ -1075,6 +1873,44 @@ export default function Home(): React.JSX.Element {
               </button>
             </div>
           )}
+        </section>
+        <section className="studio-overview-strip" aria-label="Workspace status">
+          <div className="overview-stat">
+            <span className="overview-icon">▧</span>
+            <div>
+              <small>DOCUMENT</small>
+              <strong>{hasImage ? sourceName : 'No document open'}</strong>
+              <em>
+                {hasImage
+                  ? `${sourceSize.width.toLocaleString()} × ${sourceSize.height.toLocaleString()}`
+                  : 'Import an image to begin'}
+              </em>
+            </div>
+          </div>
+          <div className="overview-stat">
+            <span className="overview-icon">◈</span>
+            <div>
+              <small>EDIT HISTORY</small>
+              <strong>{hasImage ? `${historyIndex} changes` : 'Ready for edits'}</strong>
+              <em>{canUndo ? 'Undo available' : 'No pending changes'}</em>
+            </div>
+          </div>
+          <div className="overview-stat">
+            <span className="overview-icon">▤</span>
+            <div>
+              <small>LAYERS</small>
+              <strong>{hasImage ? `${layers.length} layers` : 'Waiting for image'}</strong>
+              <em>{layers.filter((layer) => layer.visible).length} visible</em>
+            </div>
+          </div>
+          <div className="overview-stat engine-stat">
+            <span className="engine-pulse" />
+            <div>
+              <small>PROCESSING</small>
+              <strong>On-device engine</strong>
+              <em>Private · No upload required</em>
+            </div>
+          </div>
         </section>
 
         {showSaved ? (
@@ -1112,7 +1948,7 @@ export default function Home(): React.JSX.Element {
           </section>
         ) : (
           <div className="editor-layout">
-            <section className="preview-column">
+            <section className="preview-column" id="editor-canvas">
               <div className="preview-toolbar">
                 <span>{hasImage ? sourceName : 'PREVIEW CANVAS'}</span>
                 {hasImage && (
@@ -1134,15 +1970,88 @@ export default function Home(): React.JSX.Element {
                 }}
               >
                 {hasImage ? (
-                  <canvas
-                    ref={canvasRef}
-                    aria-label="Photo preview"
-                    className={
-                      retouchMode === 'brush' || localTool !== 'off' ? 'retouch-brush-active' : ''
-                    }
-                    onPointerDown={startBrushStroke}
-                    onPointerMove={continueBrushStroke}
-                  />
+                  <>
+                    <nav className="tool-rail" aria-label="Editing tools">
+                      <button
+                        className={localTool === 'off' && retouchMode === 'off' ? 'active' : ''}
+                        title="Pointer / move"
+                        aria-label="Pointer / move"
+                        onClick={() => {
+                          setLocalTool('off');
+                          setRetouchMode('off');
+                        }}
+                      >
+                        ↖
+                      </button>
+                      <button
+                        className={localTool === 'brush' ? 'active' : ''}
+                        title="Brush mask"
+                        aria-label="Brush mask"
+                        onClick={() => {
+                          setLocalTool('brush');
+                          setRetouchMode('off');
+                        }}
+                      >
+                        ◉
+                      </button>
+                      <button
+                        className={localTool === 'heal' ? 'active' : ''}
+                        title="Healing brush"
+                        aria-label="Healing brush"
+                        onClick={() => {
+                          setLocalTool('heal');
+                          setRetouchMode('off');
+                        }}
+                      >
+                        ✳
+                      </button>
+                      <button
+                        className={retouchMode === 'brush' ? 'active' : ''}
+                        title="Portrait retouch brush"
+                        aria-label="Portrait retouch brush"
+                        onClick={() => {
+                          setLocalTool('off');
+                          setRetouchMode('brush');
+                        }}
+                      >
+                        ✧
+                      </button>
+                      <button
+                        title="Add text layer"
+                        aria-label="Add text layer"
+                        onClick={addTextLayer}
+                      >
+                        T
+                      </button>
+                      <button
+                        title="Crop & transform"
+                        aria-label="Crop and transform"
+                        onClick={() => {
+                          setActiveWorkspace('professional');
+                          document
+                            .getElementById('transform-workspace')
+                            ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }}
+                      >
+                        ⌗
+                      </button>
+                    </nav>
+                    <canvas
+                      ref={canvasRef}
+                      aria-label={
+                        tonalBrush ? `${tonalBrush} brush photo preview` : 'Photo preview'
+                      }
+                      className={
+                        retouchMode === 'brush' || localTool !== 'off' || layerMaskTool !== 'off'
+                          ? 'retouch-brush-active'
+                          : ''
+                      }
+                      onPointerDown={startBrushStroke}
+                      onPointerMove={continueBrushStroke}
+                      onPointerUp={finishBrushStroke}
+                      onPointerCancel={finishBrushStroke}
+                    />
+                  </>
                 ) : (
                   <div className="upload-prompt">
                     <div className="upload-icon">↥</div>
@@ -1167,7 +2076,7 @@ export default function Home(): React.JSX.Element {
                 )}
               </div>
               {hasImage && (
-                <div className="export-bar">
+                <div className="export-bar" id="export-workspace">
                   <label className="format-select">
                     Export as{' '}
                     <select
@@ -1203,12 +2112,607 @@ export default function Home(): React.JSX.Element {
                   role="tab"
                   aria-selected={activeWorkspace === 'portrait'}
                   className={activeWorkspace === 'portrait' ? 'active' : ''}
-                  onClick={() => setActiveWorkspace('portrait')}
+                  onClick={() => {
+                    setActiveWorkspace('portrait');
+                    if (hasImage && !faceLandmarks.length && !detectingFaces)
+                      void runFaceDetection();
+                  }}
                 >
                   Portrait Studio
                 </button>
               </div>
-              <section className="tool-panel style-workflow-panel">
+              <section className="tool-panel layer-panel" id="layers-workspace">
+                <div className="section-title">
+                  <div>
+                    <p className="eyebrow">DOCUMENT STACK</p>
+                    <h2>Layers</h2>
+                  </div>
+                  <span>{layers.length} layers</span>
+                </div>
+                <div className="layer-add-actions">
+                  <button
+                    className="button button-quiet"
+                    disabled={!hasImage}
+                    onClick={addLayerGroup}
+                  >
+                    ＋ Group
+                  </button>
+                  <button
+                    className="button button-quiet"
+                    disabled={!hasImage}
+                    onClick={addAdjustmentLayer}
+                  >
+                    ＋ Adjustment
+                  </button>
+                  <button
+                    className="button button-quiet"
+                    disabled={!hasImage}
+                    onClick={addTextLayer}
+                  >
+                    ＋ Text
+                  </button>
+                </div>
+                <div className="layer-list" role="listbox" aria-label="Document layers">
+                  {[...layers]
+                    .reverse()
+                    .filter((layer) => {
+                      if (!layer.groupId) return true;
+                      const parent = layers.find((candidate) => candidate.id === layer.groupId);
+                      return parent?.type !== 'group' || parent.expanded !== false;
+                    })
+                    .map((layer) => (
+                      <div
+                        key={layer.id}
+                        draggable
+                        onDragStart={(event) => {
+                          setDraggedLayerId(layer.id);
+                          document.body.dataset.draggedLayerId = layer.id;
+                          event.dataTransfer.setData('text/plain', layer.id);
+                          event.dataTransfer.effectAllowed = 'move';
+                        }}
+                        onDragOver={(event) => {
+                          event.preventDefault();
+                          event.dataTransfer.dropEffect = 'move';
+                        }}
+                        onDrop={(event) => {
+                          event.preventDefault();
+                          const sourceId =
+                            event.dataTransfer.getData('text/plain') ||
+                            document.body.dataset.draggedLayerId ||
+                            draggedLayerId;
+                          if (sourceId) reorderLayer(sourceId, layer.id);
+                          delete document.body.dataset.draggedLayerId;
+                          setDraggedLayerId(null);
+                        }}
+                        onDragEnd={() => {
+                          delete document.body.dataset.draggedLayerId;
+                          setDraggedLayerId(null);
+                        }}
+                        className={`layer-row ${selectedLayerId === layer.id ? 'selected' : ''} ${layer.type === 'group' ? 'layer-group-row' : ''}`}
+                        style={{ marginLeft: layer.groupId ? 18 : 0 }}
+                      >
+                        <button
+                          className="layer-visibility"
+                          aria-label={`${layer.visible ? 'Hide' : 'Show'} ${layer.name}`}
+                          onClick={() => updateLayer(layer.id, { visible: !layer.visible })}
+                        >
+                          {layer.visible ? '◉' : '○'}
+                        </button>
+                        {layer.type === 'group' && (
+                          <button
+                            className="layer-visibility"
+                            aria-label={`${layer.expanded === false ? 'Expand' : 'Collapse'} ${layer.name}`}
+                            onClick={() => toggleGroupExpanded(layer.id)}
+                          >
+                            {layer.expanded === false ? '▸' : '▾'}
+                          </button>
+                        )}
+                        <button
+                          className="layer-select"
+                          role="option"
+                          aria-selected={selectedLayerId === layer.id}
+                          onClick={() => {
+                            setSelectedLayerId(layer.id);
+                            setLayerMaskView(false);
+                            setLayerMaskTool('off');
+                          }}
+                        >
+                          <span className={`layer-thumb layer-thumb-${layer.type}`}>
+                            {layer.type === 'image'
+                              ? '▧'
+                              : layer.type === 'adjustment'
+                                ? '◐'
+                                : layer.type === 'group'
+                                  ? '▣'
+                                  : 'T'}
+                          </span>
+                          <span>
+                            <strong>{layer.name}</strong>
+                            <small>
+                              {layer.type === 'image'
+                                ? 'Pixel layer'
+                                : layer.type === 'adjustment'
+                                  ? 'Adjustment layer'
+                                  : layer.type === 'group'
+                                    ? layers.filter((child) => child.groupId === layer.id).length +
+                                      ' child layers'
+                                    : 'Type layer'}
+                            </small>
+                          </span>
+                        </button>
+                        <span className="layer-reorder">
+                          <button
+                            aria-label={`Move ${layer.name} up`}
+                            onClick={() => moveLayer(layer.id, 1)}
+                          >
+                            ↑
+                          </button>
+                          <button
+                            aria-label={`Move ${layer.name} down`}
+                            onClick={() => moveLayer(layer.id, -1)}
+                          >
+                            ↓
+                          </button>
+                        </span>
+                      </div>
+                    ))}
+                </div>
+                {selectedLayer && (
+                  <div className="layer-properties">
+                    <label className="layer-name-control">
+                      <span>Layer name</span>
+                      <input
+                        value={selectedLayer.name}
+                        onChange={(e) => updateLayer(selectedLayer.id, { name: e.target.value })}
+                      />
+                    </label>
+                    <div className="layer-mask-panel">
+                      <strong>Layer mask</strong>
+                      <div className="layer-mask-list">
+                        {(
+                          selectedLayer.masks || (selectedLayer.mask ? [selectedLayer.mask] : [])
+                        ).map((mask, index) => (
+                          <div className="layer-mask-item" key={mask.id}>
+                            <canvas
+                              data-layer-mask-thumb={mask.id}
+                              width="56"
+                              height="32"
+                              aria-label={(mask.name || 'Layer mask') + ' thumbnail'}
+                            />
+                            <button
+                              className={
+                                selectedLayerMask?.id === mask.id
+                                  ? 'button button-primary'
+                                  : 'button button-quiet'
+                              }
+                              onClick={() => {
+                                setSelectedLayerMaskId(mask.id);
+                                setLayerMaskView(false);
+                                setLayerMaskTool('off');
+                              }}
+                            >
+                              {mask.name || mask.kind + ' mask ' + (index + 1)}
+                            </button>
+                            <button
+                              className="button button-quiet"
+                              aria-label="Move mask up"
+                              onClick={() => {
+                                const all = [
+                                  ...(selectedLayer.masks ||
+                                    (selectedLayer.mask ? [selectedLayer.mask] : [])),
+                                ];
+                                if (index > 0) {
+                                  [all[index - 1], all[index]] = [all[index], all[index - 1]];
+                                  updateLayer(selectedLayer.id, { masks: all });
+                                }
+                              }}
+                            >
+                              ↑
+                            </button>
+                            <button
+                              className="button button-quiet"
+                              aria-label="Move mask down"
+                              onClick={() => {
+                                const all = [
+                                  ...(selectedLayer.masks ||
+                                    (selectedLayer.mask ? [selectedLayer.mask] : [])),
+                                ];
+                                if (index < all.length - 1) {
+                                  [all[index + 1], all[index]] = [all[index], all[index + 1]];
+                                  updateLayer(selectedLayer.id, { masks: all });
+                                }
+                              }}
+                            >
+                              ↓
+                            </button>
+                            <button
+                              className="button button-quiet"
+                              aria-label={
+                                (mask.enabled ? 'Disable ' : 'Enable ') + (mask.name || 'mask')
+                              }
+                              onClick={() => {
+                                const nextMask = { ...mask, enabled: !mask.enabled };
+                                const all =
+                                  selectedLayer.masks ||
+                                  (selectedLayer.mask ? [selectedLayer.mask] : []);
+                                updateLayer(selectedLayer.id, {
+                                  mask:
+                                    selectedLayerMask?.id === mask.id
+                                      ? nextMask
+                                      : selectedLayer.mask,
+                                  masks: all.map((item) => (item.id === mask.id ? nextMask : item)),
+                                });
+                              }}
+                            >
+                              {mask.enabled ? 'Visible' : 'Hidden'}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="layer-mask-actions">
+                        <button
+                          className="button button-quiet"
+                          onClick={() => addLayerMask('brush')}
+                        >
+                          + Paint mask
+                        </button>
+                        <button
+                          className="button button-quiet"
+                          onClick={() => addLayerMask('linear')}
+                        >
+                          + Linear
+                        </button>
+                        <button
+                          className="button button-quiet"
+                          onClick={() => addLayerMask('radial')}
+                        >
+                          + Radial
+                        </button>
+                      </div>
+                      <div className="layer-mask-preview">
+                        {selectedLayer.masks?.length || selectedLayer.mask ? (
+                          <>
+                            <canvas
+                              ref={maskThumbnailRef}
+                              aria-label="Live grayscale layer mask thumbnail"
+                            />
+                            <span>
+                              {(
+                                selectedLayerMask?.kind ||
+                                selectedLayer.mask?.kind ||
+                                'brush'
+                              ).toUpperCase()}{' '}
+                              · {selectedLayerMask?.strokes.length || 0} stroke(s)
+                            </span>
+                          </>
+                        ) : (
+                          'No mask attached'
+                        )}
+                      </div>
+                      {!(selectedLayer.masks?.length || selectedLayer.mask) ? (
+                        <p>No mask selected. Add a mask above to begin.</p>
+                      ) : (
+                        <>
+                          <label className="layer-name-control">
+                            <span>Mask name</span>
+                            <input
+                              value={selectedLayerMask?.name || ''}
+                              placeholder="Layer mask"
+                              onChange={(event) =>
+                                updateSelectedLayerMask({ name: event.target.value })
+                              }
+                            />
+                          </label>
+                          <div className="layer-mask-actions">
+                            <button
+                              className={
+                                layerMaskView ? 'button button-primary' : 'button button-quiet'
+                              }
+                              onClick={() => setLayerMaskView((value) => !value)}
+                            >
+                              {layerMaskView ? 'Return to image' : 'Edit mask view'}
+                            </button>
+                            <button
+                              className={
+                                layerMaskTool === 'reveal'
+                                  ? 'button button-primary'
+                                  : 'button button-quiet'
+                              }
+                              onClick={() =>
+                                setLayerMaskTool(layerMaskTool === 'reveal' ? 'off' : 'reveal')
+                              }
+                            >
+                              Reveal brush
+                            </button>
+                            <button
+                              className={
+                                layerMaskTool === 'hide'
+                                  ? 'button button-primary'
+                                  : 'button button-quiet'
+                              }
+                              onClick={() =>
+                                setLayerMaskTool(layerMaskTool === 'hide' ? 'off' : 'hide')
+                              }
+                            >
+                              Hide brush
+                            </button>
+                            {selectedLayerMask?.kind !== 'brush' && (
+                              <button
+                                className={
+                                  layerMaskTool === 'position'
+                                    ? 'button button-primary'
+                                    : 'button button-quiet'
+                                }
+                                onClick={() =>
+                                  setLayerMaskTool(
+                                    layerMaskTool === 'position' ? 'off' : 'position',
+                                  )
+                                }
+                              >
+                                Position gradient
+                              </button>
+                            )}
+                            <button
+                              className="button button-quiet"
+                              onClick={() =>
+                                updateSelectedLayerMask({ inverted: !selectedLayerMask?.inverted })
+                              }
+                            >
+                              Invert
+                            </button>
+                            <button
+                              className="button button-quiet"
+                              onClick={() =>
+                                updateSelectedLayerMask({ enabled: !selectedLayerMask?.enabled })
+                              }
+                            >
+                              {selectedLayerMask?.enabled ? 'Disable' : 'Enable'}
+                            </button>
+                          </div>
+                          <label className="range-control">
+                            <span>
+                              <span>Mask brush size</span>
+                              <strong>{layerMaskBrushSize}</strong>
+                            </span>
+                            <input
+                              type="range"
+                              min="5"
+                              max="140"
+                              value={layerMaskBrushSize}
+                              onChange={(event) =>
+                                setLayerMaskBrushSize(Number(event.target.value))
+                              }
+                            />
+                          </label>
+                          <label className="range-control">
+                            <span>
+                              <span>Mask feather</span>
+                              <strong>{selectedLayerMask?.feather || 0}%</strong>
+                            </span>
+                            <input
+                              type="range"
+                              min="0"
+                              max="100"
+                              value={selectedLayerMask?.feather || 0}
+                              onChange={(event) =>
+                                updateSelectedLayerMask({ feather: Number(event.target.value) })
+                              }
+                            />
+                          </label>
+                          {selectedLayerMask?.kind !== 'brush' && (
+                            <label className="range-control">
+                              <span>
+                                <span>Gradient radius</span>
+                                <strong>{selectedLayerMask?.radius || 35}%</strong>
+                              </span>
+                              <input
+                                type="range"
+                                min="5"
+                                max="100"
+                                value={selectedLayerMask?.radius || 35}
+                                onChange={(event) =>
+                                  updateSelectedLayerMask({ radius: Number(event.target.value) })
+                                }
+                              />
+                            </label>
+                          )}
+                          <button
+                            className="text-button"
+                            onClick={() => {
+                              const remaining = (
+                                selectedLayer.masks ||
+                                (selectedLayer.mask ? [selectedLayer.mask] : [])
+                              ).filter((mask) => mask.id !== selectedLayerMask?.id);
+                              const nextActive = remaining[remaining.length - 1] || null;
+                              updateLayer(selectedLayer.id, { mask: nextActive, masks: remaining });
+                              setSelectedLayerMaskId(nextActive?.id || '');
+                              setLayerMaskTool('off');
+                            }}
+                          >
+                            Remove layer mask
+                          </button>
+                        </>
+                      )}
+                    </div>
+                    <label className="range-control">
+                      <span>
+                        <span>Opacity</span>
+                        <strong>{selectedLayer.opacity}%</strong>
+                      </span>
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={selectedLayer.opacity}
+                        onChange={(e) =>
+                          updateLayer(selectedLayer.id, { opacity: Number(e.target.value) })
+                        }
+                      />
+                    </label>
+                    {selectedLayer.type !== 'group' && (
+                      <label className="layer-name-control">
+                        <span>Layer group</span>
+                        <select
+                          value={selectedLayer.groupId || ''}
+                          onChange={(e) =>
+                            updateLayer(selectedLayer.id, { groupId: e.target.value || null })
+                          }
+                        >
+                          <option value="">No group</option>
+                          {layers
+                            .filter((layer) => layer.type === 'group')
+                            .map((group) => (
+                              <option key={group.id} value={group.id}>
+                                {group.name}
+                              </option>
+                            ))}
+                        </select>
+                      </label>
+                    )}
+                    <label className="layer-name-control">
+                      <span>Blend mode</span>
+                      <select
+                        value={selectedLayer.blendMode}
+                        onChange={(e) =>
+                          updateLayer(selectedLayer.id, {
+                            blendMode: e.target.value as GlobalCompositeOperation,
+                          })
+                        }
+                      >
+                        {BLEND_MODES.map((mode) => (
+                          <option key={mode} value={mode}>
+                            {mode.replace('-', ' ')}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    {selectedLayer.type === 'adjustment' && (
+                      <div className="layer-adjustment-controls">
+                        {(['brightness', 'contrast', 'saturation', 'warmth'] as const).map(
+                          (key) => (
+                            <label className="range-control" key={key}>
+                              <span>
+                                <span>{key[0].toUpperCase() + key.slice(1)}</span>
+                                <strong>{selectedLayer.adjustments?.[key] ?? DEFAULTS[key]}</strong>
+                              </span>
+                              <input
+                                type="range"
+                                min={key === 'warmth' ? -60 : 0}
+                                max={key === 'warmth' ? 60 : 180}
+                                value={selectedLayer.adjustments?.[key] ?? DEFAULTS[key]}
+                                onChange={(e) =>
+                                  updateLayer(selectedLayer.id, {
+                                    adjustments: {
+                                      ...(selectedLayer.adjustments || DEFAULTS),
+                                      [key]: Number(e.target.value),
+                                    },
+                                  })
+                                }
+                              />
+                            </label>
+                          ),
+                        )}
+                      </div>
+                    )}
+                    {selectedLayer.type === 'text' && (
+                      <>
+                        <label className="layer-name-control">
+                          <span>Text content</span>
+                          <input
+                            value={selectedLayer.text || ''}
+                            onChange={(e) =>
+                              updateLayer(selectedLayer.id, { text: e.target.value })
+                            }
+                          />
+                        </label>
+                        <label className="layer-name-control">
+                          <span>Text color</span>
+                          <input
+                            type="color"
+                            value={selectedLayer.color || '#ffffff'}
+                            onChange={(e) =>
+                              updateLayer(selectedLayer.id, { color: e.target.value })
+                            }
+                          />
+                        </label>
+                        <label className="range-control">
+                          <span>
+                            <span>Font size</span>
+                            <strong>{selectedLayer.fontSize || 72}px</strong>
+                          </span>
+                          <input
+                            type="range"
+                            min="16"
+                            max="180"
+                            value={selectedLayer.fontSize || 72}
+                            onChange={(e) =>
+                              updateLayer(selectedLayer.id, { fontSize: Number(e.target.value) })
+                            }
+                          />
+                        </label>
+                      </>
+                    )}
+                    <button
+                      className="text-button layer-delete"
+                      disabled={selectedLayer.type === 'image'}
+                      onClick={removeSelectedLayer}
+                    >
+                      {selectedLayer.type === 'group'
+                        ? 'Ungroup and remove'
+                        : 'Remove selected layer'}
+                    </button>
+                  </div>
+                )}
+              </section>
+              <section className="tool-panel history-panel" id="history-workspace">
+                <div className="section-title">
+                  <div>
+                    <p className="eyebrow">NON-DESTRUCTIVE WORKFLOW</p>
+                    <h2>History</h2>
+                  </div>
+                  <span>{history.length} states</span>
+                </div>
+                <div className="history-timeline">
+                  {history.map((entry, index) => (
+                    <button
+                      key={index}
+                      className={`history-entry ${index === historyIndex ? 'current' : ''}`}
+                      onClick={() => {
+                        setHistoryIndex(index);
+                        setAdjustments(entry.adjustments);
+                        setManualAdjustments(entry.manualAdjustments);
+                        setLocalMasks(entry.localMasks);
+                        setHealStrokes(entry.healStrokes);
+                        setSelection(entry.selection || null);
+                        setDocumentTransform(entry.documentTransform || DEFAULT_DOCUMENT_TRANSFORM);
+                        if (entry.layers) setLayers(entry.layers.map((layer) => ({ ...layer })));
+                        if (entry.selectedLayerId) setSelectedLayerId(entry.selectedLayerId);
+                      }}
+                    >
+                      <span className="history-dot" />
+                      <span>
+                        <strong>{index === 0 ? 'Original state' : `Edit state ${index}`}</strong>
+                        <small>
+                          {index === historyIndex
+                            ? 'Current state'
+                            : index < historyIndex
+                              ? 'Previous state'
+                              : 'Redo state'}
+                        </small>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                <div className="history-footer">
+                  <button className="button button-quiet" onClick={undo} disabled={!canUndo}>
+                    ↶ Undo
+                  </button>
+                  <button className="button button-quiet" onClick={redo} disabled={!canRedo}>
+                    ↷ Redo
+                  </button>
+                </div>
+              </section>
+              <section className="tool-panel style-workflow-panel" id="assets-workspace">
                 <div className="section-title">
                   <div>
                     <p className="eyebrow">REFERENCE → REPEAT</p>
@@ -1348,7 +2852,7 @@ export default function Home(): React.JSX.Element {
                 </p>
               </section>
               {activeWorkspace === 'professional' && (
-                <section className="tool-panel filter-library-panel">
+                <section className="tool-panel filter-library-panel" id="effects-workspace">
                   <div className="section-title">
                     <div>
                       <p className="eyebrow">FILTER LIBRARY</p>
@@ -1452,7 +2956,7 @@ export default function Home(): React.JSX.Element {
                 </section>
               )}
               {activeWorkspace === 'professional' && (
-                <section className="tool-panel">
+                <section className="tool-panel" id="color-workspace">
                   <div className="section-title">
                     <div>
                       <p className="eyebrow">FINE TUNING</p>
@@ -1735,6 +3239,108 @@ export default function Home(): React.JSX.Element {
                 </section>
               )}
               {activeWorkspace === 'professional' && (
+                <section className="tool-panel" id="transform-workspace">
+                  <div className="section-title">
+                    <div>
+                      <p className="eyebrow">DOCUMENT GEOMETRY</p>
+                      <h2>Crop & transform</h2>
+                    </div>
+                    <span className="offline-tag">NON-DESTRUCTIVE</span>
+                  </div>
+                  <div className="retouch-actions">
+                    <button
+                      className="button button-quiet"
+                      disabled={!hasImage}
+                      onClick={() => rotateDocument(-90)}
+                    >
+                      ↶ Rotate left
+                    </button>
+                    <button
+                      className="button button-quiet"
+                      disabled={!hasImage}
+                      onClick={() => rotateDocument(90)}
+                    >
+                      ↷ Rotate right
+                    </button>
+                  </div>
+                  <div className="retouch-actions">
+                    <button
+                      className={`button ${documentTransform.flipX ? 'button-primary' : 'button-quiet'}`}
+                      disabled={!hasImage}
+                      onClick={() =>
+                        commitDocumentTransform({
+                          ...documentTransform,
+                          flipX: !documentTransform.flipX,
+                        })
+                      }
+                    >
+                      ⇋ Flip horizontal
+                    </button>
+                    <button
+                      className={`button ${documentTransform.flipY ? 'button-primary' : 'button-quiet'}`}
+                      disabled={!hasImage}
+                      onClick={() =>
+                        commitDocumentTransform({
+                          ...documentTransform,
+                          flipY: !documentTransform.flipY,
+                        })
+                      }
+                    >
+                      ⇵ Flip vertical
+                    </button>
+                  </div>
+                  {(
+                    [
+                      ['Left', 'x', 0, 90],
+                      ['Top', 'y', 0, 90],
+                      ['Width', 'width', 10, 100 - Math.round(cropDraft.x * 100)],
+                      ['Height', 'height', 10, 100 - Math.round(cropDraft.y * 100)],
+                    ] as const
+                  ).map(([label, key, min, max]) => (
+                    <label className="range-control" key={key}>
+                      <span>
+                        <span>Crop {label}</span>
+                        <strong>{Math.round(cropDraft[key] * 100)}%</strong>
+                      </span>
+                      <input
+                        type="range"
+                        min={min}
+                        max={Math.max(min, max)}
+                        value={Math.round(cropDraft[key] * 100)}
+                        disabled={!hasImage}
+                        onChange={(event) =>
+                          setCropDraft((current) => ({
+                            ...current,
+                            [key]: Number(event.target.value) / 100,
+                          }))
+                        }
+                      />
+                    </label>
+                  ))}
+                  <div className="retouch-actions">
+                    <button
+                      className="button button-primary"
+                      disabled={!hasImage}
+                      onClick={applyCropDraft}
+                    >
+                      Apply crop
+                    </button>
+                    <button
+                      className="text-button"
+                      disabled={!hasImage}
+                      onClick={() => commitDocumentTransform(DEFAULT_DOCUMENT_TRANSFORM)}
+                    >
+                      Reset geometry
+                    </button>
+                  </div>
+                  <p className="tool-note">
+                    Crop coordinates are relative to the original image. Rotation and flips remain
+                    editable, and the same transform is used for preview, local save, and
+                    full-resolution export.
+                  </p>
+                </section>
+              )}
+              {activeWorkspace === 'professional' && (
                 <section className="tool-panel">
                   <div className="section-title">
                     <div>
@@ -1755,7 +3361,10 @@ export default function Home(): React.JSX.Element {
                           localTool === tool ? 'button button-primary' : 'button button-quiet'
                         }
                         disabled={!hasImage}
-                        onClick={() => setLocalTool(tool)}
+                        onClick={() => {
+                          setLocalTool(tool);
+                          if (tool === 'brush' || tool === 'off') setTonalBrush(null);
+                        }}
                       >
                         {tool === 'off'
                           ? 'Select'
@@ -1769,6 +3378,138 @@ export default function Home(): React.JSX.Element {
                       </button>
                     ))}
                   </div>
+                  <div className="selection-workspace">
+                    <strong>Selection brush</strong>
+                    <p className="tool-note">
+                      Paint a selection, then local brush/gradient adjustments are restricted to the
+                      selected area.
+                    </p>
+                    <div className="retouch-actions">
+                      <button
+                        className={
+                          selectionMode === 'add' ? 'button button-primary' : 'button button-quiet'
+                        }
+                        disabled={!hasImage}
+                        onClick={() => {
+                          setSelectionMode(selectionMode === 'add' ? 'off' : 'add');
+                          setLocalTool('off');
+                        }}
+                      >
+                        Add selection
+                      </button>
+                      <button
+                        className={
+                          selectionMode === 'subtract'
+                            ? 'button button-primary'
+                            : 'button button-quiet'
+                        }
+                        disabled={!hasImage}
+                        onClick={() => {
+                          setSelectionMode(selectionMode === 'subtract' ? 'off' : 'subtract');
+                          setLocalTool('off');
+                        }}
+                      >
+                        Subtract
+                      </button>
+                      <button
+                        className="button button-quiet"
+                        disabled={!selection}
+                        onClick={() =>
+                          commitSelection(
+                            selection ? { ...selection, inverted: !selection.inverted } : null,
+                          )
+                        }
+                      >
+                        Invert
+                      </button>
+                      <button
+                        className="button button-quiet"
+                        disabled={!selection}
+                        onClick={() => commitSelection(null)}
+                      >
+                        Clear
+                      </button>
+                    </div>
+                    <label className="range-control">
+                      <span>
+                        <span>Selection brush size</span>
+                        <strong>{selectionBrushSize}</strong>
+                      </span>
+                      <input
+                        type="range"
+                        min="5"
+                        max="120"
+                        value={selectionBrushSize}
+                        onChange={(e) => setSelectionBrushSize(Number(e.target.value))}
+                      />
+                    </label>
+                    <label className="range-control">
+                      <span>
+                        <span>Selection feather</span>
+                        <strong>{selectionFeather}%</strong>
+                      </span>
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={selectionFeather}
+                        onChange={(e) => {
+                          const value = Number(e.target.value);
+                          setSelectionFeather(value);
+                          setSelection((current) =>
+                            current ? { ...current, feather: value } : current,
+                          );
+                        }}
+                      />
+                    </label>
+                    <span className="tool-note">
+                      {selection
+                        ? `${selection.strokes.length} selection stroke(s) · ${selection.inverted ? 'inverted' : 'normal'}`
+                        : 'No active selection'}
+                    </span>
+                  </div>
+                  <div className="retouch-actions" aria-label="Tonal brushes">
+                    <button
+                      className={
+                        tonalBrush === 'dodge' ? 'button button-primary' : 'button button-quiet'
+                      }
+                      disabled={!hasImage}
+                      onClick={() => {
+                        setTonalBrush('dodge');
+                        setLocalTool('brush');
+                        setRetouchMode('off');
+                        setLocalExposure(28);
+                        setLocalTemperature(0);
+                        setLocalSaturation(0);
+                      }}
+                    >
+                      ☼ Dodge
+                    </button>
+                    <button
+                      className={
+                        tonalBrush === 'burn' ? 'button button-primary' : 'button button-quiet'
+                      }
+                      disabled={!hasImage}
+                      onClick={() => {
+                        setTonalBrush('burn');
+                        setLocalTool('brush');
+                        setRetouchMode('off');
+                        setLocalExposure(-28);
+                        setLocalTemperature(0);
+                        setLocalSaturation(0);
+                      }}
+                    >
+                      ◐ Burn
+                    </button>
+                  </div>
+                  {tonalBrush && localTool === 'brush' && (
+                    <p className="tool-note">
+                      {tonalBrush === 'dodge' ? 'Dodge brightens' : 'Burn darkens'} the painted area
+                      with a feathered exposure mask. Adjust exposure below for strength, then paint
+                      directly on the photo. Select Brush mask to return to general local
+                      adjustments.
+                    </p>
+                  )}
                   <label className="range-control">
                     <span>
                       <span>Brush size</span>
@@ -1829,22 +3570,126 @@ export default function Home(): React.JSX.Element {
                       onChange={(e) => setLocalFeather(Number(e.target.value))}
                     />
                   </label>
+                  <div className="mask-workspace" aria-label="Mask workspace">
+                    <div className="mask-workspace-heading">
+                      <strong>Mask workspace</strong>
+                      <span className="tool-note">{localMasks.length} mask(s)</span>
+                    </div>
+                    {localMasks.length === 0 ? (
+                      <p className="tool-note">
+                        Paint a brush, linear, or radial mask to manage it here.
+                      </p>
+                    ) : (
+                      <div className="mask-list">
+                        {localMasks.map((mask, index) => (
+                          <div
+                            className={`mask-row ${selectedMaskId === mask.id ? 'selected' : ''}`}
+                            key={mask.id}
+                          >
+                            <button
+                              className="mask-select"
+                              onClick={() => setSelectedMaskId(mask.id)}
+                              aria-pressed={selectedMaskId === mask.id}
+                            >
+                              <span>{mask.name || `${mask.kind} mask ${index + 1}`}</span>
+                              <small>
+                                {mask.kind} · {mask.exposure > 0 ? '+' : ''}
+                                {mask.exposure} EV
+                              </small>
+                            </button>
+                            <button
+                              className="icon-button"
+                              aria-label={`${mask.visible === false ? 'Show' : 'Hide'} ${mask.name || 'mask'}`}
+                              title={
+                                mask.visible === false ? 'Show mask effect' : 'Hide mask effect'
+                              }
+                              onClick={() => {
+                                const next = localMasks.map((item) =>
+                                  item.id === mask.id
+                                    ? { ...item, visible: item.visible === false }
+                                    : item,
+                                );
+                                commitSnapshot(adjustments, manualAdjustments, next, healStrokes);
+                              }}
+                            >
+                              {mask.visible === false ? '◉̸' : '◉'}
+                            </button>
+                            <button
+                              className="icon-button"
+                              aria-label={`Delete ${mask.name || 'mask'}`}
+                              title="Delete mask"
+                              onClick={() => {
+                                const next = localMasks.filter((item) => item.id !== mask.id);
+                                setSelectedMaskId(next.at(-1)?.id || null);
+                                commitSnapshot(adjustments, manualAdjustments, next, healStrokes);
+                              }}
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {selectedMaskId && localMasks.some((mask) => mask.id === selectedMaskId) && (
+                      <div className="mask-selected-note">
+                        Selected mask:{' '}
+                        {localMasks.find((mask) => mask.id === selectedMaskId)?.name ||
+                          'Untitled mask'}
+                        . Edit this mask below; the active selection remains applied when it is
+                        rendered and exported.
+                        {(() => {
+                          const mask = localMasks.find((item) => item.id === selectedMaskId);
+                          if (!mask) return null;
+                          return (
+                            <div className="selected-mask-controls">
+                              {(
+                                [
+                                  ['Exposure', 'exposure', -100, 100],
+                                  ['Temperature', 'temperature', -100, 100],
+                                  ['Saturation', 'saturation', -100, 100],
+                                  ['Feather', 'feather', 0, 100],
+                                  ['Brush size', 'size', 5, 120],
+                                ] as const
+                              ).map(([label, key, min, max]) => (
+                                <label className="range-control" key={key}>
+                                  <span>
+                                    <span>{label}</span>
+                                    <strong>{mask[key]}</strong>
+                                  </span>
+                                  <input
+                                    type="range"
+                                    min={min}
+                                    max={max}
+                                    value={mask[key]}
+                                    onChange={(event) =>
+                                      updateSelectedMask({ [key]: Number(event.target.value) })
+                                    }
+                                  />
+                                </label>
+                              ))}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
+                  </div>
                   <div className="retouch-actions">
                     <button
                       className="text-button"
                       disabled={!localMasks.length && !healStrokes.length}
-                      onClick={() => commitSnapshot(adjustments, manualAdjustments, [], [])}
+                      onClick={() => {
+                        setSelectedMaskId(null);
+                        commitSnapshot(adjustments, manualAdjustments, [], []);
+                      }}
                     >
                       Clear local edits
                     </button>
-                    <span className="tool-note">
-                      {localMasks.length} mask(s) · {healStrokes.length} healing stroke(s)
-                    </span>
+                    <span className="tool-note">{healStrokes.length} healing stroke(s)</span>
                   </div>
                 </section>
               )}
               {activeWorkspace === 'portrait' && (
-                <section className="tool-panel retouch-panel">
+                <section className="tool-panel retouch-panel" id="retouch-workspace">
                   <div className="section-title">
                     <div>
                       <p className="eyebrow">PORTRAIT TOOLS</p>
@@ -1853,8 +3698,9 @@ export default function Home(): React.JSX.Element {
                     <span className="offline-tag">ON DEVICE</span>
                   </div>
                   <p className="tool-note">
-                    Choose automatic face-aware smoothing or paint only the areas you want to
-                    soften. Your photo stays on this device.
+                    Detect faces for a feathered skin mask that protects eyes, brows and lips, or
+                    paint a precise area. The preview and full-resolution export use the same
+                    resolution-scaled retouch strength. Processing stays on this device.
                   </p>
                   <div className="retouch-actions">
                     <button
@@ -1909,6 +3755,35 @@ export default function Home(): React.JSX.Element {
                       disabled={!hasImage}
                     >
                       Brush
+                    </button>
+                  </div>
+                  <div
+                    className="retouch-strength-presets"
+                    aria-label="Skin smoothing strength presets"
+                  >
+                    <button
+                      type="button"
+                      className={retouchStrength === 30 ? 'selected' : ''}
+                      onClick={() => setRetouchStrength(30)}
+                      disabled={!hasImage}
+                    >
+                      Subtle
+                    </button>
+                    <button
+                      type="button"
+                      className={retouchStrength === 55 ? 'selected' : ''}
+                      onClick={() => setRetouchStrength(55)}
+                      disabled={!hasImage}
+                    >
+                      Balanced
+                    </button>
+                    <button
+                      type="button"
+                      className={retouchStrength === 78 ? 'selected' : ''}
+                      onClick={() => setRetouchStrength(78)}
+                      disabled={!hasImage}
+                    >
+                      Strong
                     </button>
                   </div>
                   <label className="range-control">

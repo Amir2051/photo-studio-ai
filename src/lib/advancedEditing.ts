@@ -12,9 +12,17 @@ export type LocalMask = {
   temperature: number;
   saturation: number;
   size: number;
+  visible?: boolean;
+  name?: string;
 };
 
 export type HealStroke = { points: NormalizedPoint[]; size: number };
+export type SelectionStroke = {
+  points: NormalizedPoint[];
+  size: number;
+  operation: 'add' | 'subtract';
+};
+export type SelectionState = { strokes: SelectionStroke[]; inverted: boolean; feather: number };
 
 const clamp = (n: number, min = 0, max = 255) => Math.max(min, Math.min(max, n));
 
@@ -95,13 +103,68 @@ function maskWeight(mask: LocalMask, x: number, y: number, width: number, height
   return Math.max(0, Math.min(1, (1 - distance) / feather));
 }
 
-export function applyLocalMasks(canvas: HTMLCanvasElement, masks: LocalMask[]): void {
+function selectionWeight(
+  selection: SelectionState,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+): number {
+  let value = 0;
+  for (const stroke of selection.strokes) {
+    let distance = Infinity;
+    for (const point of stroke.points)
+      distance = Math.min(distance, Math.hypot(x - point.x * width, y - point.y * height));
+    const radius = Math.max(1, (stroke.size * Math.max(width, height)) / 1000);
+    const feather = Math.max(0, Math.min(1, selection.feather / 100));
+    const edge = Math.max(0, radius * (1 - feather));
+    const coverage =
+      distance <= edge
+        ? 1
+        : feather > 0
+          ? Math.max(0, 1 - (distance - edge) / Math.max(1, radius - edge))
+          : 0;
+    value = stroke.operation === 'add' ? Math.max(value, coverage) : Math.min(value, 1 - coverage);
+  }
+  return selection.inverted ? 1 - value : value;
+}
+
+/** Paints a non-destructive selection tint onto the editor preview only. */
+export function renderSelectionOverlay(
+  canvas: HTMLCanvasElement,
+  selection: SelectionState | null | undefined,
+): void {
+  if (!selection) return;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) return;
+  const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const { data } = image;
+  for (let y = 0; y < canvas.height; y++) {
+    for (let x = 0; x < canvas.width; x++) {
+      const weight = selectionWeight(selection, x, y, canvas.width, canvas.height);
+      if (weight <= 0.015) continue;
+      const i = (y * canvas.width + x) * 4;
+      const alpha = Math.min(0.34, weight * 0.34);
+      data[i] = Math.round(data[i] * (1 - alpha) + 30 * alpha);
+      data[i + 1] = Math.round(data[i + 1] * (1 - alpha) + 155 * alpha);
+      data[i + 2] = Math.round(data[i + 2] * (1 - alpha) + 255 * alpha);
+    }
+  }
+  ctx.putImageData(image, 0, 0);
+}
+
+export function applyLocalMasks(
+  canvas: HTMLCanvasElement,
+  masks: LocalMask[],
+  selection?: SelectionState | null,
+): void {
   if (!masks.length) return;
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   if (!ctx) return;
   const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
   const { data } = image;
   for (const mask of masks) {
+    if (mask.visible === false) continue;
     const radius = (mask.size / 1000) * Math.max(canvas.width, canvas.height);
     const points = mask.kind === 'brush' ? mask.points : [mask.center, mask.end];
     const xs = points.map((point) => point.x * canvas.width);
@@ -118,7 +181,10 @@ export function applyLocalMasks(canvas: HTMLCanvasElement, masks: LocalMask[]): 
     const maxY = Math.min(canvas.height - 1, Math.ceil(Math.max(...ys) + margin));
     for (let y = minY; y <= maxY; y++)
       for (let x = minX; x <= maxX; x++) {
-        const weight = maskWeight(mask, x, y, canvas.width, canvas.height);
+        const selectionFactor = selection
+          ? selectionWeight(selection, x, y, canvas.width, canvas.height)
+          : 1;
+        const weight = maskWeight(mask, x, y, canvas.width, canvas.height) * selectionFactor;
         if (weight <= 0) continue;
         const i = (y * canvas.width + x) * 4;
         const exposure = 2 ** ((mask.exposure * weight) / 100);
