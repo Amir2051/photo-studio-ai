@@ -3,7 +3,8 @@ import { CATEGORIES, FILTER_LIBRARY, FILTERS_BY_CATEGORY } from '../src/lib/filt
 
 describe('filter catalogue', () => {
   it('initializes category groups and preserves every catalogue entry', () => {
-    expect(FILTER_LIBRARY).toHaveLength(195);
+    expect(FILTER_LIBRARY).toHaveLength(226);
+    expect(new Set(FILTER_LIBRARY.map((filter) => filter.id)).size).toBe(FILTER_LIBRARY.length);
     expect(Object.values(FILTERS_BY_CATEGORY).flat()).toHaveLength(FILTER_LIBRARY.length);
     expect(FILTERS_BY_CATEGORY['natural-portraits'].length).toBeGreaterThan(0);
     expect(FILTERS_BY_CATEGORY.custom).toEqual([]);

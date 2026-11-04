@@ -2,7 +2,6 @@
 // Persistence for photos, filters, projects, preferences, AI sessions
 
 import { v4 as uuidv4 } from 'uuid';
-import JSZip from 'jszip';
 import {
   Photo,
   UserPreferences,
@@ -312,6 +311,7 @@ export async function exportPhotosToZip(photoIds: string[]): Promise<Blob> {
   const photos = await getAllPhotos();
   const selected = photos.filter((photo) => photoIds.includes(photo.id));
   if (!selected.length) throw new Error('No saved photos matched the requested export.');
+  const { default: JSZip } = await import('jszip');
   const zip = new JSZip();
   const folder = zip.folder('every-frame-first-photos');
   if (!folder) throw new Error('Could not create the photo export archive.');

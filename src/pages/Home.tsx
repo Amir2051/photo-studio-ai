@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import JSZip from 'jszip';
+
+const LibraryToolsPanel = React.lazy(() => import('../components/LibraryToolsPanel'));
 import {
   savePhoto,
   getAllPhotos,
@@ -10,6 +11,7 @@ import {
 import type { Photo, FilterRecipe, StyleRecipe } from '../lib/types';
 import { CATEGORIES, FILTER_LIBRARY } from '../lib/filters';
 import { mapFilterRecipeToManualSettings } from '../lib/filterMapping';
+import { getPreviewDimensions } from '../lib/renderSizing';
 import { reorderLayerSiblings } from '../lib/layerGroups';
 import {
   applyLayerMask,
@@ -60,6 +62,7 @@ type StudioLayer = {
   color?: string;
   fontSize?: number;
   adjustments?: Adjustments;
+  manualAdjustments?: ManualAdjustmentSettings;
   mask?: LayerMask | null;
   masks?: LayerMask[];
 };
@@ -319,6 +322,7 @@ function renderStudioDocument(
             pc.fillRect(0, 0, width, height);
             pc.globalCompositeOperation = 'source-over';
           }
+          applyManualAdjustments(processed, layer.manualAdjustments || DEFAULT_MANUAL_ADJUSTMENTS);
           layerContext.drawImage(processed, 0, 0);
         }
       } else if (layer.type === 'text' && layer.text) {
@@ -502,6 +506,7 @@ export default function Home(): React.JSX.Element {
   const [detectingFaces, setDetectingFaces] = useState(false);
   const [filterCategory, setFilterCategory] = useState('all');
   const [filterQuery, setFilterQuery] = useState('');
+  const [filterVisibleCount, setFilterVisibleCount] = useState(24);
   const [filterIntensity, setFilterIntensity] = useState(100);
   const [selectedFilterId, setSelectedFilterId] = useState('');
   const [favoriteFilterIds, setFavoriteFilterIds] = useState<string[]>(() => {
@@ -543,10 +548,9 @@ export default function Home(): React.JSX.Element {
       const canvas = canvasRef.current;
       const image = imageRef.current;
       if (!canvas || !image) return;
-      const maxPreviewEdge = 2200;
-      const scale = Math.min(1, maxPreviewEdge / Math.max(image.naturalWidth, image.naturalHeight));
-      const width = Math.max(1, Math.round(image.naturalWidth * scale));
-      const height = Math.max(1, Math.round(image.naturalHeight * scale));
+      // Interactive rendering is capped independently from exportPhoto, which always
+      // renders using the source image's natural dimensions.
+      const { width, height } = getPreviewDimensions(image.naturalWidth, image.naturalHeight);
       canvas.width = width;
       canvas.height = height;
       const ctx = canvas.getContext('2d');
@@ -622,7 +626,9 @@ export default function Home(): React.JSX.Element {
   );
 
   useEffect(() => {
-    render(adjustments, compare);
+    // Coalesce rapid slider/state changes into one canvas render per animation frame.
+    const frame = window.requestAnimationFrame(() => render(adjustments, compare));
+    return () => window.cancelAnimationFrame(frame);
   }, [adjustments, compare, render, sourceUrl, showSaved]);
   useEffect(() => {
     const canvas = maskThumbnailRef.current;
@@ -713,6 +719,7 @@ export default function Home(): React.JSX.Element {
       current.includes(filterId) ? current.filter((id) => id !== filterId) : [...current, filterId],
     );
   };
+  useEffect(() => setFilterVisibleCount(24), [filterCategory, filterQuery]);
   const hasImage = Boolean(sourceUrl);
   const canUndo = historyIndex > 0;
   const canRedo = historyIndex < history.length - 1;
@@ -868,6 +875,7 @@ export default function Home(): React.JSX.Element {
   };
 
   const selectedLayer = layers.find((layer) => layer.id === selectedLayerId) || null;
+  const selectedLayerManual = selectedLayer?.manualAdjustments || DEFAULT_MANUAL_ADJUSTMENTS;
   const updateLayer = (id: string, patch: Partial<StudioLayer>) => {
     const next = layers.map((layer) => (layer.id === id ? { ...layer, ...patch } : layer));
     commitLayers(next);
@@ -960,7 +968,8 @@ export default function Home(): React.JSX.Element {
       visible: true,
       opacity: 100,
       blendMode: 'source-over',
-      adjustments: { ...adjustments },
+      adjustments: { ...DEFAULTS },
+      manualAdjustments: { ...DEFAULT_MANUAL_ADJUSTMENTS },
     };
     commitLayers([...layers, layer], layer.id);
   };
@@ -1132,6 +1141,8 @@ export default function Home(): React.JSX.Element {
     if (!image) return;
     setBusy(true);
     try {
+      // Let React paint the busy state before the synchronous full-resolution canvas pass.
+      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
       const output = renderStudioDocument(
         image,
         image.naturalWidth,
@@ -1239,6 +1250,7 @@ export default function Home(): React.JSX.Element {
         studioLayers: layers.map((layer) => ({
           ...layer,
           adjustments: layer.adjustments ? { ...layer.adjustments } : undefined,
+          manualAdjustments: layer.manualAdjustments ? { ...layer.manualAdjustments } : undefined,
           mask: layer.mask ? structuredClone(layer.mask) : null,
           masks: (layer.masks || (layer.mask ? [layer.mask] : [])).map((mask) =>
             structuredClone(mask),
@@ -1517,6 +1529,7 @@ export default function Home(): React.JSX.Element {
     if (!recipe || !batchItems.length) return;
     setBatchBusy(true);
     try {
+      const { default: JSZip } = await import('jszip');
       const zip = new JSZip();
       const folder = zip.folder(safeExportName(recipe.name, 'edited-batch'));
       if (!folder) throw new Error('Could not create the export archive.');
@@ -2208,6 +2221,30 @@ export default function Home(): React.JSX.Element {
                   </button>
                 </div>
               )}
+              {hasImage && sourceUrl && (
+                <React.Suspense
+                  fallback={<p className="auth-muted">Loading advanced editor tools…</p>}
+                >
+                  <LibraryToolsPanel
+                    sourceUrl={sourceUrl}
+                    sourceName={sourceName}
+                    onApply={(blob, suffix) => {
+                      if (
+                        !window.confirm(
+                          'Use this result as a new working image? This replaces the current editing session and resets its history. Save or export your current work first if needed.',
+                        )
+                      )
+                        return;
+                      const baseName =
+                        sourceName.split('.').slice(0, -1).join('.') || sourceName || 'photo';
+                      const file = new File([blob], `${baseName}-${suffix}.png`, {
+                        type: 'image/png',
+                      });
+                      void openFiles([file]);
+                    }}
+                  />
+                </React.Suspense>
+              )}
             </section>
 
             <aside className="tools-column">
@@ -2700,30 +2737,196 @@ export default function Home(): React.JSX.Element {
                     </label>
                     {selectedLayer.type === 'adjustment' && (
                       <div className="layer-adjustment-controls">
-                        {(['brightness', 'contrast', 'saturation', 'warmth'] as const).map(
-                          (key) => (
+                        <p className="tool-note">
+                          This layer has its own editable tone, color, curves and HSL settings.
+                          Changes remain separate from the background and other layers.
+                        </p>
+                        <h4>Light & color</h4>
+                        {(
+                          [
+                            ['exposure', 'Exposure', -200, 200, ''],
+                            ['brightness', 'Brightness', -100, 100, ''],
+                            ['contrast', 'Contrast', -100, 100, ''],
+                            ['highlights', 'Highlights', -100, 100, ''],
+                            ['shadows', 'Shadows', -100, 100, ''],
+                            ['whites', 'Whites', -100, 100, ''],
+                            ['blacks', 'Blacks', -100, 100, ''],
+                            ['temperature', 'Temperature', -100, 100, ''],
+                            ['tint', 'Tint', -100, 100, ''],
+                            ['vibrance', 'Vibrance', -100, 100, ''],
+                            ['saturation', 'Saturation', -100, 100, ''],
+                          ] as const
+                        ).map(([key, label, min, max, unit]) => (
+                          <label className="range-control" key={key}>
+                            <span>
+                              <span>{label}</span>
+                              <strong>
+                                {selectedLayerManual[key]}
+                                {unit}
+                              </strong>
+                            </span>
+                            <input
+                              type="range"
+                              min={min}
+                              max={max}
+                              value={selectedLayerManual[key]}
+                              onChange={(event) =>
+                                updateLayer(selectedLayer.id, {
+                                  manualAdjustments: {
+                                    ...selectedLayerManual,
+                                    [key]: Number(event.target.value),
+                                  },
+                                })
+                              }
+                            />
+                          </label>
+                        ))}
+                        <details className="layer-advanced-controls">
+                          <summary>Tone curve & effects</summary>
+                          <label className="layer-name-control">
+                            <span>Tone curve channel</span>
+                            <select
+                              value={selectedCurveChannel}
+                              onChange={(event) =>
+                                setSelectedCurveChannel(event.target.value as CurveChannel)
+                              }
+                            >
+                              {CURVE_CHANNEL_OPTIONS.map((channel) => (
+                                <option key={channel} value={channel}>
+                                  {channel === 'master' ? 'Master RGB' : channel.toUpperCase()}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          {(
+                            [
+                              ['Shadows', 'Shadows'],
+                              ['Darks', 'Darks'],
+                              ['Lights', 'Lights'],
+                              ['Highlights', 'Highlights'],
+                            ] as const
+                          ).map(([part, label]) => {
+                            const prefix =
+                              selectedCurveChannel === 'master'
+                                ? 'curve'
+                                : 'curve' +
+                                  selectedCurveChannel[0].toUpperCase() +
+                                  selectedCurveChannel.slice(1);
+                            const key = (prefix + part) as keyof ManualAdjustmentSettings;
+                            return (
+                              <label className="range-control" key={key}>
+                                <span>
+                                  <span>{label}</span>
+                                  <strong>{selectedLayerManual[key]}</strong>
+                                </span>
+                                <input
+                                  type="range"
+                                  min={-100}
+                                  max={100}
+                                  value={selectedLayerManual[key]}
+                                  onChange={(event) =>
+                                    updateLayer(selectedLayer.id, {
+                                      manualAdjustments: {
+                                        ...selectedLayerManual,
+                                        [key]: Number(event.target.value),
+                                      },
+                                    })
+                                  }
+                                />
+                              </label>
+                            );
+                          })}
+                          {(
+                            [
+                              ['grain', 'Film grain'],
+                              ['vignette', 'Vignette'],
+                              ['filmFade', 'Film fade'],
+                              ['bloom', 'Bloom'],
+                              ['dehaze', 'Dehaze'],
+                              ['clarity', 'Clarity'],
+                              ['sharpening', 'Sharpening'],
+                              ['noiseReduction', 'Noise reduction'],
+                            ] as const
+                          ).map(([key, label]) => (
                             <label className="range-control" key={key}>
                               <span>
-                                <span>{key[0].toUpperCase() + key.slice(1)}</span>
-                                <strong>{selectedLayer.adjustments?.[key] ?? DEFAULTS[key]}</strong>
+                                <span>{label}</span>
+                                <strong>{selectedLayerManual[key]}</strong>
                               </span>
                               <input
                                 type="range"
-                                min={key === 'warmth' ? -60 : 0}
-                                max={key === 'warmth' ? 60 : 180}
-                                value={selectedLayer.adjustments?.[key] ?? DEFAULTS[key]}
-                                onChange={(e) =>
+                                min={key === 'vignette' || key === 'dehaze' ? -100 : 0}
+                                max={100}
+                                value={selectedLayerManual[key]}
+                                onChange={(event) =>
                                   updateLayer(selectedLayer.id, {
-                                    adjustments: {
-                                      ...(selectedLayer.adjustments || DEFAULTS),
-                                      [key]: Number(e.target.value),
+                                    manualAdjustments: {
+                                      ...selectedLayerManual,
+                                      [key]: Number(event.target.value),
                                     },
                                   })
                                 }
                               />
                             </label>
-                          ),
-                        )}
+                          ))}
+                          <label className="layer-name-control">
+                            <span>HSL color range</span>
+                            <select
+                              value={selectedHslChannel}
+                              onChange={(event) =>
+                                setSelectedHslChannel(event.target.value as HslChannel)
+                              }
+                            >
+                              {HSL_CHANNEL_OPTIONS.map((channel) => (
+                                <option key={channel} value={channel}>
+                                  {channel[0].toUpperCase() + channel.slice(1)}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          {(['Hue', 'Saturation', 'Luminance'] as const).map((part) => {
+                            const key = ('hsl' +
+                              selectedHslChannel[0].toUpperCase() +
+                              selectedHslChannel.slice(1) +
+                              part) as keyof ManualAdjustmentSettings;
+                            return (
+                              <label className="range-control" key={key}>
+                                <span>
+                                  <span>
+                                    {selectedHslChannel} {part}
+                                  </span>
+                                  <strong>{selectedLayerManual[key]}</strong>
+                                </span>
+                                <input
+                                  type="range"
+                                  min={-100}
+                                  max={100}
+                                  value={selectedLayerManual[key]}
+                                  onChange={(event) =>
+                                    updateLayer(selectedLayer.id, {
+                                      manualAdjustments: {
+                                        ...selectedLayerManual,
+                                        [key]: Number(event.target.value),
+                                      },
+                                    })
+                                  }
+                                />
+                              </label>
+                            );
+                          })}
+                        </details>
+                        <button
+                          type="button"
+                          className="text-button"
+                          onClick={() =>
+                            updateLayer(selectedLayer.id, {
+                              manualAdjustments: { ...DEFAULT_MANUAL_ADJUSTMENTS },
+                              adjustments: { ...DEFAULTS },
+                            })
+                          }
+                        >
+                          Reset this adjustment layer
+                        </button>
                       </div>
                     )}
                     {selectedLayer.type === 'text' && (
@@ -2993,7 +3196,7 @@ export default function Home(): React.JSX.Element {
                     ))}
                   </select>
                   <div className="filter-list">
-                    {visibleFilters.slice(0, 24).map((filter) => (
+                    {visibleFilters.slice(0, filterVisibleCount).map((filter) => (
                       <article className="filter-card" key={filter.id}>
                         <button
                           className={`filter-option ${selectedFilterId === filter.id ? 'selected' : ''}`}
@@ -3026,11 +3229,14 @@ export default function Home(): React.JSX.Element {
                         No filters match. Try another search or save a few looks with ☆.
                       </p>
                     )}
-                    {visibleFilters.length > 24 && (
-                      <p className="tool-note">
-                        Showing 24 of {visibleFilters.length}. Narrow the search to find a specific
-                        look.
-                      </p>
+                    {visibleFilters.length > filterVisibleCount && (
+                      <button
+                        type="button"
+                        className="button button-quiet filter-load-more"
+                        onClick={() => setFilterVisibleCount((count) => count + 24)}
+                      >
+                        Load 24 more looks · {visibleFilters.length - filterVisibleCount} remaining
+                      </button>
                     )}
                   </div>
                   <label className="range-control filter-intensity-control">

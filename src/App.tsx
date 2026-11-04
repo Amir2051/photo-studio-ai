@@ -1,7 +1,8 @@
 import React from 'react';
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
-import Home from './pages/Home';
 import AuthBoundary from './components/AuthBoundary';
+
+const Home = React.lazy(() => import('./pages/Home'));
 
 export default function App(): React.JSX.Element {
   return (
@@ -11,7 +12,15 @@ export default function App(): React.JSX.Element {
           path="*"
           element={
             <AuthBoundary>
-              <Home />
+              <React.Suspense
+                fallback={
+                  <main className="auth-screen">
+                    <p className="auth-muted">Loading your studio…</p>
+                  </main>
+                }
+              >
+                <Home />
+              </React.Suspense>
             </AuthBoundary>
           }
         />

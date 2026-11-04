@@ -110,6 +110,7 @@ export interface Photo {
     color?: string;
     fontSize?: number;
     adjustments?: { brightness: number; contrast: number; saturation: number; warmth: number };
+    manualAdjustments?: import('./manualEditing').ManualAdjustmentSettings;
     mask?: import('./layerMasks').LayerMask | null;
     masks?: import('./layerMasks').LayerMask[];
   }>;
