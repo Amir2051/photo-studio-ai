@@ -2251,3 +2251,33 @@ body {
   padding: 6px 9px;
   font-size: 11px;
 }
+
+/* Keep the full studio on the document scroll; avoid nested, clipped tool panes. */
+html {
+  scroll-padding-top: 92px;
+  scroll-behavior: smooth;
+}
+.studio-shell,
+.studio-main,
+.editor-layout {
+  overflow: visible;
+}
+.tools-column {
+  position: static;
+  top: auto;
+  max-height: none;
+  overflow: visible;
+  padding-right: 0;
+  min-height: 0;
+}
+.preview-column {
+  min-height: 0;
+}
+@media (max-width: 760px) {
+  html {
+    scroll-padding-top: 148px;
+  }
+  .studio-main {
+    padding-bottom: max(40px, env(safe-area-inset-bottom));
+  }
+}
