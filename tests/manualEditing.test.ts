@@ -107,6 +107,21 @@ describe('professional manual adjustment engine', () => {
     expect([...gray.data]).toEqual([100, 100, 100, 255]);
   });
 
+  it('applies film fade and signed dehaze pixel effects', () => {
+    const source = pixel(40, 90, 160);
+    const faded = processManualPixels(source, { ...DEFAULT_MANUAL_ADJUSTMENTS, filmFade: 100 });
+    const dehazed = processManualPixels(source, { ...DEFAULT_MANUAL_ADJUSTMENTS, dehaze: 60 });
+    const hazeRestored = processManualPixels(source, {
+      ...DEFAULT_MANUAL_ADJUSTMENTS,
+      dehaze: -60,
+    });
+    expect(faded.data[0]).toBeGreaterThan(source.data[0]);
+    expect(dehazed.data[0]).toBeLessThan(source.data[0]);
+    expect(dehazed.data[2]).toBeGreaterThan(source.data[2]);
+    expect(hazeRestored.data[0]).toBeGreaterThan(source.data[0]);
+    expect(hazeRestored.data[2]).toBeLessThan(source.data[2]);
+  });
+
   it('applies deterministic grain and vignette effects', () => {
     const source = new ImageData(new Uint8ClampedArray(Array(4 * 16).fill(128)), 4, 4);
     const settings = { ...DEFAULT_MANUAL_ADJUSTMENTS, grain: 35, vignette: 60 };

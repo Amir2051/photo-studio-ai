@@ -9,6 +9,7 @@ import {
 } from '../lib/storage';
 import type { Photo, FilterRecipe, StyleRecipe } from '../lib/types';
 import { CATEGORIES, FILTER_LIBRARY } from '../lib/filters';
+import { mapFilterRecipeToManualSettings } from '../lib/filterMapping';
 import { reorderLayerSiblings } from '../lib/layerGroups';
 import {
   applyLayerMask,
@@ -36,6 +37,13 @@ import {
   type BrushStroke,
   type NormalizedPoint,
 } from '../lib/portraitRetouch';
+import { applyFaceMakeup, DEFAULT_FACE_MAKEUP, type FaceMakeupSettings } from '../lib/faceMakeup';
+import {
+  applyFaceAccessories,
+  DEFAULT_FACE_ACCESSORY_SETTINGS,
+  type FaceAccessory,
+  type FaceAccessorySettings,
+} from '../lib/faceAccessories';
 
 type Adjustments = { brightness: number; contrast: number; saturation: number; warmth: number };
 type Preset = { id: string; name: string; values: Adjustments };
@@ -102,19 +110,6 @@ const CURVE_CHANNEL_OPTIONS = ['master', 'red', 'green', 'blue'] as const;
 type CurveChannel = (typeof CURVE_CHANNEL_OPTIONS)[number];
 const DEFAULTS: Adjustments = { brightness: 100, contrast: 100, saturation: 100, warmth: 0 };
 
-function toFilterAdjustments(recipe: FilterRecipe, intensity: number): Adjustments {
-  const amount = Math.max(0, Math.min(100, intensity)) / 100;
-  const values = recipe.adjustments;
-  return {
-    brightness: Math.max(
-      50,
-      Math.min(150, 100 + ((values.exposure ?? 0) + (values.brightness ?? 0)) * 100 * amount),
-    ),
-    contrast: Math.max(50, Math.min(160, 100 + (values.contrast ?? 0) * 100 * amount)),
-    saturation: Math.max(0, Math.min(180, 100 + (values.saturation ?? 0) * 100 * amount)),
-    warmth: Math.max(-60, Math.min(60, (values.temperature ?? 0) * 200 * amount)),
-  };
-}
 const PRESETS: Preset[] = [
   { id: 'natural', name: 'Natural', values: DEFAULTS },
   {
@@ -250,6 +245,9 @@ function renderStudioDocument(
   retouchStrength: number,
   faceLandmarks: NormalizedPoint[][],
   retouchStrokes: BrushStroke[],
+  faceMakeup: FaceMakeupSettings,
+  faceAccessory: FaceAccessory,
+  faceAccessorySettings: FaceAccessorySettings,
   documentTransform: DocumentTransform = DEFAULT_DOCUMENT_TRANSFORM,
   selection: SelectionState | null = null,
 ): HTMLCanvasElement {
@@ -298,6 +296,8 @@ function renderStudioDocument(
             faces: faceLandmarks,
             strokes: retouchStrokes,
           });
+          applyFaceMakeup(base, faceLandmarks, faceMakeup);
+          applyFaceAccessories(base, faceLandmarks, faceAccessory, faceAccessorySettings);
           layerContext.drawImage(base, 0, 0);
         }
       } else if (layer.type === 'adjustment') {
@@ -358,6 +358,62 @@ function renderStudioDocument(
   transformContext.scale(documentTransform.flipX ? -1 : 1, documentTransform.flipY ? -1 : 1);
   transformContext.drawImage(output, sx, sy, sw, sh, -sw / 2, -sh / 2, sw, sh);
   return transformed;
+}
+
+type FilterThumbnailProps = { sourceUrl: string | null; recipe: FilterRecipe };
+
+/** Renders each catalogue look against the current photo using the real export pipeline. */
+function FilterThumbnail({ sourceUrl, recipe }: FilterThumbnailProps): React.JSX.Element {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setReady(false);
+    const canvas = canvasRef.current;
+    if (!canvas || !sourceUrl) return;
+
+    const image = new Image();
+    image.onload = () => {
+      if (cancelled) return;
+      const context = canvas.getContext('2d', { willReadFrequently: true });
+      if (!context) return;
+      const width = 112;
+      const height = 84;
+      canvas.width = width;
+      canvas.height = height;
+      const scale = Math.max(width / image.naturalWidth, height / image.naturalHeight);
+      const drawWidth = image.naturalWidth * scale;
+      const drawHeight = image.naturalHeight * scale;
+      context.clearRect(0, 0, width, height);
+      context.drawImage(
+        image,
+        (width - drawWidth) / 2,
+        (height - drawHeight) / 2,
+        drawWidth,
+        drawHeight,
+      );
+      const settings = mapFilterRecipeToManualSettings(recipe, 100, DEFAULT_MANUAL_ADJUSTMENTS);
+      applyManualAdjustments(canvas, settings);
+      if (!cancelled) setReady(true);
+    };
+    image.onerror = () => {
+      if (!cancelled) setReady(false);
+    };
+    image.src = sourceUrl;
+    return () => {
+      cancelled = true;
+      image.onload = null;
+      image.onerror = null;
+    };
+  }, [sourceUrl, recipe]);
+
+  return (
+    <span className={`filter-thumb-wrap${ready ? ' ready' : ''}`} aria-hidden="true">
+      <canvas ref={canvasRef} className="filter-thumb" />
+      {!ready && <span className="filter-thumb-placeholder">Preview</span>}
+    </span>
+  );
 }
 
 export default function Home(): React.JSX.Element {
@@ -438,11 +494,28 @@ export default function Home(): React.JSX.Element {
   const [brushSize, setBrushSize] = useState(28);
   const [faceLandmarks, setFaceLandmarks] = useState<NormalizedPoint[][]>([]);
   const [retouchStrokes, setRetouchStrokes] = useState<BrushStroke[]>([]);
+  const [faceMakeup, setFaceMakeup] = useState<FaceMakeupSettings>(DEFAULT_FACE_MAKEUP);
+  const [faceAccessory, setFaceAccessory] = useState<FaceAccessory>('none');
+  const [faceAccessorySettings, setFaceAccessorySettings] = useState<FaceAccessorySettings>(
+    DEFAULT_FACE_ACCESSORY_SETTINGS,
+  );
   const [detectingFaces, setDetectingFaces] = useState(false);
   const [filterCategory, setFilterCategory] = useState('all');
   const [filterQuery, setFilterQuery] = useState('');
   const [filterIntensity, setFilterIntensity] = useState(100);
   const [selectedFilterId, setSelectedFilterId] = useState('');
+  const [favoriteFilterIds, setFavoriteFilterIds] = useState<string[]>(() => {
+    try {
+      const saved = window.localStorage.getItem('every-frame-favorite-filters');
+      const parsed: unknown = saved ? JSON.parse(saved) : [];
+      return Array.isArray(parsed)
+        ? parsed.filter((id): id is string => typeof id === 'string')
+        : [];
+    } catch {
+      return [];
+    }
+  });
+  const filterBaseManualRef = useRef<ManualAdjustmentSettings | null>(null);
   const [styleRecipes, setStyleRecipes] = useState<StyleRecipe[]>([]);
   const [styleRecipeName, setStyleRecipeName] = useState('');
   const [selectedStyleRecipeId, setSelectedStyleRecipeId] = useState('');
@@ -495,6 +568,9 @@ export default function Home(): React.JSX.Element {
         retouchStrength,
         faceLandmarks,
         retouchStrokes,
+        faceMakeup,
+        faceAccessory,
+        faceAccessorySettings,
         documentTransform,
         selection,
       );
@@ -533,6 +609,9 @@ export default function Home(): React.JSX.Element {
       layers,
       faceLandmarks,
       retouchStrokes,
+      faceMakeup,
+      faceAccessory,
+      faceAccessorySettings,
       retouchStrength,
       manualAdjustments,
       localMasks,
@@ -618,13 +697,33 @@ export default function Home(): React.JSX.Element {
     [sourceUrl],
   );
 
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        'every-frame-favorite-filters',
+        JSON.stringify(favoriteFilterIds),
+      );
+    } catch {
+      setMessage('Favorites are available for this session, but browser storage is unavailable.');
+    }
+  }, [favoriteFilterIds]);
+
+  const toggleFavoriteFilter = (filterId: string) => {
+    setFavoriteFilterIds((current) =>
+      current.includes(filterId) ? current.filter((id) => id !== filterId) : [...current, filterId],
+    );
+  };
   const hasImage = Boolean(sourceUrl);
   const canUndo = historyIndex > 0;
   const canRedo = historyIndex < history.length - 1;
   const visibleFilters = useMemo(
     () =>
       FILTER_LIBRARY.filter((filter) => {
-        const categoryMatch = filterCategory === 'all' || filter.category === filterCategory;
+        const categoryMatch =
+          filterCategory === 'all' ||
+          (filterCategory === 'favorites'
+            ? favoriteFilterIds.includes(filter.id)
+            : filter.category === filterCategory);
         const query = filterQuery.trim().toLowerCase();
         const queryMatch =
           !query ||
@@ -633,7 +732,7 @@ export default function Home(): React.JSX.Element {
             .includes(query);
         return categoryMatch && queryMatch;
       }),
-    [filterCategory, filterQuery],
+    [favoriteFilterIds, filterCategory, filterQuery],
   );
   const activePreset = useMemo(
     () => PRESETS.find((p) => JSON.stringify(p.values) === JSON.stringify(adjustments))?.id ?? '',
@@ -760,6 +859,7 @@ export default function Home(): React.JSX.Element {
 
   const addHistory = (next: Adjustments) => {
     setSelectedFilterId('');
+    filterBaseManualRef.current = null;
     commitSnapshot(next, manualAdjustments);
   };
 
@@ -980,12 +1080,17 @@ export default function Home(): React.JSX.Element {
     setCompare(false);
   };
   const applyLibraryFilter = (recipe: FilterRecipe, intensity = filterIntensity) => {
-    addHistory(toFilterAdjustments(recipe, intensity));
+    if (!selectedFilterId || !filterBaseManualRef.current) {
+      filterBaseManualRef.current = { ...manualAdjustments };
+    }
+    const base = filterBaseManualRef.current;
+    const nextManual = mapFilterRecipeToManualSettings(recipe, intensity, base);
+    commitSnapshot(adjustments, nextManual);
     setSelectedFilterId(recipe.id);
     setFilterIntensity(intensity);
     setCompare(false);
     setMessage(
-      `Applied ${recipe.name} at ${intensity}% intensity. The original remains untouched.`,
+      `Applied ${recipe.name} at ${intensity}% intensity. Full-resolution export uses the same local effects.`,
     );
   };
   const undo = () => {
@@ -1018,6 +1123,7 @@ export default function Home(): React.JSX.Element {
   };
   const reset = () => {
     setSelectedFilterId('');
+    filterBaseManualRef.current = null;
     commitSnapshot(DEFAULTS, DEFAULT_MANUAL_ADJUSTMENTS, [], []);
   };
 
@@ -1038,6 +1144,9 @@ export default function Home(): React.JSX.Element {
         retouchStrength,
         faceLandmarks,
         retouchStrokes,
+        faceMakeup,
+        faceAccessory,
+        faceAccessorySettings,
         documentTransform,
         selection,
       );
@@ -1082,6 +1191,9 @@ export default function Home(): React.JSX.Element {
         retouchStrength,
         faceLandmarks,
         retouchStrokes,
+        faceMakeup,
+        faceAccessory,
+        faceAccessorySettings,
         documentTransform,
         selection,
       );
@@ -2873,6 +2985,7 @@ export default function Home(): React.JSX.Element {
                     onChange={(e) => setFilterCategory(e.target.value)}
                   >
                     <option value="all">All categories</option>
+                    <option value="favorites">★ Favorites ({favoriteFilterIds.length})</option>
                     {CATEGORIES.filter((category) => category.id !== 'custom').map((category) => (
                       <option key={category.id} value={category.id}>
                         {category.label}
@@ -2881,23 +2994,37 @@ export default function Home(): React.JSX.Element {
                   </select>
                   <div className="filter-list">
                     {visibleFilters.slice(0, 24).map((filter) => (
-                      <button
-                        key={filter.id}
-                        className={`filter-option ${selectedFilterId === filter.id ? 'selected' : ''}`}
-                        onClick={() => applyLibraryFilter(filter)}
-                        disabled={!hasImage}
-                      >
-                        <span>
-                          <strong>{filter.name}</strong>
-                          <small>{filter.description}</small>
-                        </span>
-                        <span className="filter-apply-mark">
-                          {selectedFilterId === filter.id ? '✓' : '＋'}
-                        </span>
-                      </button>
+                      <article className="filter-card" key={filter.id}>
+                        <button
+                          className={`filter-option ${selectedFilterId === filter.id ? 'selected' : ''}`}
+                          onClick={() => applyLibraryFilter(filter)}
+                          disabled={!hasImage}
+                          aria-pressed={selectedFilterId === filter.id}
+                        >
+                          <FilterThumbnail sourceUrl={sourceUrl} recipe={filter} />
+                          <span className="filter-option-copy">
+                            <strong>{filter.name}</strong>
+                            <small>{filter.description}</small>
+                          </span>
+                          <span className="filter-apply-mark">
+                            {selectedFilterId === filter.id ? '✓' : '＋'}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          className={`filter-favorite ${favoriteFilterIds.includes(filter.id) ? 'is-favorite' : ''}`}
+                          onClick={() => toggleFavoriteFilter(filter.id)}
+                          aria-label={`${favoriteFilterIds.includes(filter.id) ? 'Remove' : 'Add'} ${filter.name} ${favoriteFilterIds.includes(filter.id) ? 'from' : 'to'} favorites`}
+                          aria-pressed={favoriteFilterIds.includes(filter.id)}
+                        >
+                          {favoriteFilterIds.includes(filter.id) ? '★' : '☆'}
+                        </button>
+                      </article>
                     ))}
                     {!visibleFilters.length && (
-                      <p className="tool-note">No filters match that search.</p>
+                      <p className="tool-note">
+                        No filters match. Try another search or save a few looks with ☆.
+                      </p>
                     )}
                     {visibleFilters.length > 24 && (
                       <p className="tool-note">
@@ -2926,8 +3053,9 @@ export default function Home(): React.JSX.Element {
                     />
                   </label>
                   <p className="tool-note">
-                    The catalogue applies the supported tone and color controls. Grain, vignette,
-                    bloom, and advanced color effects are being added separately.
+                    Filters use local pixel processing for exposure, tone, color, grain, vignette,
+                    and detail. Some cinematic glow and bloom recipes remain in the next effects
+                    pass.
                   </p>
                 </section>
               )}
@@ -3800,6 +3928,144 @@ export default function Home(): React.JSX.Element {
                       onChange={(e) => setRetouchStrength(Number(e.target.value))}
                     />
                   </label>
+                  <div className="makeup-controls">
+                    <div className="section-title">
+                      <div>
+                        <p className="eyebrow">FACE-AWARE EFFECTS</p>
+                        <h3>Makeup</h3>
+                      </div>
+                      <button
+                        type="button"
+                        className="text-button"
+                        onClick={() => setFaceMakeup(DEFAULT_FACE_MAKEUP)}
+                        disabled={!hasImage}
+                      >
+                        Reset
+                      </button>
+                    </div>
+                    <p className="retouch-hint">
+                      Local landmark-aligned blush, lip tint and eye color. Run Auto face detect
+                      first.
+                    </p>
+                    {(
+                      [
+                        ['blush', 'Blush'],
+                        ['lipstick', 'Lip color'],
+                        ['eyeshadow', 'Eye color'],
+                      ] as const
+                    ).map(([key, label]) => (
+                      <label className="range-control" key={key}>
+                        <span>
+                          <span>{label}</span>
+                          <strong>{faceMakeup[key]}%</strong>
+                        </span>
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          value={faceMakeup[key]}
+                          disabled={!hasImage || !faceLandmarks.length}
+                          onChange={(event) =>
+                            setFaceMakeup((current) => ({
+                              ...current,
+                              [key]: Number(event.target.value),
+                            }))
+                          }
+                        />
+                      </label>
+                    ))}
+                  </div>
+                  <div className="makeup-controls accessory-controls">
+                    <div className="section-title">
+                      <div>
+                        <p className="eyebrow">LANDMARK-TRACKED OVERLAYS</p>
+                        <h3>Accessories & lenses</h3>
+                      </div>
+                      <button
+                        type="button"
+                        className="text-button"
+                        onClick={() => {
+                          setFaceAccessory('none');
+                          setFaceAccessorySettings(DEFAULT_FACE_ACCESSORY_SETTINGS);
+                        }}
+                        disabled={!hasImage || faceAccessory === 'none'}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                    <p className="retouch-hint">
+                      Choose a vector overlay anchored to detected facial landmarks. Run Auto face
+                      detect first.
+                    </p>
+                    <label className="range-control">
+                      <span>
+                        <span>Effect</span>
+                      </span>
+                      <select
+                        value={faceAccessory}
+                        disabled={!hasImage || !faceLandmarks.length}
+                        onChange={(event) => setFaceAccessory(event.target.value as FaceAccessory)}
+                      >
+                        <option value="none">No accessory</option>
+                        <option value="glasses">Classic glasses</option>
+                        <option value="sunglasses">Dark sunglasses</option>
+                        <option value="bunny-ears">Bunny ears</option>
+                        <option value="puppy">Puppy face</option>
+                        <option value="heart-eyes">Heart eyes</option>
+                        <option value="freckles">Freckles</option>
+                        <option value="flower-crown">Flower crown</option>
+                        <option value="crown">Golden crown</option>
+                      </select>
+                    </label>
+                    {faceAccessory !== 'none' && (
+                      <div className="accessory-adjustments">
+                        {(
+                          [
+                            ['scale', 'Size', 50, 160, '%'],
+                            ['offsetX', 'Horizontal position', -50, 50, ''],
+                            ['offsetY', 'Vertical position', -50, 50, ''],
+                            ['rotation', 'Rotation', -45, 45, '°'],
+                            ['opacity', 'Opacity', 0, 100, '%'],
+                          ] as const
+                        ).map(([key, label, min, max, suffix]) => (
+                          <label className="range-control" key={key}>
+                            <span>
+                              <span>{label}</span>
+                              <strong>
+                                {faceAccessorySettings[key]}
+                                {suffix}
+                              </strong>
+                            </span>
+                            <input
+                              type="range"
+                              min={min}
+                              max={max}
+                              value={faceAccessorySettings[key]}
+                              disabled={!hasImage || !faceLandmarks.length}
+                              onChange={(event) =>
+                                setFaceAccessorySettings((current) => ({
+                                  ...current,
+                                  [key]: Number(event.target.value),
+                                }))
+                              }
+                            />
+                          </label>
+                        ))}
+                        <button
+                          type="button"
+                          className="text-button"
+                          onClick={() => setFaceAccessorySettings(DEFAULT_FACE_ACCESSORY_SETTINGS)}
+                        >
+                          Reset positioning
+                        </button>
+                      </div>
+                    )}
+                    <span className="tool-note">
+                      {faceLandmarks.length
+                        ? `${faceLandmarks.length} face(s) tracked`
+                        : 'Waiting for face detection'}
+                    </span>
+                  </div>
                   {retouchMode === 'brush' && (
                     <label className="range-control">
                       <span>

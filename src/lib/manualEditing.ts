@@ -13,6 +13,9 @@ export type ManualAdjustmentSettings = {
   hue: number;
   grain: number;
   vignette: number;
+  filmFade: number;
+  bloom: number;
+  dehaze: number;
   clarity: number;
   texture: number;
   sharpening: number;
@@ -74,6 +77,9 @@ export const DEFAULT_MANUAL_ADJUSTMENTS: ManualAdjustmentSettings = {
   hue: 0,
   grain: 0,
   vignette: 0,
+  filmFade: 0,
+  bloom: 0,
+  dehaze: 0,
   clarity: 0,
   texture: 0,
   sharpening: 0,
@@ -304,13 +310,27 @@ export function processManualPixels(
 
   const grain = Math.max(0, Math.min(100, settings.grain)) / 100;
   const vignette = Math.max(-100, Math.min(100, settings.vignette)) / 100;
-  if (grain || vignette) {
+  const filmFade = Math.max(0, Math.min(100, settings.filmFade)) / 100;
+  const dehaze = Math.max(-100, Math.min(100, settings.dehaze)) / 100;
+  if (grain || vignette || filmFade || dehaze) {
     const cx = (width - 1) / 2,
       cy = (height - 1) / 2;
     const maxDistance = Math.sqrt(cx * cx + cy * cy) || 1;
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         const i = (y * width + x) * 4;
+        if (filmFade) {
+          // Lift the black floor and gently compress contrast for a scanned-film look.
+          const lift = filmFade * 18;
+          for (let channel = 0; channel < 3; channel++)
+            output[i + channel] = clamp(output[i + channel] * (1 - filmFade * 0.12) + lift);
+        }
+        if (dehaze) {
+          // A signed contrast pass approximates atmospheric haze removal/restoration.
+          const factor = 1 + dehaze * 0.65;
+          for (let channel = 0; channel < 3; channel++)
+            output[i + channel] = clamp((output[i + channel] - 128) * factor + 128);
+        }
         if (grain) {
           // Stable per-pixel grain keeps preview/export from flickering between renders.
           let seed = (x * 374761393 + y * 668265263) | 0;
@@ -401,5 +421,28 @@ export function applyManualAdjustments(
   if (!context) return;
   const image = context.getImageData(0, 0, canvas.width, canvas.height);
   context.putImageData(processManualPixels(image, settings), 0, 0);
+  applyBloomEffect(canvas, settings.bloom);
   applyDetailEffects(canvas, settings);
+}
+
+/** Adds a restrained, highlight-friendly screen bloom using a downsampled blurred layer. */
+function applyBloomEffect(canvas: HTMLCanvasElement, strength: number): void {
+  const amount = Math.max(0, Math.min(100, strength)) / 100;
+  if (!amount) return;
+  const width = Math.max(1, Math.round(canvas.width / 4));
+  const height = Math.max(1, Math.round(canvas.height / 4));
+  const glow = document.createElement('canvas');
+  glow.width = width;
+  glow.height = height;
+  const glowContext = glow.getContext('2d');
+  const context = canvas.getContext('2d');
+  if (!glowContext || !context) return;
+  glowContext.filter = 'blur(3px)';
+  glowContext.drawImage(canvas, 0, 0, width, height);
+  glowContext.filter = 'none';
+  context.save();
+  context.globalCompositeOperation = 'screen';
+  context.globalAlpha = amount * 0.32;
+  context.drawImage(glow, 0, 0, canvas.width, canvas.height);
+  context.restore();
 }
