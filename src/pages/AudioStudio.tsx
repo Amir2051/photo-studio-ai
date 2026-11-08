@@ -199,20 +199,18 @@ export default function AudioStudio(): React.JSX.Element {
     return () => { alive = false; };
   }, []);
 
+  const selectedTrack = tracks.find((track) => track.id === selectedId) || null;
+
   useEffect(() => {
-    if (!selectedId) {
+    if (!selectedId || !selectedTrack) {
       setPlayerUrl('');
       return;
     }
-    const track = tracks.find((item) => item.id === selectedId);
-    if (!track) return;
-    const url = URL.createObjectURL(track.blob);
+    const url = URL.createObjectURL(selectedTrack.blob);
     setPlayerUrl(url);
     setPlayingId('');
     return () => URL.revokeObjectURL(url);
-  }, [selectedId, tracks]);
-
-  const selectedTrack = tracks.find((track) => track.id === selectedId) || null;
+  }, [selectedId, selectedTrack?.blob]);
   const sessionDuration = useMemo(
     () => tracks.reduce((max, track) => Math.max(max, track.offset + Math.max(0, track.trimEnd - track.trimStart)), 0),
     [tracks],
