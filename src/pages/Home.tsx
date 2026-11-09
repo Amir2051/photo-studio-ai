@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 const LibraryToolsPanel = React.lazy(() => import('../components/LibraryToolsPanel'));
@@ -2207,6 +2208,10 @@ export default function Home(): React.JSX.Element {
           <span>Photo library</span>
           <span className="sidebar-count">{savedPhotos.length}</span>
         </button>
+        <Link className="sidebar-link" to="/audio">
+          <span className="sidebar-icon">♫</span>
+          <span>Podcast studio</span>
+        </Link>
         <button
           className={`sidebar-link ${activeSection === 'cloud-sync' ? 'active' : ''}`}
           onClick={() => setActiveSection('cloud-sync')}

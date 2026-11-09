@@ -3,11 +3,28 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import AuthBoundary from './components/AuthBoundary';
 
 const Home = React.lazy(() => import('./pages/Home'));
+const AudioStudio = React.lazy(() => import('./pages/AudioStudio'));
 
 export default function App(): React.JSX.Element {
   return (
     <BrowserRouter>
       <Routes>
+        <Route
+          path="/audio"
+          element={
+            <AuthBoundary>
+              <React.Suspense
+                fallback={
+                  <main className="auth-screen">
+                    <p className="auth-muted">Loading your studio…</p>
+                  </main>
+                }
+              >
+                <AudioStudio />
+              </React.Suspense>
+            </AuthBoundary>
+          }
+        />
         <Route
           path="*"
           element={
