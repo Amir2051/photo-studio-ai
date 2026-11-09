@@ -7,10 +7,26 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   return {
     base: './',
-    plugins: [react(), tailwindcss()],
+    plugins: [
+      {
+        name: 'serve-nested-video-studio-index',
+        configureServer(server) {
+          server.middlewares.use((req, _res, next) => {
+            if (req.url === '/video-studio' || req.url === '/video-studio/') {
+              req.url = '/video-studio/index.html';
+            }
+            next();
+          });
+        },
+      },
+      react(),
+      tailwindcss(),
+    ],
     resolve: { alias: { '@': path.resolve(import.meta.dirname, './src') } },
     server: {
       proxy: {
+        '/api/guest-rooms': { target: env.GUEST_SIGNAL_PROXY_TARGET || 'http://127.0.0.1:18788', changeOrigin: false },
+        '/guest-signal': { target: env.GUEST_SIGNAL_PROXY_TARGET || 'http://127.0.0.1:18788', changeOrigin: false, ws: true, rewrite: (path) => path.replace(/^\/guest-signal/, '') },
         '/api/ai': {
           target: env.AI_GATEWAY_PROXY_TARGET || 'http://127.0.0.1:18787',
           changeOrigin: false,
