@@ -1,8 +1,8 @@
-name: Deploy to GitHub Pages
+name: Deploy Every Frame First Studio to GitHub Pages
 
 on:
-  push:
-    branches: [main]
+  # The integration branch owns the deployable editor. Keep this workflow
+  # manual-only so pushes to the legacy main branch cannot publish an older UI.
   workflow_dispatch:
 
 permissions:
@@ -11,25 +11,29 @@ permissions:
   id-token: write
 
 concurrency:
-  group: "pages"
+  group: pages-production
   cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout integrated studio
         uses: actions/checkout@v4
-      - name: Install Node
+        with:
+          ref: fix/photo-studio-core-repair
+      - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
       - name: Install dependencies
         run: npm ci
-      - name: Build
-        run: npx vite build
-      - name: Upload artifact
+      - name: Run unit tests
+        run: npm test
+      - name: Type-check and build
+        run: npm run build
+      - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: dist
@@ -41,6 +45,8 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - name: Confirm GitHub Pages is enabled
+        uses: actions/configure-pages@v5
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
