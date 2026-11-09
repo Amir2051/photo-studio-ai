@@ -86,11 +86,18 @@ export interface Photo {
   edits: Adjustment[];
   filterId?: string | null; // active preset
   filterIntensity: number;
+  filterBaseManualSettings?: import('./manualEditing').ManualAdjustmentSettings | null;
   isOriginalRequired: boolean;
   metadata?: PhotoMetadata;
   localMasks?: import('./advancedEditing').LocalMask[];
   selection?: import('./advancedEditing').SelectionState | null;
   healStrokes?: import('./advancedEditing').HealStroke[];
+  retouchStrength?: number;
+  retouchStrokes?: import('./portraitRetouch').BrushStroke[];
+  faceLandmarks?: import('./portraitRetouch').NormalizedPoint[][];
+  faceMakeup?: import('./faceMakeup').FaceMakeupSettings;
+  faceAccessory?: import('./faceAccessories').FaceAccessory;
+  faceAccessorySettings?: import('./faceAccessories').FaceAccessorySettings;
   documentTransform?: {
     crop: { x: number; y: number; width: number; height: number };
     rotation: 0 | 90 | 180 | 270;
