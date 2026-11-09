@@ -2,12 +2,24 @@ import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import path from 'node:path';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   return {
     base: './',
     plugins: [
+      {
+        name: 'emit-audio-static-entrypoint',
+        closeBundle() {
+          const outputDir = path.resolve(import.meta.dirname, 'dist');
+          const htmlPath = path.join(outputDir, 'index.html');
+          const audioDir = path.join(outputDir, 'audio');
+          mkdirSync(audioDir, { recursive: true });
+          const html = readFileSync(htmlPath, 'utf8').replace(/="\.\//g, '="../');
+          writeFileSync(path.join(audioDir, 'index.html'), html);
+        },
+      },
       {
         name: 'serve-nested-video-studio-index',
         configureServer(server) {

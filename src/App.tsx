@@ -10,7 +10,7 @@ export default function App(): React.JSX.Element {
     <BrowserRouter>
       <Routes>
         <Route
-          path="/audio"
+          path="/audio/*"
           element={
             <AuthBoundary>
               <React.Suspense
