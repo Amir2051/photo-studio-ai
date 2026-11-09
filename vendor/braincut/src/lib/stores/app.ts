@@ -47,7 +47,7 @@ export const snapEnabled = writable(true);
 export const sourceMedia = writable<{ mediaId: string; in: number; out: number; time: number } | null>(null);
 
 export type LeftPanelTab = 'source' | 'effect-controls' | 'audio-mixer' | 'color';
-export type BottomPanelTab = 'project' | 'effects' | 'markers' | 'history';
+export type BottomPanelTab = 'project' | 'effects' | 'markers' | 'history' | 'text';
 export const leftPanelTab = writable<LeftPanelTab>('source');
 export const bottomPanelTab = writable<BottomPanelTab>('project');
 

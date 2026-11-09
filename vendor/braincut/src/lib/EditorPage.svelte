@@ -20,9 +20,10 @@
   import EffectsPanel from '$lib/ui/EffectsPanel.svelte';
   import MarkersPanel from '$lib/ui/MarkersPanel.svelte';
   import HistoryPanel from '$lib/ui/HistoryPanel.svelte';
+  import TextPanel from '$lib/ui/TextPanel.svelte';
   import Timeline from '$lib/ui/timeline/Timeline.svelte';
 
-  import { project } from '$lib/project/store';
+  import { activeSequence, project } from '$lib/project/store';
   import type { RecentProject } from '$lib/project/persistence';
   import { destroySessions, program } from '$lib/engine/session';
   import { pickFiles } from '$lib/media/import';
@@ -42,6 +43,7 @@
     bottomPanelTab,
     panelSizes,
     dialog,
+    selection,
     workspace,
     type LeftPanelTab,
     type BottomPanelTab
@@ -57,14 +59,15 @@
 
   const topTabs = [
     { id: 'source', label: 'Source' },
-    { id: 'effect-controls', label: 'Effect Controls' },
+    { id: 'effect-controls', label: 'Inspector' },
     { id: 'color', label: 'Color' },
-    { id: 'audio-mixer', label: 'Audio Mixer' }
+    { id: 'audio-mixer', label: 'Audio' }
   ];
 
   const bottomTabs = [
-    { id: 'project', label: 'Project' },
-    { id: 'effects', label: 'Effects' },
+    { id: 'project', label: 'Media' },
+    { id: 'effects', label: 'Effects & Transitions' },
+    { id: 'text', label: 'Text' },
     { id: 'markers', label: 'Markers' },
     { id: 'history', label: 'History' }
   ];
@@ -98,6 +101,20 @@
   async function refreshRecents() {
     recents = await recentProjects();
   }
+
+  // selecting a clip brings its inspector into focus, like a contextual editor
+  // audio clips open the mixer; visual clips open their effect/transform controls
+  let lastSelection = '';
+  $effect(() => {
+    const ids = $selection.join('|');
+    if (ids && ids !== lastSelection) {
+      const seq = $activeSequence;
+      const picked = seq?.tracks.flatMap((track) => track.clips).filter((clip) => $selection.includes(clip.id)) ?? [];
+      if (picked.length && picked.every((clip) => clip.kind === 'audio')) leftPanelTab.set('audio-mixer');
+      else if (picked.length) leftPanelTab.set('effect-controls');
+    }
+    lastSelection = ids;
+  });
 
   // the welcome screen lists what this browser remembers, fresh every time
   // it shows
@@ -190,6 +207,8 @@
             <ProjectPanel />
           {:else if $bottomPanelTab === 'effects'}
             <EffectsPanel />
+          {:else if $bottomPanelTab === 'text'}
+            <TextPanel />
           {:else if $bottomPanelTab === 'markers'}
             <MarkersPanel />
           {:else}
