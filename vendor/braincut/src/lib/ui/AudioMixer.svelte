@@ -11,6 +11,7 @@
   import { program, type Session } from '$lib/engine/session';
   import type { Levels } from '$lib/engine/audio-engine';
   import { isAnimated, setKeyframe, valueAt } from '$lib/project/keyframes';
+  import { fadeKeyframes } from '$lib/engine/effects/registry';
   import { findClipById } from '$lib/project/ops';
   import { activeSequence, commitPreview, editSequence, preview } from '$lib/project/store';
   import type { Project } from '$lib/project/types';
@@ -89,6 +90,7 @@
     return {
       id: c.id,
       name: c.name,
+      duration: c.duration,
       clipTime,
       level: Number(valueAt(volume, 'level', clipTime, 0)),
       pan: Number(valueAt(pan, 'pan', clipTime, 0)),
@@ -96,6 +98,21 @@
       panAnimated: isAnimated(pan, 'pan')
     };
   });
+
+  function setClipFade(direction: 'in' | 'out') {
+    const selectedClip = clip;
+    if (!selectedClip) return;
+    editSequence(direction === 'in' ? 'fade in audio clip' : 'fade out audio clip', (seq) => {
+      const target = findClipById(seq, selectedClip.id)?.clip;
+      const volume = target?.effects.find((effect) => effect.type === 'volume');
+      if (!target || !volume) return;
+      const added = fadeKeyframes(direction, target.duration);
+      const from = added[0].time;
+      const to = added[added.length - 1].time;
+      const kept = (volume.keyframes.level ?? []).filter((keyframe) => keyframe.time < from - 1e-6 || keyframe.time > to + 1e-6);
+      volume.keyframes.level = [...kept, ...added].sort((a, b) => a.time - b.time);
+    });
+  }
 
   function setClipParam(type: 'volume' | 'pan', key: string, value: number, live: boolean) {
     const c = clip;
@@ -157,6 +174,10 @@
               label="Clip level"
               oninput={(db) => setClipParam('volume', 'level', db, true)}
               onchange={(db) => setClipParam('volume', 'level', db, false)} />
+          </div>
+          <div class="fade-actions" aria-label="Audio fade controls">
+            <button type="button" onclick={() => setClipFade('in')} title="Fade in over 1 second">Fade in</button>
+            <button type="button" onclick={() => setClipFade('out')} title="Fade out over 1 second">Fade out</button>
           </div>
           <div class="pan">
             <span class="pan-label">Pan</span>
@@ -222,7 +243,7 @@
 
   .strip.clip {
     margin-left: auto;
-    width: 100px;
+    width: 132px;
     border-left: 1px solid var(--border);
     padding-left: 10px;
   }
@@ -281,6 +302,29 @@
     color: #111;
     background: var(--warning);
     border-color: var(--warning);
+  }
+
+  .fade-actions {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+
+  .fade-actions button {
+    flex: 1;
+    min-width: 0;
+    padding: 5px 4px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg-elevated);
+    color: var(--text-secondary);
+    font-size: 10px;
+  }
+
+  .fade-actions button:hover {
+    border-color: var(--accent);
+    color: var(--text-primary);
+    background: var(--accent-dim);
   }
 
   .pan {
