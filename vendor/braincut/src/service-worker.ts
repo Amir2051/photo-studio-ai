@@ -62,7 +62,7 @@ sw.addEventListener('activate', (event) => {
     (async () => {
       try {
         const names = await caches.keys();
-        await Promise.all(names.filter((n) => !keep.includes(n)).map((n) => caches.delete(n)));
+        await Promise.all(names.filter((n) => n.startsWith('braincut-') && !keep.includes(n)).map((n) => caches.delete(n)));
       } catch { /* no cache storage, nothing to clean */ }
       await sw.clients.claim();
     })()
