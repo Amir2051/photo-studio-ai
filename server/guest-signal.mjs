@@ -100,6 +100,9 @@ export function createGuestSignalServer({ host = '127.0.0.1', port = 18788, now 
           else if (msg.type === 'host-control' && ['mute-audio', 'enable-audio', 'disable-video', 'enable-video', 'kick'].includes(msg.action)) {
             send(target, { type: 'host-control', action: msg.action }); if (msg.action === 'kick') { current.guests.delete(msg.guestId); target.close(1000, 'Removed by host'); send(ws, { type: 'guest-left', guestId: msg.guestId }); }
           }
+        } else if (ws.role === 'guest' && msg.type === 'leave') {
+          if (current.guests.get(ws.guestId) === ws) { current.guests.delete(ws.guestId); send(current.host, { type: 'guest-left', guestId: ws.guestId }); }
+          ws.close(1000, 'Guest left');
         } else if (ws.role === 'guest' && ['answer', 'guest-status'].includes(msg.type)) {
           if (msg.type === 'answer' && typeof msg.sdp === 'string' && msg.sdp.length < MAX_SIGNAL_BYTES) send(current.host, { type: 'answer', guestId: ws.guestId, sdp: msg.sdp });
           else if (msg.type === 'guest-status' && ['camera-on', 'camera-off', 'mic-on', 'mic-off'].includes(msg.status)) send(current.host, { type: 'guest-status', guestId: ws.guestId, status: msg.status });

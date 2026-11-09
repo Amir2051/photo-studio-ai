@@ -45,6 +45,23 @@ describe('guest room signaling', () => {
     guests.forEach(socket => socket.close()); host.close();
   });
 
+
+  it('removes a guest immediately when the guest leaves and permits a clean rejoin', async () => {
+    const { base, ws } = await start({ maxGuests: 2 });
+    const room = await (await fetch(`${base}/api/guest-rooms`, { method: 'POST' })).json();
+    const host = new WebSocket(`${ws}?room=${room.roomCode}&role=host&token=${room.hostToken}`);
+    await nextMessage(host, 'host-ready'); host.send(JSON.stringify({ type: 'invite-guests' }));
+    const invite = await nextMessage(host, 'guest-invite');
+    const first = new WebSocket(`${ws}?room=${room.roomCode}&role=guest&token=${invite.guestToken}`);
+    const firstReady = await nextMessage(first, 'guest-ready'); await nextMessage(host, 'guest-joined');
+    const left = nextMessage(host, 'guest-left'); first.send(JSON.stringify({ type: 'leave' }));
+    expect((await left).guestId).toBe(firstReady.guestId);
+    const second = new WebSocket(`${ws}?room=${room.roomCode}&role=guest&token=${invite.guestToken}`);
+    const secondReady = await nextMessage(second, 'guest-ready');
+    expect((await nextMessage(host, 'guest-joined')).guestId).toBe(secondReady.guestId);
+    first.close(); second.close(); host.close();
+  });
+
   it('rejects a fifth guest and issues short-lived TURN credentials when configured', async () => {
     const fixedNow = () => 1_700_000_000_000;
     const { base, ws } = await start({ maxGuests: 4, now: fixedNow, turnUrls: ['turn:relay.example:3478'], turnSharedSecret: 'unit-test-secret' });
