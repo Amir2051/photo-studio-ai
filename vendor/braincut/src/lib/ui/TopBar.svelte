@@ -112,8 +112,9 @@
 <style>
   .topbar {
     height: var(--topbar-h);
-    background: var(--bg-surface);
+    background: linear-gradient(90deg, #0d172b 0%, #101b31 55%, #111a2d 100%);
     border-bottom: 1px solid var(--border);
+    box-shadow: 0 5px 22px rgba(0, 0, 0, 0.18);
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -133,9 +134,11 @@
   .logo {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
     text-decoration: none;
     flex-shrink: 0;
+    padding: 5px 9px;
+    border-radius: var(--radius-md);
   }
 
   .logo-icon {
@@ -147,8 +150,8 @@
   .logo-text {
     font-family: var(--font-brand);
     font-style: italic;
-    font-size: 12px;
-    letter-spacing: 0.06em;
+    font-size: 13px;
+    letter-spacing: 0.09em;
     white-space: nowrap;
     color: var(--text-primary);
   }
@@ -206,9 +209,10 @@
     display: flex;
     align-items: center;
     gap: 3px;
-    padding: 4px 10px;
+    padding: 7px 12px;
     color: var(--text-secondary);
     font-size: 11.5px;
+    border-radius: var(--radius-md);
   }
 
   .tool-btn:hover {
@@ -219,6 +223,7 @@
   .tool-btn.active {
     background: var(--accent-dim);
     color: var(--accent);
+    box-shadow: inset 0 -2px 0 var(--accent);
   }
 
   .topbar-actions {
@@ -234,8 +239,9 @@
     display: flex;
     align-items: center;
     gap: 5px;
-    padding: 5px 10px;
+    padding: 7px 11px;
     font-size: 11.5px;
+    border-radius: var(--radius-md);
     font-weight: 500;
     color: var(--text-secondary);
     text-decoration: none;
@@ -252,13 +258,14 @@
   }
 
   .action-btn.accent {
-    background: var(--accent);
-    color: #111;
+    background: linear-gradient(135deg, #91a8ff, #a68cff);
+    color: #0a1020;
+    box-shadow: 0 3px 12px rgba(119, 137, 255, 0.22);
   }
 
   .action-btn.accent:hover:not(:disabled) {
-    background: var(--accent-hover);
-    color: #111;
+    background: #b6c3ff;
+    color: #0a1020;
   }
 
   .action-btn.icon-only {
