@@ -13,6 +13,7 @@ import {
   type RecentProject
 } from '$lib/project/persistence';
 import { restoreSources } from '$lib/media/sources';
+import { importFiles, isMediaFile } from '$lib/media/import';
 import { downloadBlob } from '$lib/export/download';
 import { addToast, dialog, projectHandle, sourceMedia } from '$lib/stores/app';
 import { preferences } from '$lib/stores/preferences';
@@ -98,10 +99,29 @@ async function open(p: Project, handle: FileSystemFileHandle | null): Promise<vo
   addToast(`Opened ${p.name}`, 'success', 2000);
 }
 
+// Route footage selected through the Open dialog to the media importer instead
+// of trying to parse the binary video as a JSON project. This also makes the
+// distinction between Open project and Import video explicit to the user.
+async function openSelectedFile(file: File, handle: FileSystemFileHandle | null): Promise<void> {
+  if (!file.name.toLowerCase().endsWith(PROJECT_EXTENSION)) {
+    if (isMediaFile(file.name, file.type)) {
+      if (!get(project)) {
+        addToast('Create a video project first, then choose Import video to add footage.', 'warning', 6000);
+        return;
+      }
+      await importFiles([file]);
+      return;
+    }
+    addToast(`${file.name} is not a brainCUT project. Choose a .braincut project file or use Import video for media.`, 'error', 6000);
+    return;
+  }
+  if (!confirmDiscard()) return;
+  await openFromFile(file, handle);
+}
+
 // a project file dropped on the window lands here
 export async function openProjectFromFile(file: File): Promise<void> {
-  if (!confirmDiscard()) return;
-  await openFromFile(file, null);
+  await openSelectedFile(file, null);
 }
 
 async function openFromFile(file: File, handle: FileSystemFileHandle | null): Promise<void> {
@@ -119,7 +139,7 @@ function inputFallback(): Promise<File | null> {
   return new Promise((resolve) => {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = `${PROJECT_EXTENSION},.json`;
+    input.accept = PROJECT_EXTENSION;
     input.style.display = 'none';
     input.onchange = () => {
       resolve(input.files?.[0] ?? null);
@@ -154,11 +174,11 @@ export async function openProjectFile(): Promise<void> {
     if ('showOpenFilePicker' in window) {
       const [handle] = await window.showOpenFilePicker({ multiple: false, types: PICKER_TYPES, id: 'braincut-project' });
       if (!handle) return;
-      await openFromFile(await handle.getFile(), handle);
+      await openSelectedFile(await handle.getFile(), handle);
       return;
     }
     const file = await inputFallback();
-    if (file) await openFromFile(file, null);
+    if (file) await openSelectedFile(file, null);
   } catch (e) {
     if (aborted(e)) return;
     addToast(`Could not open the project: ${message(e, 'the file could not be read')}`, 'error', 6000);
