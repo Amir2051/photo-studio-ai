@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 const LibraryToolsPanel = React.lazy(() => import('../components/LibraryToolsPanel'));
+const VideoStudioFrame = React.lazy(() => import('../components/VideoStudioFrame'));
+const CloudSyncPanel = React.lazy(() => import('../components/CloudSyncPanel'));
 import {
   savePhoto,
   getAllPhotos,
@@ -97,6 +99,15 @@ type EditorSnapshot = {
   selection?: SelectionState | null;
   layers?: StudioLayer[];
   selectedLayerId?: string;
+  selectedFilterId?: string;
+  filterIntensity?: number;
+  filterBaseManualSettings?: ManualAdjustmentSettings | null;
+  retouchStrength?: number;
+  retouchStrokes?: BrushStroke[];
+  faceLandmarks?: NormalizedPoint[][];
+  faceMakeup?: FaceMakeupSettings;
+  faceAccessory?: FaceAccessory;
+  faceAccessorySettings?: FaceAccessorySettings;
 };
 const HSL_CHANNEL_OPTIONS = [
   'red',
@@ -477,6 +488,15 @@ export default function Home(): React.JSX.Element {
       selection: null,
       layers: [],
       selectedLayerId: '',
+      selectedFilterId: '',
+      filterIntensity: 100,
+      filterBaseManualSettings: null,
+      retouchStrength: 55,
+      retouchStrokes: [],
+      faceLandmarks: [],
+      faceMakeup: DEFAULT_FACE_MAKEUP,
+      faceAccessory: 'none',
+      faceAccessorySettings: DEFAULT_FACE_ACCESSORY_SETTINGS,
     },
   ]);
   const [historyIndex, setHistoryIndex] = useState(0);
@@ -492,7 +512,7 @@ export default function Home(): React.JSX.Element {
   const [prompt, setPrompt] = useState('');
   const [styleInterpretation, setStyleInterpretation] = useState<StyleInterpretation | null>(null);
   const [showSaved, setShowSaved] = useState(false);
-  const [activeSection, setActiveSection] = useState('home');
+  const [activeSection, setActiveSection] = useState('creator');
   const [retouchMode, setRetouchMode] = useState<'off' | 'brush'>('off');
   const [retouchStrength, setRetouchStrength] = useState(55);
   const [brushSize, setBrushSize] = useState(28);
@@ -752,17 +772,96 @@ export default function Home(): React.JSX.Element {
   const curvePreviewValue = (part: string) =>
     manualAdjustments[(curvePreviewPrefix + part) as keyof ManualAdjustmentSettings] as number;
 
+  const portraitSnapshotFields = () => ({
+    selectedFilterId,
+    filterIntensity,
+    filterBaseManualSettings: filterBaseManualRef.current
+      ? { ...filterBaseManualRef.current }
+      : null,
+    retouchStrength,
+    retouchStrokes: structuredClone(retouchStrokes),
+    faceLandmarks: structuredClone(faceLandmarks),
+    faceMakeup: structuredClone(faceMakeup),
+    faceAccessory,
+    faceAccessorySettings: structuredClone(faceAccessorySettings),
+  });
+
+  const commitPortraitSnapshot = (
+    patch: Partial<Pick<EditorSnapshot, keyof ReturnType<typeof portraitSnapshotFields>>>,
+  ) => {
+    const next = { ...portraitSnapshotFields(), ...patch };
+    setSelectedFilterId(next.selectedFilterId || '');
+    setFilterIntensity(next.filterIntensity ?? 100);
+    filterBaseManualRef.current = next.filterBaseManualSettings
+      ? { ...next.filterBaseManualSettings }
+      : null;
+    setRetouchStrength(next.retouchStrength ?? 55);
+    setRetouchStrokes(next.retouchStrokes || []);
+    setFaceLandmarks(next.faceLandmarks || []);
+    setFaceMakeup(next.faceMakeup || DEFAULT_FACE_MAKEUP);
+    setFaceAccessory(next.faceAccessory || 'none');
+    setFaceAccessorySettings(next.faceAccessorySettings || DEFAULT_FACE_ACCESSORY_SETTINGS);
+    setHistory((current) =>
+      [
+        ...current.slice(0, historyIndex + 1),
+        {
+          adjustments,
+          manualAdjustments,
+          localMasks,
+          healStrokes,
+          selection,
+          documentTransform,
+          layers: layers.map((layer) => structuredClone(layer)),
+          selectedLayerId,
+          ...next,
+        },
+      ].slice(-60),
+    );
+    setHistoryIndex((index) => Math.min(index + 1, 59));
+  };
+
   const commitSnapshot = (
     nextAdjustments: Adjustments,
     nextManual: ManualAdjustmentSettings,
     nextMasks = localMasks,
     nextHeal = healStrokes,
     nextSelection = selection,
+    portraitPatch: Partial<
+      Pick<
+        EditorSnapshot,
+        | 'selectedFilterId'
+        | 'filterIntensity'
+        | 'filterBaseManualSettings'
+        | 'retouchStrength'
+        | 'retouchStrokes'
+        | 'faceLandmarks'
+        | 'faceMakeup'
+        | 'faceAccessory'
+        | 'faceAccessorySettings'
+      >
+    > = {},
   ) => {
     setAdjustments(nextAdjustments);
     setManualAdjustments(nextManual);
     setLocalMasks(nextMasks);
     setHealStrokes(nextHeal);
+    if (portraitPatch.selectedFilterId !== undefined)
+      setSelectedFilterId(portraitPatch.selectedFilterId || '');
+    if (portraitPatch.filterIntensity !== undefined)
+      setFilterIntensity(portraitPatch.filterIntensity);
+    if (portraitPatch.filterBaseManualSettings !== undefined) {
+      filterBaseManualRef.current = portraitPatch.filterBaseManualSettings
+        ? { ...portraitPatch.filterBaseManualSettings }
+        : null;
+    }
+    if (portraitPatch.retouchStrength !== undefined)
+      setRetouchStrength(portraitPatch.retouchStrength);
+    if (portraitPatch.retouchStrokes !== undefined) setRetouchStrokes(portraitPatch.retouchStrokes);
+    if (portraitPatch.faceLandmarks !== undefined) setFaceLandmarks(portraitPatch.faceLandmarks);
+    if (portraitPatch.faceMakeup !== undefined) setFaceMakeup(portraitPatch.faceMakeup);
+    if (portraitPatch.faceAccessory !== undefined) setFaceAccessory(portraitPatch.faceAccessory);
+    if (portraitPatch.faceAccessorySettings !== undefined)
+      setFaceAccessorySettings(portraitPatch.faceAccessorySettings);
     setHistory((current) =>
       [
         ...current.slice(0, historyIndex + 1),
@@ -775,6 +874,8 @@ export default function Home(): React.JSX.Element {
           documentTransform,
           layers: layers.map((layer) => ({ ...layer })),
           selectedLayerId,
+          ...portraitSnapshotFields(),
+          ...portraitPatch,
         },
       ].slice(-60),
     );
@@ -796,6 +897,7 @@ export default function Home(): React.JSX.Element {
           documentTransform,
           layers: next.map((layer) => ({ ...layer })),
           selectedLayerId: nextSelectedLayerId,
+          ...portraitSnapshotFields(),
         },
       ].slice(-60),
     );
@@ -824,6 +926,7 @@ export default function Home(): React.JSX.Element {
           documentTransform,
           layers: layers.map((layer) => ({ ...layer })),
           selectedLayerId,
+          ...portraitSnapshotFields(),
         },
       ].slice(-60),
     );
@@ -843,6 +946,9 @@ export default function Home(): React.JSX.Element {
           healStrokes,
           selection,
           documentTransform: next,
+          layers: layers.map((layer) => structuredClone(layer)),
+          selectedLayerId,
+          ...portraitSnapshotFields(),
         },
       ].slice(-60),
     );
@@ -865,9 +971,10 @@ export default function Home(): React.JSX.Element {
   };
 
   const addHistory = (next: Adjustments) => {
-    setSelectedFilterId('');
     filterBaseManualRef.current = null;
-    commitSnapshot(next, manualAdjustments);
+    commitSnapshot(next, manualAdjustments, localMasks, healStrokes, selection, {
+      selectedFilterId: '',
+    });
   };
 
   const updateManualAdjustment = (key: keyof ManualAdjustmentSettings, value: number) => {
@@ -1057,6 +1164,13 @@ export default function Home(): React.JSX.Element {
       setManualAdjustments(DEFAULT_MANUAL_ADJUSTMENTS);
       setLocalMasks([]);
       setHealStrokes([]);
+      setSelectedFilterId('');
+      setFilterIntensity(100);
+      filterBaseManualRef.current = null;
+      setRetouchStrength(55);
+      setFaceMakeup(DEFAULT_FACE_MAKEUP);
+      setFaceAccessory('none');
+      setFaceAccessorySettings(DEFAULT_FACE_ACCESSORY_SETTINGS);
       setHistory([
         {
           adjustments: DEFAULTS,
@@ -1065,6 +1179,14 @@ export default function Home(): React.JSX.Element {
           healStrokes: [],
           layers: initialLayers.map((layer) => ({ ...layer })),
           selectedLayerId: initialLayers[1].id,
+          selectedFilterId: '',
+          filterIntensity: 100,
+          retouchStrength: 55,
+          retouchStrokes: [],
+          faceLandmarks: [],
+          faceMakeup: DEFAULT_FACE_MAKEUP,
+          faceAccessory: 'none',
+          faceAccessorySettings: DEFAULT_FACE_ACCESSORY_SETTINGS,
         },
       ]);
       setHistoryIndex(0);
@@ -1094,9 +1216,10 @@ export default function Home(): React.JSX.Element {
     }
     const base = filterBaseManualRef.current;
     const nextManual = mapFilterRecipeToManualSettings(recipe, intensity, base);
-    commitSnapshot(adjustments, nextManual);
-    setSelectedFilterId(recipe.id);
-    setFilterIntensity(intensity);
+    commitSnapshot(adjustments, nextManual, localMasks, healStrokes, selection, {
+      selectedFilterId: recipe.id,
+      filterIntensity: intensity,
+    });
     setCompare(false);
     setMessage(
       `Applied ${recipe.name} at ${intensity}% intensity. Full-resolution export uses the same local effects.`,
@@ -1115,6 +1238,19 @@ export default function Home(): React.JSX.Element {
     if (history[index].layers) setLayers(history[index].layers.map((layer) => ({ ...layer })));
     if (history[index].selectedLayerId) setSelectedLayerId(history[index].selectedLayerId);
     setCropDraft((history[index].documentTransform || DEFAULT_DOCUMENT_TRANSFORM).crop);
+    setSelectedFilterId(history[index].selectedFilterId || '');
+    setFilterIntensity(history[index].filterIntensity ?? 100);
+    filterBaseManualRef.current = history[index].filterBaseManualSettings
+      ? { ...history[index].filterBaseManualSettings }
+      : null;
+    setRetouchStrength(history[index].retouchStrength ?? 55);
+    setRetouchStrokes(structuredClone(history[index].retouchStrokes || []));
+    setFaceLandmarks(structuredClone(history[index].faceLandmarks || []));
+    setFaceMakeup(structuredClone(history[index].faceMakeup || DEFAULT_FACE_MAKEUP));
+    setFaceAccessory(history[index].faceAccessory || 'none');
+    setFaceAccessorySettings(
+      structuredClone(history[index].faceAccessorySettings || DEFAULT_FACE_ACCESSORY_SETTINGS),
+    );
   };
   const redo = () => {
     if (!canRedo) return;
@@ -1129,11 +1265,26 @@ export default function Home(): React.JSX.Element {
     if (history[index].layers) setLayers(history[index].layers.map((layer) => ({ ...layer })));
     if (history[index].selectedLayerId) setSelectedLayerId(history[index].selectedLayerId);
     setCropDraft((history[index].documentTransform || DEFAULT_DOCUMENT_TRANSFORM).crop);
+    setSelectedFilterId(history[index].selectedFilterId || '');
+    setFilterIntensity(history[index].filterIntensity ?? 100);
+    filterBaseManualRef.current = history[index].filterBaseManualSettings
+      ? { ...history[index].filterBaseManualSettings }
+      : null;
+    setRetouchStrength(history[index].retouchStrength ?? 55);
+    setRetouchStrokes(structuredClone(history[index].retouchStrokes || []));
+    setFaceLandmarks(structuredClone(history[index].faceLandmarks || []));
+    setFaceMakeup(structuredClone(history[index].faceMakeup || DEFAULT_FACE_MAKEUP));
+    setFaceAccessory(history[index].faceAccessory || 'none');
+    setFaceAccessorySettings(
+      structuredClone(history[index].faceAccessorySettings || DEFAULT_FACE_ACCESSORY_SETTINGS),
+    );
   };
   const reset = () => {
-    setSelectedFilterId('');
     filterBaseManualRef.current = null;
-    commitSnapshot(DEFAULTS, DEFAULT_MANUAL_ADJUSTMENTS, [], []);
+    commitSnapshot(DEFAULTS, DEFAULT_MANUAL_ADJUSTMENTS, [], [], selection, {
+      selectedFilterId: '',
+      filterIntensity: 100,
+    });
   };
 
   const exportPhoto = async () => {
@@ -1235,7 +1386,11 @@ export default function Home(): React.JSX.Element {
             label: type,
           }),
         ),
-        filterIntensity: 100,
+        filterId: selectedFilterId || null,
+        filterIntensity,
+        filterBaseManualSettings: filterBaseManualRef.current
+          ? { ...filterBaseManualRef.current }
+          : null,
         isOriginalRequired: true,
         tags: [],
         selection: selection ? structuredClone(selection) : null,
@@ -1247,6 +1402,12 @@ export default function Home(): React.JSX.Element {
           ...stroke,
           points: stroke.points.map((point) => ({ ...point })),
         })),
+        retouchStrength,
+        retouchStrokes: structuredClone(retouchStrokes),
+        faceLandmarks: structuredClone(faceLandmarks),
+        faceMakeup: structuredClone(faceMakeup),
+        faceAccessory,
+        faceAccessorySettings: structuredClone(faceAccessorySettings),
         studioLayers: layers.map((layer) => ({
           ...layer,
           adjustments: layer.adjustments ? { ...layer.adjustments } : undefined,
@@ -1337,6 +1498,26 @@ export default function Home(): React.JSX.Element {
         Object.keys(DEFAULT_MANUAL_ADJUSTMENTS).map((key) => [key, valueFor(key, 0, true)]),
       ) as unknown as ManualAdjustmentSettings;
       setManualAdjustments(restoredManual);
+      setSelectedFilterId(photo.filterId || '');
+      setFilterIntensity(photo.filterIntensity ?? 100);
+      filterBaseManualRef.current = photo.filterBaseManualSettings
+        ? { ...photo.filterBaseManualSettings }
+        : photo.filterId
+          ? { ...restoredManual }
+          : null;
+      const restoredRetouchStrength = photo.retouchStrength ?? 55;
+      const restoredRetouchStrokes = photo.retouchStrokes || [];
+      const restoredFaceLandmarks = photo.faceLandmarks || [];
+      const restoredFaceMakeup = photo.faceMakeup || DEFAULT_FACE_MAKEUP;
+      const restoredFaceAccessory = photo.faceAccessory || 'none';
+      const restoredFaceAccessorySettings =
+        photo.faceAccessorySettings || DEFAULT_FACE_ACCESSORY_SETTINGS;
+      setRetouchStrength(restoredRetouchStrength);
+      setRetouchStrokes(restoredRetouchStrokes);
+      setFaceLandmarks(restoredFaceLandmarks);
+      setFaceMakeup(restoredFaceMakeup);
+      setFaceAccessory(restoredFaceAccessory);
+      setFaceAccessorySettings(restoredFaceAccessorySettings);
       const restoredMasks = photo.localMasks || [];
       const restoredHealing = photo.healStrokes || [];
       setLocalMasks(restoredMasks);
@@ -1348,6 +1529,11 @@ export default function Home(): React.JSX.Element {
         JSON.stringify(restoredManual) === JSON.stringify(DEFAULT_MANUAL_ADJUSTMENTS) &&
         !restoredMasks.length &&
         !restoredHealing.length &&
+        !restoredRetouchStrokes.length &&
+        !restoredFaceLandmarks.length &&
+        restoredRetouchStrength === 55 &&
+        JSON.stringify(restoredFaceMakeup) === JSON.stringify(DEFAULT_FACE_MAKEUP) &&
+        restoredFaceAccessory === 'none' &&
         JSON.stringify(restoredTransform) === JSON.stringify(DEFAULT_DOCUMENT_TRANSFORM);
       setHistory(
         isDefault
@@ -1367,6 +1553,15 @@ export default function Home(): React.JSX.Element {
                 healStrokes: [],
                 layers: restoredLayers.map((layer) => ({ ...layer })),
                 selectedLayerId: restoredLayers[restoredLayers.length - 1].id,
+                selectedFilterId: photo.filterId || '',
+                filterIntensity: photo.filterIntensity ?? 100,
+                filterBaseManualSettings: photo.filterBaseManualSettings || null,
+                retouchStrength: restoredRetouchStrength,
+                retouchStrokes: structuredClone(restoredRetouchStrokes),
+                faceLandmarks: structuredClone(restoredFaceLandmarks),
+                faceMakeup: structuredClone(restoredFaceMakeup),
+                faceAccessory: restoredFaceAccessory,
+                faceAccessorySettings: structuredClone(restoredFaceAccessorySettings),
               },
               {
                 adjustments: restored,
@@ -1377,6 +1572,15 @@ export default function Home(): React.JSX.Element {
                 layers: restoredLayers.map((layer) => ({ ...layer })),
                 selectedLayerId: restoredLayers[restoredLayers.length - 1].id,
                 documentTransform: restoredTransform,
+                selectedFilterId: photo.filterId || '',
+                filterIntensity: photo.filterIntensity ?? 100,
+                filterBaseManualSettings: photo.filterBaseManualSettings || null,
+                retouchStrength: restoredRetouchStrength,
+                retouchStrokes: structuredClone(restoredRetouchStrokes),
+                faceLandmarks: structuredClone(restoredFaceLandmarks),
+                faceMakeup: structuredClone(restoredFaceMakeup),
+                faceAccessory: restoredFaceAccessory,
+                faceAccessorySettings: structuredClone(restoredFaceAccessorySettings),
               },
             ],
       );
@@ -1560,12 +1764,16 @@ export default function Home(): React.JSX.Element {
     commitSnapshot(
       { ...recipe.adjustments },
       { ...DEFAULT_MANUAL_ADJUSTMENTS, ...(recipe.manualAdjustments || {}) },
+      recipe.localMasks || [],
+      [],
+      selection,
+      {
+        filterIntensity: recipe.filterIntensity,
+        filterBaseManualSettings: null,
+        selectedFilterId: recipe.selectedFilterId,
+        retouchStrength: recipe.retouchStrength,
+      },
     );
-    setFilterIntensity(recipe.filterIntensity);
-    setSelectedFilterId(recipe.selectedFilterId);
-    setRetouchStrength(recipe.retouchStrength);
-    setLocalMasks(recipe.localMasks || []);
-    setHealStrokes([]);
     setCompare(false);
     setMessage(`Loaded “${recipe.name}” onto the reference photo.`);
   };
@@ -1576,7 +1784,7 @@ export default function Home(): React.JSX.Element {
     setDetectingFaces(true);
     try {
       const faces = await detectFaceLandmarks(image);
-      setFaceLandmarks(faces);
+      commitPortraitSnapshot({ faceLandmarks: faces });
       setRetouchMode('off');
       setMessage(
         faces.length
@@ -1813,19 +2021,22 @@ export default function Home(): React.JSX.Element {
 
   const finishBrushStroke = () => {
     if (selectionMode !== 'off' && selection) commitSelection(selection);
+    if (retouchMode === 'brush' && retouchStrokes.length) {
+      commitPortraitSnapshot({ retouchStrokes: structuredClone(retouchStrokes) });
+    }
   };
 
   const suggestFromPrompt = () => {
     try {
       const result = interpretStylePrompt(prompt);
       setStyleInterpretation(result);
-      addHistory(result.settings);
-      setFilterIntensity(result.filterIntensity);
-      setSelectedFilterId(result.filterId);
-      if (result.retouchEnabled) {
-        setRetouchStrength(result.retouchStrength);
-        void runFaceDetection();
-      }
+      commitSnapshot(result.settings, manualAdjustments, localMasks, healStrokes, selection, {
+        filterIntensity: result.filterIntensity,
+        selectedFilterId: result.filterId,
+        ...(result.retouchEnabled ? { retouchStrength: result.retouchStrength } : {}),
+      });
+      filterBaseManualRef.current = null;
+      if (result.retouchEnabled) void runFaceDetection();
       setCompare(false);
       setMessage(
         'Local Style Assistant prepared an editable recipe. Review it, then save it as a Style Recipe.',
@@ -1837,6 +2048,34 @@ export default function Home(): React.JSX.Element {
       );
     }
   };
+
+  if (activeSection === 'creator') {
+    return (
+      <React.Suspense
+        fallback={
+          <main className="auth-screen">
+            <p className="auth-muted">Loading Creator Studio…</p>
+          </main>
+        }
+      >
+        <VideoStudioFrame onBack={() => setActiveSection('home')} />
+      </React.Suspense>
+    );
+  }
+
+  if (activeSection === 'cloud-sync') {
+    return (
+      <React.Suspense
+        fallback={
+          <main className="auth-screen">
+            <p className="auth-muted">Loading private cloud sync…</p>
+          </main>
+        }
+      >
+        <CloudSyncPanel onBack={() => setActiveSection('home')} />
+      </React.Suspense>
+    );
+  }
 
   return (
     <div className="studio-shell">
@@ -1936,6 +2175,13 @@ export default function Home(): React.JSX.Element {
           <span className="sidebar-icon">✺</span>
           <span>Effects</span>
         </button>
+        <button
+          className={`sidebar-link ${activeSection === 'creator' ? 'active' : ''}`}
+          onClick={() => setActiveSection('creator')}
+        >
+          <span className="sidebar-icon">▶</span>
+          <span>Video Studio</span>
+        </button>
         <div className="sidebar-divider" />
         <div className="sidebar-workspace-label">PROJECT</div>
         <button
@@ -1962,6 +2208,13 @@ export default function Home(): React.JSX.Element {
           <span className="sidebar-count">{savedPhotos.length}</span>
         </button>
         <button
+          className={`sidebar-link ${activeSection === 'cloud-sync' ? 'active' : ''}`}
+          onClick={() => setActiveSection('cloud-sync')}
+        >
+          <span className="sidebar-icon">⇄</span>
+          <span>Cloud sync</span>
+        </button>
+        <button
           className={`sidebar-link ${activeSection === 'export' ? 'active' : ''}`}
           onClick={() => navigateStudio('export', 'export-workspace')}
         >
@@ -1977,6 +2230,16 @@ export default function Home(): React.JSX.Element {
       </aside>
 
       <main className="studio-main">
+        <section className="video-first-launch" aria-labelledby="video-first-title">
+          <div className="video-first-copy">
+            <p className="eyebrow">PRIMARY WORKSPACE · VIDEO PRODUCTION</p>
+            <h2 id="video-first-title">Professional Video Studio</h2>
+            <p>Import footage, edit a real multitrack timeline, mix sound, finish color and export your film.</p>
+          </div>
+          <button className="button button-primary video-first-launch-button" type="button" onClick={() => setActiveSection('creator')}>
+            Open Video Studio <span aria-hidden="true">→</span>
+          </button>
+        </section>
         <section className="workspace-heading" id="studio-home">
           <div>
             <p className="eyebrow">YOUR CREATIVE WORKSPACE</p>
@@ -2228,6 +2491,18 @@ export default function Home(): React.JSX.Element {
                   <LibraryToolsPanel
                     sourceUrl={sourceUrl}
                     sourceName={sourceName}
+                    onApplyAdjustments={({ brightness, contrast, saturation }) => {
+                      commitSnapshot(adjustments, {
+                        ...manualAdjustments,
+                        brightness,
+                        contrast,
+                        saturation,
+                      });
+                      setCompare(false);
+                    }}
+                    onApplyCrop={({ crop, rotation }) => {
+                      commitDocumentTransform({ ...documentTransform, crop, rotation });
+                    }}
                     onApply={(blob, suffix) => {
                       if (
                         !window.confirm(
@@ -3252,7 +3527,6 @@ export default function Home(): React.JSX.Element {
                       disabled={!hasImage || !selectedFilterId}
                       onChange={(e) => {
                         const value = Number(e.target.value);
-                        setFilterIntensity(value);
                         const recipe = FILTER_LIBRARY.find((item) => item.id === selectedFilterId);
                         if (recipe) applyLibraryFilter(recipe, value);
                       }}
@@ -4098,7 +4372,7 @@ export default function Home(): React.JSX.Element {
                     <button
                       type="button"
                       className={retouchStrength === 30 ? 'selected' : ''}
-                      onClick={() => setRetouchStrength(30)}
+                      onClick={() => commitPortraitSnapshot({ retouchStrength: 30 })}
                       disabled={!hasImage}
                     >
                       Subtle
@@ -4106,7 +4380,7 @@ export default function Home(): React.JSX.Element {
                     <button
                       type="button"
                       className={retouchStrength === 55 ? 'selected' : ''}
-                      onClick={() => setRetouchStrength(55)}
+                      onClick={() => commitPortraitSnapshot({ retouchStrength: 55 })}
                       disabled={!hasImage}
                     >
                       Balanced
@@ -4114,7 +4388,7 @@ export default function Home(): React.JSX.Element {
                     <button
                       type="button"
                       className={retouchStrength === 78 ? 'selected' : ''}
-                      onClick={() => setRetouchStrength(78)}
+                      onClick={() => commitPortraitSnapshot({ retouchStrength: 78 })}
                       disabled={!hasImage}
                     >
                       Strong
@@ -4131,7 +4405,9 @@ export default function Home(): React.JSX.Element {
                       max="100"
                       value={retouchStrength}
                       disabled={!hasImage}
-                      onChange={(e) => setRetouchStrength(Number(e.target.value))}
+                      onChange={(e) =>
+                        commitPortraitSnapshot({ retouchStrength: Number(e.target.value) })
+                      }
                     />
                   </label>
                   <div className="makeup-controls">
@@ -4143,7 +4419,7 @@ export default function Home(): React.JSX.Element {
                       <button
                         type="button"
                         className="text-button"
-                        onClick={() => setFaceMakeup(DEFAULT_FACE_MAKEUP)}
+                        onClick={() => commitPortraitSnapshot({ faceMakeup: DEFAULT_FACE_MAKEUP })}
                         disabled={!hasImage}
                       >
                         Reset
@@ -4172,10 +4448,9 @@ export default function Home(): React.JSX.Element {
                           value={faceMakeup[key]}
                           disabled={!hasImage || !faceLandmarks.length}
                           onChange={(event) =>
-                            setFaceMakeup((current) => ({
-                              ...current,
-                              [key]: Number(event.target.value),
-                            }))
+                            commitPortraitSnapshot({
+                              faceMakeup: { ...faceMakeup, [key]: Number(event.target.value) },
+                            })
                           }
                         />
                       </label>
@@ -4191,8 +4466,17 @@ export default function Home(): React.JSX.Element {
                         type="button"
                         className="text-button"
                         onClick={() => {
-                          setFaceAccessory('none');
-                          setFaceAccessorySettings(DEFAULT_FACE_ACCESSORY_SETTINGS);
+                          commitSnapshot(
+                            adjustments,
+                            manualAdjustments,
+                            localMasks,
+                            healStrokes,
+                            selection,
+                            {
+                              faceAccessory: 'none',
+                              faceAccessorySettings: DEFAULT_FACE_ACCESSORY_SETTINGS,
+                            },
+                          );
                         }}
                         disabled={!hasImage || faceAccessory === 'none'}
                       >
@@ -4210,7 +4494,11 @@ export default function Home(): React.JSX.Element {
                       <select
                         value={faceAccessory}
                         disabled={!hasImage || !faceLandmarks.length}
-                        onChange={(event) => setFaceAccessory(event.target.value as FaceAccessory)}
+                        onChange={(event) =>
+                          commitPortraitSnapshot({
+                            faceAccessory: event.target.value as FaceAccessory,
+                          })
+                        }
                       >
                         <option value="none">No accessory</option>
                         <option value="glasses">Classic glasses</option>
@@ -4249,10 +4537,12 @@ export default function Home(): React.JSX.Element {
                               value={faceAccessorySettings[key]}
                               disabled={!hasImage || !faceLandmarks.length}
                               onChange={(event) =>
-                                setFaceAccessorySettings((current) => ({
-                                  ...current,
-                                  [key]: Number(event.target.value),
-                                }))
+                                commitPortraitSnapshot({
+                                  faceAccessorySettings: {
+                                    ...faceAccessorySettings,
+                                    [key]: Number(event.target.value),
+                                  },
+                                })
                               }
                             />
                           </label>
@@ -4260,7 +4550,11 @@ export default function Home(): React.JSX.Element {
                         <button
                           type="button"
                           className="text-button"
-                          onClick={() => setFaceAccessorySettings(DEFAULT_FACE_ACCESSORY_SETTINGS)}
+                          onClick={() =>
+                            commitPortraitSnapshot({
+                              faceAccessorySettings: DEFAULT_FACE_ACCESSORY_SETTINGS,
+                            })
+                          }
                         >
                           Reset positioning
                         </button>
@@ -4291,8 +4585,20 @@ export default function Home(): React.JSX.Element {
                     <button
                       className="text-button"
                       onClick={() => {
-                        setFaceLandmarks([]);
-                        setRetouchStrokes([]);
+                        commitSnapshot(
+                          adjustments,
+                          manualAdjustments,
+                          localMasks,
+                          healStrokes,
+                          selection,
+                          {
+                            faceLandmarks: [],
+                            retouchStrokes: [],
+                            faceMakeup: DEFAULT_FACE_MAKEUP,
+                            faceAccessory: 'none',
+                            faceAccessorySettings: DEFAULT_FACE_ACCESSORY_SETTINGS,
+                          },
+                        );
                         setRetouchMode('off');
                         setMessage('Portrait retouch cleared.');
                       }}
