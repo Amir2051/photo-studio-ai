@@ -86,8 +86,41 @@ export interface Photo {
   edits: Adjustment[];
   filterId?: string | null; // active preset
   filterIntensity: number;
+  filterBaseManualSettings?: import('./manualEditing').ManualAdjustmentSettings | null;
   isOriginalRequired: boolean;
   metadata?: PhotoMetadata;
+  localMasks?: import('./advancedEditing').LocalMask[];
+  selection?: import('./advancedEditing').SelectionState | null;
+  healStrokes?: import('./advancedEditing').HealStroke[];
+  retouchStrength?: number;
+  retouchStrokes?: import('./portraitRetouch').BrushStroke[];
+  faceLandmarks?: import('./portraitRetouch').NormalizedPoint[][];
+  faceMakeup?: import('./faceMakeup').FaceMakeupSettings;
+  faceAccessory?: import('./faceAccessories').FaceAccessory;
+  faceAccessorySettings?: import('./faceAccessories').FaceAccessorySettings;
+  documentTransform?: {
+    crop: { x: number; y: number; width: number; height: number };
+    rotation: 0 | 90 | 180 | 270;
+    flipX: boolean;
+    flipY: boolean;
+  };
+  studioLayers?: Array<{
+    id: string;
+    name: string;
+    type: 'image' | 'adjustment' | 'text' | 'group';
+    groupId?: string | null;
+    expanded?: boolean;
+    visible: boolean;
+    opacity: number;
+    blendMode: GlobalCompositeOperation;
+    text?: string;
+    color?: string;
+    fontSize?: number;
+    adjustments?: { brightness: number; contrast: number; saturation: number; warmth: number };
+    manualAdjustments?: import('./manualEditing').ManualAdjustmentSettings;
+    mask?: import('./layerMasks').LayerMask | null;
+    masks?: import('./layerMasks').LayerMask[];
+  }>;
   tags: string[];
 }
 
@@ -151,6 +184,19 @@ export interface SceneAnalysis {
   backgroundType?: string;
   focalLength?: number;
   depthOfField?: number;
+}
+
+export interface StyleRecipe {
+  id: string;
+  name: string;
+  createdAt: string;
+  adjustments: { brightness: number; contrast: number; saturation: number; warmth: number };
+  filterIntensity: number;
+  selectedFilterId: string;
+  retouchStrength: number;
+  retouchEnabled: boolean;
+  manualAdjustments?: Record<string, number>;
+  localMasks?: import('./advancedEditing').LocalMask[];
 }
 
 export interface BatchEdit {

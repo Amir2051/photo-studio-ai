@@ -161,10 +161,7 @@ export const useAppStore = create<Partial<AppState>>()((set, get) => ({
       filterLibrary: state.filterLibrary.filter((p) => p.id !== id),
     }));
   },
-  getAllPresets: async () => {
-    const [library, custom] = await Promise.all([getAllFilterPresets(), getAllFilterPresets()]);
-    return [...library, ...custom];
-  },
+  getAllPresets: async () => getAllFilterPresets(),
   getPresetsByCategory: async (category) => {
     const all = await getAllFilterPresets();
     return all.filter((p: FilterPreset) => p.category === category);
@@ -226,15 +223,17 @@ export const useImageStore = useAppStore;
 export const useAuthStore = create<AuthState>()((set) => ({
   isAuthenticated: false,
   user: null,
-  login: async (email, password) => {
-    set({ isAuthenticated: true, user: { id: 'user-1', name: 'Test User', email } });
-    return true;
+  login: async (_email, _password) => {
+    // No authentication backend is configured. Never fabricate a logged-in user.
+    set({ isAuthenticated: false, user: null });
+    return false;
   },
   logout: () => {
     set({ isAuthenticated: false, user: null });
   },
-  register: async (name, email, password) => {
-    set({ isAuthenticated: true, user: { id: 'user-1', name, email } });
-    return true;
+  register: async (_name, _email, _password) => {
+    // Registration remains disabled until a real identity provider is configured.
+    set({ isAuthenticated: false, user: null });
+    return false;
   },
 }));
