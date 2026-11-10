@@ -8,6 +8,7 @@
   import { addTrack, canPlace, placeClips } from '$lib/project/ops';
   import { activeSequence, editSequence } from '$lib/project/store';
   import { addToast, playhead, selection } from '$lib/stores/app';
+  import { wakeGuestSignal } from '$lib/guestSignal';
   import type { Sequence, Track, TrackKind } from '$lib/project/types';
 
   type Source = { id: string; name: string; deviceId: string; stream: MediaStream; video: HTMLVideoElement; audioEnabled: boolean };
@@ -180,6 +181,11 @@
   async function createProductionRoom() {
     if (roomBusy || roomSocket) return; roomBusy = true; roomStatus = 'Creating private production room…';
     try {
+      const healthUrl = guestSignalBase ? `${guestSignalBase}/health` : `${location.origin}/guest-signal/health`;
+      await wakeGuestSignal(healthUrl, {
+        onWaiting: () => { roomStatus = 'Waking the guest-room service. If it has been idle, this can take about a minute…'; },
+      });
+      roomStatus = 'Guest-room service ready · creating private room…';
       const response = await fetch(`${guestSignalBase}/api/guest-rooms`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
       if (!response.ok) throw new Error((await response.json()).error || 'Could not create room.');
       const room = await response.json(); roomCode = room.roomCode;
