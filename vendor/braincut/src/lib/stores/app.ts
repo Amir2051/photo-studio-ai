@@ -46,7 +46,7 @@ export const snapEnabled = writable(true);
 // what the source monitor is showing, with its own in/out and playhead
 export const sourceMedia = writable<{ mediaId: string; in: number; out: number; time: number } | null>(null);
 
-export type LeftPanelTab = 'source' | 'effect-controls' | 'audio-mixer' | 'color';
+export type LeftPanelTab = 'source' | 'effect-controls' | 'audio-mixer' | 'color' | 'multicam';
 export type BottomPanelTab = 'project' | 'effects' | 'markers' | 'history' | 'text';
 export const leftPanelTab = writable<LeftPanelTab>('source');
 export const bottomPanelTab = writable<BottomPanelTab>('project');

@@ -15,6 +15,7 @@
   import EffectControls from '$lib/ui/EffectControls.svelte';
   import AudioMixer from '$lib/ui/AudioMixer.svelte';
   import ColorPanel from '$lib/ui/ColorPanel.svelte';
+  import MulticamEditor from '$lib/ui/MulticamEditor.svelte';
   import ProgramMonitor from '$lib/ui/ProgramMonitor.svelte';
   import ProjectPanel from '$lib/ui/ProjectPanel.svelte';
   import EffectsPanel from '$lib/ui/EffectsPanel.svelte';
@@ -62,7 +63,8 @@
     { id: 'source', label: 'Source' },
     { id: 'effect-controls', label: 'Adjust' },
     { id: 'color', label: 'Color' },
-    { id: 'audio-mixer', label: 'Audio' }
+    { id: 'audio-mixer', label: 'Audio' },
+    { id: 'multicam', label: 'Multicam' }
   ];
 
   const bottomTabs = [
@@ -116,8 +118,10 @@
     if (ids && ids !== lastSelection) {
       const seq = $activeSequence;
       const picked = seq?.tracks.flatMap((track) => track.clips).filter((clip) => $selection.includes(clip.id)) ?? [];
-      if (picked.length && picked.every((clip) => clip.kind === 'audio')) leftPanelTab.set('audio-mixer');
-      else if (picked.length) leftPanelTab.set('effect-controls');
+      if ($leftPanelTab !== 'multicam') {
+        if (picked.length && picked.every((clip) => clip.kind === 'audio')) leftPanelTab.set('audio-mixer');
+        else if (picked.length) leftPanelTab.set('effect-controls');
+      }
     }
     lastSelection = ids;
   });
@@ -185,6 +189,8 @@
             <EffectControls />
           {:else if $leftPanelTab === 'color'}
             <ColorPanel />
+          {:else if $leftPanelTab === 'multicam'}
+            <SourceMonitor />
           {:else}
             <AudioMixer />
           {/if}
@@ -196,7 +202,11 @@
       </div>
 
       <section class="panel program" data-panel="program" tabindex="-1">
-        <ProgramMonitor />
+        {#if $leftPanelTab === 'multicam'}
+          <MulticamEditor />
+        {:else}
+          <ProgramMonitor />
+        {/if}
       </section>
 
       <div class="rz rz-h">
