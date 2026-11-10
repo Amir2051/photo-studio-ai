@@ -4,6 +4,7 @@
   import { importFiles } from '$lib/media/import';
   import { getBlobForMedia } from '$lib/media/sources';
   import { createClipFromMedia } from '$lib/project/defaults';
+  import { readDrag, endDrag } from '$lib/editor/drag';
   import { addTrack, placeClips } from '$lib/project/ops';
   import { activeSequence, editSequence, mediaById, project } from '$lib/project/store';
   import { addToast, playhead, playing, selection } from '$lib/stores/app';
@@ -188,6 +189,79 @@
     }
   }
 
+  function copyAngleToSlot(from: number, to: number) {
+    if (from === to || to < 0 || to > 3) return;
+    const source = angleSlots[from];
+    if (!source.media) {
+      addToast('Choose a camera with footage before copying it.', 'info');
+      return;
+    }
+    const label = angleSlots[to].label || `Host ${to + 1}`;
+    let copied = false;
+    editSequence(`copy ${source.label} to ${label}`, (seq) => {
+      const { videoTrack, audioTrack } = ensureAngleTracks(seq, to, label);
+      if (!videoTrack) return;
+      const video = createClipFromMedia(source.media!, source.clip?.start ?? 0, { kind: 'video', in: source.clip?.in ?? 0, duration: source.clip?.duration, fps: seq.fps }).video;
+      if (!video) return;
+      video.name = `${source.label} (copy) · ${source.media!.name}`;
+      videoTrack.clips = [video];
+      if (audioTrack) {
+        const audio = createClipFromMedia(source.media!, source.clip?.start ?? 0, { kind: 'audio', in: source.clip?.in ?? 0, duration: source.clip?.duration, fps: seq.fps }).audio;
+        audioTrack.clips = audio ? [audio] : [];
+      }
+      copied = true;
+    });
+    if (copied) {
+      activeAngle = to;
+      status = `Copied ${source.label} into ${label}. The original angle remains unchanged.`;
+    }
+  }
+
+  function onAngleDragStart(index: number, event: DragEvent) {
+    event.stopPropagation();
+    event.dataTransfer?.setData('application/x-braincut-angle', String(index));
+    if (event.dataTransfer) event.dataTransfer.effectAllowed = 'copy';
+  }
+
+  function onAngleDrop(index: number, event: DragEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    const anglePayload = event.dataTransfer?.getData('application/x-braincut-angle');
+    if (anglePayload !== undefined && anglePayload !== '') {
+      const from = Number(anglePayload);
+      if (Number.isInteger(from)) copyAngleToSlot(from, index);
+      return;
+    }
+    const payload = readDrag(event);
+    if (payload?.kind === 'media') {
+      const media = get(mediaById).get(payload.mediaIds[0]);
+      if (!media || !media.hasVideo) {
+        addToast('Drop a video recording onto a camera window.', 'warning');
+        return;
+      }
+      const label = angleSlots[index].label || `Host ${index + 1}`;
+      let placed = false;
+      editSequence(`copy media to ${label}`, (seq) => {
+        const { videoTrack, audioTrack } = ensureAngleTracks(seq, index, label);
+        if (!videoTrack) return;
+        const video = createClipFromMedia(media, 0, { kind: 'video', fps: seq.fps }).video;
+        if (!video) return;
+        video.name = `${media.name} · ${label}`;
+        videoTrack.clips = [video];
+        if (audioTrack) {
+          const audio = createClipFromMedia(media, 0, { kind: 'audio', fps: seq.fps }).audio;
+          audioTrack.clips = audio ? [audio] : [];
+        }
+        placed = true;
+      });
+      if (placed) {
+        activeAngle = index;
+        status = `Copied ${media.name} into ${label}. The Media bin and original clip remain intact.`;
+      }
+      endDrag();
+    }
+  }
+
   async function importFour(files: FileList | null) {
     if (!files?.length) return;
     const pending = Array.from(files).slice(0, 4);
@@ -352,12 +426,12 @@
 
   <div class="angle-grid">
     {#each angleSlots as angle, i (i)}
-      <article class:active={activeAngle === i} class="angle-card" draggable={!!angle.media} ondragstart={(event) => event.dataTransfer?.setData('text/plain', String(i))} ondragover={(event) => event.preventDefault()} ondrop={(event) => { event.preventDefault(); const from = Number(event.dataTransfer?.getData('text/plain')); if (Number.isInteger(from)) moveAngle(from, i); }}>
+      <article class:active={activeAngle === i} class="angle-card" class:drop-ready={!!angle.media} class:empty-drop={!angle.media} ondragover={(event) => { event.preventDefault(); if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'; }} ondrop={(event) => onAngleDrop(i, event)}>
         <div class="angle-video">
           {#if angle.media}
-            <video bind:this={videoEls[i]} muted playsinline preload="metadata"></video>
+            <video bind:this={videoEls[i]} muted playsinline preload="metadata" draggable={!!angle.media} ondragstart={(event) => onAngleDragStart(i, event)}></video>
           {:else}
-            <div class="empty-angle"><span>＋</span><small>Camera angle {i + 1}</small></div>
+            <div class="empty-angle"><span>＋</span><small>Camera angle {i + 1}</small><small>Drop video here to add</small></div>
           {/if}
           <span class="angle-number">ANGLE {i + 1}</span>
           {#if angle.media}<button type="button" class="choose" onclick={() => chooseAngle(i)}>{activeAngle === i ? 'SELECTED' : 'PREVIEW'}</button>{/if}
@@ -371,7 +445,15 @@
             </label>
             <button type="button" aria-label={`Move angle ${i + 1} left`} onclick={() => moveAngle(i, i - 1)} disabled={i === 0 || !angle.media}>←</button>
             <button type="button" aria-label={`Move angle ${i + 1} right`} onclick={() => moveAngle(i, i + 1)} disabled={i === 3 || !angle.media}>→</button>
-            {#if angle.media}<button type="button" class="cut" onclick={() => cutToAngle(i)}>Cut to program</button>{/if}
+            {#if angle.media}
+              <select aria-label={`Copy ${angle.label} to another angle`} onchange={(event) => { const target = Number(event.currentTarget.value); if (Number.isInteger(target)) copyAngleToSlot(i, target); event.currentTarget.value = ''; }}>
+                <option value="">Copy to…</option>
+                {#each angleSlots as target, targetIndex}
+                  {#if targetIndex !== i}<option value={targetIndex}>Angle {targetIndex + 1} · {target.label}</option>{/if}
+                {/each}
+              </select>
+              <button type="button" class="cut" onclick={() => cutToAngle(i)}>Cut to program</button>
+            {/if}
           </div>
           {#if angle.media}
             <label class="offset">Sync offset (seconds)
@@ -387,10 +469,10 @@
   <div class="multicam-help">
     <strong>How to edit</strong>
     <ol>
-      <li>Import the four recordings or add each angle separately.</li>
+      <li>Drag a video from Media onto any angle window, or use Add video. Drop one angle onto another to copy its footage without removing the original.</li>
       <li>Rename each window and adjust sync offsets if cameras started at different times.</li>
       <li>Play the timeline. All four previews follow the same timecode.</li>
-      <li>Select an angle and press <b>Cut to program</b> whenever you want to switch cameras.</li>
+      <li>Drag clips on the main timeline to move and trim them. Select an angle and press <b>Cut to program</b> to add that camera to the finished edit.</li>
     </ol>
     <small>Camera originals stay in Media. Angle tracks are preserved and hidden from the final picture; the PROGRAM track contains your editable camera switches.</small>
   </div>
@@ -410,6 +492,8 @@
   .angle-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;flex:1;align-content:start}
   .angle-card{min-width:0;border:1px solid var(--border);border-radius:6px;overflow:hidden;background:var(--bg-elevated)}
   .angle-card.active{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+  .angle-card.drop-ready,.angle-card.empty-drop{transition:border-color .12s,box-shadow .12s}.angle-card.drop-ready:focus-within{outline:1px solid var(--accent)}
+  .angle-card.empty-drop{border-style:dashed}.angle-card.empty-drop:hover,.angle-card.drop-ready:hover{border-color:var(--accent)}
   .angle-video{position:relative;aspect-ratio:16/9;min-height:105px;background:#070b13;overflow:hidden}
   .angle-video video{width:100%;height:100%;object-fit:cover;display:block}
   .empty-angle{height:100%;display:flex;align-items:center;justify-content:center;flex-direction:column;color:var(--text-muted);gap:3px}
@@ -421,6 +505,7 @@
   .angle-details>small{font-size:8px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .angle-actions{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
   .angle-actions button{padding:5px 7px}.angle-actions button:disabled{opacity:.3}
+  .angle-actions select{min-width:0;max-width:112px;padding:5px 4px;border:1px solid var(--border);border-radius:4px;background:var(--bg-surface);color:var(--text-primary);font-size:8px}
   .add-angle{padding:5px 7px}
   .angle-actions .cut{margin-left:auto;background:var(--accent);border-color:var(--accent);color:white;font-weight:700}
   .offset{display:flex;align-items:center;justify-content:space-between;gap:5px;color:var(--text-muted);font-size:8px}
