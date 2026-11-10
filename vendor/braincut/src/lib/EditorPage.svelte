@@ -32,6 +32,7 @@
   import { buildCommands } from '$lib/editor/commands';
   import { exportCurrentFrame } from '$lib/editor/export-actions';
   import {
+    ensureProjectForImport,
     installProjectLifecycle,
     openProjectFile,
     openRecent,
@@ -102,6 +103,11 @@
     recents = await recentProjects();
   }
 
+  function importFootage() {
+    ensureProjectForImport();
+    void pickFiles();
+  }
+
   // selecting a clip brings its inspector into focus, like a contextual editor
   // audio clips open the mixer; visual clips open their effect/transform controls
   let lastSelection = '';
@@ -156,7 +162,7 @@
 
 <div class="editor-app">
   <TopBar
-    onimport={() => void pickFiles()}
+    onimport={importFootage}
     onsave={() => void saveProject()}
     onopen={() => void openProjectFile()}
     onexport={() => dialog.set({ kind: 'export' })} />
@@ -229,7 +235,12 @@
       </section>
     </main>
   {:else}
-    <Welcome {recents} onopen={(id) => void openRecent(id)} onopenfile={() => void openProjectFile()} />
+    <Welcome
+      {recents}
+      onopen={(id) => void openRecent(id)}
+      onopenfile={() => void openProjectFile()}
+      onimport={importFootage}
+    />
   {/if}
 
   <StatusBar />

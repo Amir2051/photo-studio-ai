@@ -13,6 +13,8 @@ import {
   type RecentProject
 } from '$lib/project/persistence';
 import { restoreSources } from '$lib/media/sources';
+import { createProject, createSequence } from '$lib/project/defaults';
+import { presets } from '$lib/templates/sequences';
 import { importFiles, isMediaFile } from '$lib/media/import';
 import { downloadBlob } from '$lib/export/download';
 import { addToast, dialog, projectHandle, sourceMedia } from '$lib/stores/app';
@@ -102,13 +104,30 @@ async function open(p: Project, handle: FileSystemFileHandle | null): Promise<vo
 // Route footage selected through the Open dialog to the media importer instead
 // of trying to parse the binary video as a JSON project. This also makes the
 // distinction between Open project and Import video explicit to the user.
+export function ensureProjectForImport(): void {
+  if (get(project)) return;
+  const preset = presets[1] ?? presets[0];
+  const next = createProject('Untitled project');
+  const sequence = createSequence({
+    name: 'Sequence 1',
+    width: preset.width,
+    height: preset.height,
+    fps: preset.fps
+  });
+  next.sequences.push(sequence);
+  next.activeSequenceId = sequence.id;
+  loadProject(next);
+  void touchRecent(next);
+  void setLastOpenedId(next.id);
+  addToast('Video project created. Importing your footage…', 'success', 3500);
+}
+
 async function openSelectedFile(file: File, handle: FileSystemFileHandle | null): Promise<void> {
   if (!file.name.toLowerCase().endsWith(PROJECT_EXTENSION)) {
     if (isMediaFile(file.name, file.type)) {
-      if (!get(project)) {
-        addToast('Create a video project first, then choose Import video to add footage.', 'warning', 6000);
-        return;
-      }
+      // Dropped footage starts a default sequence instead of being mistaken
+      // for a JSON project or rejected on the welcome screen.
+      ensureProjectForImport();
       await importFiles([file]);
       return;
     }
@@ -169,7 +188,8 @@ export function confirmDiscard(): boolean {
 }
 
 export async function openProjectFile(): Promise<void> {
-  if (!confirmDiscard()) return;
+  // The selected file determines whether this is a project replacement or
+  // media import; only project replacement should ask about discarding work.
   try {
     if ('showOpenFilePicker' in window) {
       const [handle] = await window.showOpenFilePicker({ multiple: false, types: PICKER_TYPES, id: 'braincut-project' });

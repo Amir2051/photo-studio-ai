@@ -7,11 +7,13 @@
   let {
     recents = [],
     onopen,
-    onopenfile
+    onopenfile,
+    onimport
   }: {
     recents?: RecentProject[];
     onopen: (id: string) => void;
     onopenfile: () => void;
+    onimport: () => void;
   } = $props();
 
   function sequences(count: number): string {
@@ -37,9 +39,13 @@
     </p>
 
     <div class="welcome-actions">
-      <button class="welcome-btn primary" onclick={() => dialog.set({ kind: 'new-project' })}>
+      <button class="welcome-btn primary" onclick={onimport}>
+        <Icon name="importIcon" size={14} />
+        Import footage
+      </button>
+      <button class="welcome-btn secondary" onclick={() => dialog.set({ kind: 'new-project' })}>
         <Icon name="plus" size={14} />
-        Create video project
+        Create blank project
       </button>
       <button class="welcome-btn secondary" onclick={onopenfile}>
         <Icon name="folder" size={14} />
@@ -60,7 +66,7 @@
       </div>
     {/if}
 
-    <p class="welcome-hint">After creating a project, choose <strong>Import video</strong> in the top bar or drag footage into the editor.</p>
+    <p class="welcome-hint">Import footage to start editing immediately, or create a blank project first. Your media stays on this device.</p>
   </div>
 </div>
 
