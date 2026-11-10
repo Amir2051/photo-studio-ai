@@ -42,6 +42,45 @@ describe('serialize', () => {
     expect(back).toEqual(p);
   });
 
+  it('round trips multicam labels, sync offsets, audio selection, and program cuts', () => {
+    const p = sample();
+    const seq = p.sequences[0];
+    const cameraVideoId = ops.addTrack(seq, 'video');
+    const cameraAudioId = ops.addTrack(seq, 'audio');
+    const programId = ops.addTrack(seq, 'video');
+    const cameraVideo = seq.tracks.find((t) => t.id === cameraVideoId)!;
+    const cameraAudio = seq.tracks.find((t) => t.id === cameraAudioId)!;
+    const program = seq.tracks.find((t) => t.id === programId)!;
+    cameraVideo.name = 'MCAM 2 · Guest 1';
+    cameraVideo.hidden = true;
+    cameraAudio.name = 'MCAM AUDIO 2 · Guest 1';
+    cameraAudio.muted = false;
+    const syncedVideo = createClipFromMedia(media(), 0, { in: 1.25, kind: 'video', fps: 25 }).video!;
+    const syncedAudio = createClipFromMedia(media(), 0, { in: 1.25, kind: 'audio', fps: 25 }).audio!;
+    cameraVideo.clips = [syncedVideo];
+    cameraAudio.clips = [syncedAudio];
+    program.name = 'PROGRAM · Multicam';
+    const firstCut = createClipFromMedia(media(), 0, { in: 1.25, kind: 'video', fps: 25 }).video!;
+    const secondCut = createClipFromMedia(media(), 4, { in: 5.25, kind: 'video', fps: 25 }).video!;
+    firstCut.name = 'Guest 1 · clip.mp4';
+    secondCut.name = 'Host 2 · clip.mp4';
+    program.clips = [firstCut, secondCut];
+
+    const reopened = parseProject(serializeProject(p));
+    const tracks = reopened.sequences[0].tracks;
+    const savedCamera = tracks.find((t) => t.name === 'MCAM 2 · Guest 1')!;
+    const savedAudio = tracks.find((t) => t.name === 'MCAM AUDIO 2 · Guest 1')!;
+    const savedProgram = tracks.find((t) => t.name === 'PROGRAM · Multicam')!;
+    expect(savedCamera.hidden).toBe(true);
+    expect(savedCamera.clips[0]).toMatchObject({ start: 0, in: 1.25 });
+    expect(savedAudio.muted).toBe(false);
+    expect(savedAudio.clips[0]).toMatchObject({ start: 0, in: 1.25 });
+    expect(savedProgram.clips.map((clip) => [clip.start, clip.in, clip.name])).toEqual([
+      [0, 1.25, 'Guest 1 · clip.mp4'],
+      [4, 5.25, 'Host 2 · clip.mp4']
+    ]);
+  });
+
   it('names the file after the project', () => {
     expect(projectFileName(createProject('My film: cut 2'))).toBe('My film- cut 2.braincut');
     expect(projectFileName(createProject('  '))).toBe('untitled.braincut');
