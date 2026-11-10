@@ -1,11 +1,12 @@
 <script lang="ts">
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, tick } from 'svelte';
   import { get } from 'svelte/store';
   import { importFiles } from '$lib/media/import';
+  import { recordingFile, supportedRecordingMimeType } from '$lib/media/recording';
   import { getBlobForMedia } from '$lib/media/sources';
   import { createClipFromMedia } from '$lib/project/defaults';
   import { readDrag, endDrag } from '$lib/editor/drag';
-  import { addTrack, placeClips } from '$lib/project/ops';
+  import { addTrack, canPlace, placeClips } from '$lib/project/ops';
   import { activeSequence, editSequence, mediaById, project } from '$lib/project/store';
   import { addToast, playhead, playing, selection } from '$lib/stores/app';
   import type { Clip, MediaItem, Sequence, Track } from '$lib/project/types';
@@ -45,6 +46,26 @@
   let stageEl = $state<HTMLElement | null>(null);
   let windowGesture: WindowGesture | null = null;
   let videoEls: Array<HTMLVideoElement | undefined> = [];
+  let liveVideoEls: Array<HTMLVideoElement | undefined> = [];
+  let cameraDevices = $state<MediaDeviceInfo[]>([]);
+  let microphoneDevices = $state<MediaDeviceInfo[]>([]);
+  let cameraDeviceIds = $state(['', '', '', '']);
+  let liveStreams = $state.raw<Array<MediaStream | null>>([null, null, null, null]);
+  let microphoneDeviceId = $state('');
+  let microphoneStream = $state.raw<MediaStream | null>(null);
+  let microphoneLevel = $state(0);
+  let microphoneMonitorContext: AudioContext | null = null;
+  let microphoneAnalyser: AnalyserNode | null = null;
+  let microphoneMonitorFrame = 0;
+  let captureRecorders: Array<{ index: number; recorder: MediaRecorder; chunks: Blob[] }> = [];
+  let microphoneRecorder: MediaRecorder | null = null;
+  let microphoneChunks: Blob[] = [];
+  let isRecording = $state(false);
+  let recordingElapsed = $state(0);
+  let recordingStartedAt = 0;
+  let recordingStartTime = 0;
+  let recordingTimer: ReturnType<typeof setInterval> | null = null;
+  let recordingBusy = $state(false);
   let previewUrls = $state<Record<string, string>>({});
   let loading = $state(false);
   let status = $state('Import four camera recordings to start a synchronized multicam edit.');
@@ -152,13 +173,26 @@
       }
     } catch { /* use the default studio layout when storage is unavailable */ }
     syncTimer = setInterval(syncPreviewPlayback, 90);
+    void refreshCaptureDevices();
+    navigator.mediaDevices?.addEventListener?.('devicechange', refreshCaptureDevices);
   });
 
   onDestroy(() => {
     disposed = true;
     if (syncTimer) clearInterval(syncTimer);
+    if (recordingTimer) clearInterval(recordingTimer);
+    navigator.mediaDevices?.removeEventListener?.('devicechange', refreshCaptureDevices);
+    for (const item of captureRecorders) if (item.recorder.state !== 'inactive') { item.recorder.onstop = null; item.recorder.stop(); }
+    if (microphoneRecorder && microphoneRecorder.state !== 'inactive') { microphoneRecorder.onstop = null; microphoneRecorder.stop(); }
+    for (const stream of liveStreams) stream?.getTracks().forEach((track) => track.stop());
+    microphoneStream?.getTracks().forEach((track) => track.stop());
+    cancelAnimationFrame(microphoneMonitorFrame);
+    microphoneAnalyser = null;
+    if (microphoneMonitorContext) void microphoneMonitorContext.close().catch(() => {});
+    microphoneMonitorContext = null;
     for (const url of Object.values(previewUrls)) URL.revokeObjectURL(url);
     for (const video of videoEls) video?.pause();
+    for (const video of liveVideoEls) video?.pause();
   });
 
   function findAngleTrack(seq: Sequence, index: number): Track | undefined {
@@ -256,6 +290,230 @@
       activeAngle = to;
       status = `Copied ${source.label} into ${label}. The original angle remains unchanged.`;
     }
+  }
+
+
+  async function refreshCaptureDevices() {
+    if (!navigator.mediaDevices?.enumerateDevices) return;
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      cameraDevices = devices.filter((device) => device.kind === 'videoinput');
+      microphoneDevices = devices.filter((device) => device.kind === 'audioinput');
+      if (!microphoneDevices.some((device) => device.deviceId === microphoneDeviceId)) microphoneDeviceId = microphoneDevices[0]?.deviceId ?? '';
+      cameraDeviceIds = cameraDeviceIds.map((id, index) => id && cameraDevices.some((device) => device.deviceId === id) ? id : (liveStreams[index] ? id : ''));
+    } catch { status = 'Could not list capture devices. Check browser permissions and try again.'; }
+  }
+
+  async function connectLiveCamera(index: number, deviceId: string) {
+    if (isRecording || recordingBusy) return;
+    if (!navigator.mediaDevices?.getUserMedia) {
+      status = 'Live camera capture requires HTTPS (or localhost) and a supported browser.';
+      return;
+    }
+    if (!deviceId) return;
+    if (liveStreams.some((stream, slot) => slot !== index && stream?.getVideoTracks()[0]?.getSettings().deviceId === deviceId)) {
+      addToast('That camera is already connected to another angle.', 'warning');
+      return;
+    }
+    liveStreams[index]?.getTracks().forEach((track) => track.stop());
+    liveStreams = liveStreams.map((stream, slot) => slot === index ? null : stream);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { deviceId: { exact: deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30, max: 60 } },
+        audio: false
+      });
+      liveStreams = liveStreams.map((current, slot) => slot === index ? stream : current);
+      cameraDeviceIds = cameraDeviceIds.map((id, slot) => slot === index ? deviceId : id);
+      await tick();
+      const video = liveVideoEls[index];
+      if (video) { video.srcObject = stream; await video.play().catch(() => undefined); }
+      await refreshCaptureDevices();
+      activeAngle = index;
+      status = `${angleSlots[index].label} live input connected · ready for synchronized recording.`;
+    } catch (error) {
+      status = error instanceof DOMException && error.name === 'NotAllowedError'
+        ? 'Camera permission was denied. Allow camera access for this site and reconnect.'
+        : error instanceof DOMException && error.name === 'NotReadableError'
+          ? 'This camera is busy in another app or browser tab.'
+          : error instanceof Error ? error.message : 'Could not connect this camera.';
+    }
+  }
+
+  async function disconnectLiveCamera(index: number) {
+    if (isRecording || recordingBusy) return;
+    liveStreams[index]?.getTracks().forEach((track) => track.stop());
+    liveStreams = liveStreams.map((stream, slot) => slot === index ? null : stream);
+    cameraDeviceIds = cameraDeviceIds.map((id, slot) => slot === index ? '' : id);
+    await tick();
+    status = `${angleSlots[index].label} disconnected. Completed recordings remain in the project.`;
+  }
+
+  async function connectMicrophone(deviceId: string) {
+    if (isRecording || recordingBusy) return;
+    if (!navigator.mediaDevices?.getUserMedia) { status = 'Microphone capture requires HTTPS (or localhost).'; return; }
+    microphoneStream?.getTracks().forEach((track) => track.stop());
+    microphoneStream = null;
+    cancelAnimationFrame(microphoneMonitorFrame);
+    microphoneAnalyser = null;
+    if (microphoneMonitorContext) void microphoneMonitorContext.close().catch(() => {});
+    microphoneMonitorContext = null;
+    microphoneLevel = 0;
+    if (!deviceId) return;
+    try {
+      microphoneStream = await navigator.mediaDevices.getUserMedia({ audio: {
+        deviceId: { exact: deviceId }, echoCancellation: false, noiseSuppression: false, autoGainControl: false
+      } });
+      microphoneDeviceId = deviceId;
+      microphoneMonitorContext = new AudioContext();
+      microphoneAnalyser = microphoneMonitorContext.createAnalyser();
+      microphoneAnalyser.fftSize = 256;
+      microphoneMonitorContext.createMediaStreamSource(microphoneStream).connect(microphoneAnalyser);
+      await microphoneMonitorContext.resume();
+      const sample = new Uint8Array(microphoneAnalyser.fftSize);
+      const updateMeter = () => {
+        if (!microphoneAnalyser) return;
+        microphoneAnalyser.getByteTimeDomainData(sample);
+        let sum = 0;
+        for (const value of sample) { const normalized = (value - 128) / 128; sum += normalized * normalized; }
+        microphoneLevel = Math.min(100, Math.round(Math.sqrt(sum / sample.length) * 260));
+        microphoneMonitorFrame = requestAnimationFrame(updateMeter);
+      };
+      updateMeter();
+      await refreshCaptureDevices();
+      status = 'Podcast microphone connected · it will be recorded as a separate editable audio track.';
+    } catch (error) {
+      status = error instanceof DOMException && error.name === 'NotAllowedError'
+        ? 'Microphone permission was denied. Allow microphone access and try again.'
+        : error instanceof Error ? error.message : 'Could not connect the microphone.';
+    }
+  }
+
+  function recorderMime(types: string[]) {
+    return types.find((type) => MediaRecorder.isTypeSupported(type)) ?? '';
+  }
+
+  function startPodcastRecording() {
+    if (isRecording || recordingBusy) return;
+    const connected = liveStreams.map((stream, index) => ({ stream, index })).filter((item) => item.stream);
+    if (!connected.length) { status = 'Connect at least one live camera before recording.'; return; }
+    if (typeof MediaRecorder === 'undefined') { status = 'This browser does not support local media recording.'; return; }
+    try {
+      captureRecorders = connected.map(({ stream, index }) => {
+        const mime = recorderMime(['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm']);
+        const recorder = new MediaRecorder(stream!, mime ? { mimeType: mime } : undefined);
+        const item = { index, recorder, chunks: [] as Blob[] };
+        recorder.ondataavailable = (event) => { if (event.data.size) item.chunks.push(event.data); };
+        recorder.onerror = () => { status = `Recording error on ${angleSlots[index].label}. Stop the session and check the camera.`; };
+        return item;
+      });
+      microphoneChunks = [];
+      microphoneRecorder = null;
+      if (microphoneStream?.getAudioTracks().length) {
+        const mime = supportedRecordingMimeType((type) => MediaRecorder.isTypeSupported(type));
+        microphoneRecorder = new MediaRecorder(microphoneStream, mime ? { mimeType: mime } : undefined);
+        microphoneRecorder.ondataavailable = (event) => { if (event.data.size) microphoneChunks.push(event.data); };
+      }
+      recordingStartTime = get(playhead);
+      recordingStartedAt = Date.now();
+      captureRecorders.forEach((item) => item.recorder.start(250));
+      microphoneRecorder?.start(250);
+      recordingElapsed = 0;
+      isRecording = true;
+      status = `Recording ${connected.length} camera angle(s)${microphoneRecorder ? ' + separate podcast microphone' : ' · no external microphone connected'}. All files share one start time.`;
+      recordingTimer = setInterval(() => { recordingElapsed = Date.now() - recordingStartedAt; }, 200);
+    } catch (error) {
+      captureRecorders.forEach((item) => { if (item.recorder.state !== 'inactive') item.recorder.stop(); });
+      if (microphoneRecorder && microphoneRecorder.state !== 'inactive') microphoneRecorder.stop();
+      captureRecorders = [];
+      microphoneRecorder = null;
+      status = error instanceof Error ? error.message : 'Could not start the recording session.';
+    }
+  }
+
+  function finishRecorder(recorder: MediaRecorder, chunks: Blob[]): Promise<Blob> {
+    return new Promise((resolve, reject) => {
+      const finish = () => {
+        const blob = new Blob(chunks, { type: recorder.mimeType || 'video/webm' });
+        resolve(blob);
+      };
+      recorder.addEventListener('stop', finish, { once: true });
+      recorder.addEventListener('error', () => reject(new Error('A media recorder failed while finishing.')), { once: true });
+      if (recorder.state === 'inactive') finish(); else recorder.stop();
+    });
+  }
+
+  async function stopPodcastRecording() {
+    if (!isRecording || recordingBusy) return;
+    recordingBusy = true;
+    isRecording = false;
+    if (recordingTimer) clearInterval(recordingTimer);
+    recordingTimer = null;
+    status = 'Finalizing synchronized camera and microphone files…';
+    try {
+      const jobs = captureRecorders.map(async (item) => {
+        const blob = await finishRecorder(item.recorder, item.chunks);
+        if (!blob.size) return null;
+        const label = angleSlots[item.index].label;
+        return { index: item.index, file: recordingFile(blob, blob.type, new Date(), `podcast-${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`) };
+      });
+      const audioJob = microphoneRecorder
+        ? finishRecorder(microphoneRecorder, microphoneChunks).then((blob) => blob.size ? recordingFile(blob, blob.type, new Date(), 'podcast-main-mic') : null)
+        : Promise.resolve(null);
+      const [cameraFiles, audioFile] = await Promise.all([Promise.all(jobs), audioJob]);
+      const files = [...cameraFiles.filter((item): item is { index: number; file: File } => !!item).map((item) => item.file), ...(audioFile ? [audioFile] : [])];
+      if (!files.length) throw new Error('No media data was captured. Check the connected devices and try again.');
+      const imported = await importFiles(files);
+      const seq = get(activeSequence);
+      if (!seq) throw new Error('Open a sequence before recording. The captured files are imported into the media bin.');
+      let selectedClipIds: string[] = [];
+      const completedCameraFiles = cameraFiles.filter((item): item is { index: number; file: File } => !!item);
+      editSequence('add synchronized podcast recordings', (draft) => {
+        for (const [fileIndex, result] of completedCameraFiles.entries()) {
+          const fileMedia = imported[fileIndex];
+          if (!fileMedia || !fileMedia.hasVideo || fileMedia.status !== 'ready') continue;
+          const label = angleSlots[result.index].label;
+          const { videoTrack } = ensureAngleTracks(draft, result.index, label);
+          if (!videoTrack) continue;
+          const clip = createClipFromMedia(fileMedia, recordingStartTime, { kind: 'video', fps: draft.fps }).video;
+          if (clip) { clip.name = `${label} · ${fileMedia.name}`; videoTrack.clips = [clip]; videoTrack.hidden = true; videoTrack.transitions = []; selectedClipIds.push(clip.id); }
+        }
+        if (audioFile) {
+          const audioMedia = imported[completedCameraFiles.length];
+          if (audioMedia) {
+            const clip = createClipFromMedia(audioMedia, recordingStartTime, { kind: 'audio', fps: draft.fps }).audio;
+            if (clip) {
+              let audioTrack = draft.tracks.find((track) => track.kind === 'audio' && track.name.startsWith('PODCAST AUDIO · Main Mic') && !track.locked && canPlace(draft, track.id, clip.start, clip.duration));
+              if (!audioTrack) {
+                const micTrackCount = draft.tracks.filter((track) => track.kind === 'audio' && track.name.startsWith('PODCAST AUDIO · Main Mic')).length;
+                const id = addTrack(draft, 'audio');
+                audioTrack = draft.tracks.find((track) => track.id === id);
+                if (audioTrack) audioTrack.name = micTrackCount ? `PODCAST AUDIO · Main Mic ${micTrackCount + 1}` : 'PODCAST AUDIO · Main Mic';
+              }
+              if (audioTrack) {
+                audioTrack.muted = false;
+                const placed = placeClips(draft, [{ trackId: audioTrack.id, clip }], 'overwrite');
+                if (placed.includes(clip.id)) selectedClipIds.push(clip.id);
+              }
+            }
+          }
+        }
+      });
+      if (selectedClipIds.length) selection.set(selectedClipIds);
+      recordingElapsed = Date.now() - recordingStartedAt;
+      status = `Podcast session imported · ${completedCameraFiles.length} camera angle(s)${audioFile ? ' + separate microphone track' : ''}. Clips are aligned at ${recordingStartTime.toFixed(2)}s.`;
+      addToast('Synchronized podcast recordings added to the BrainCUT timeline.', 'success');
+    } catch (error) {
+      status = error instanceof Error ? error.message : 'Could not import the podcast recordings.';
+    } finally {
+      captureRecorders = [];
+      microphoneRecorder = null;
+      microphoneChunks = [];
+      recordingBusy = false;
+    }
+  }
+
+  function recordingClock(ms: number) {
+    return `${String(Math.floor(ms / 60000)).padStart(2, '0')}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}`;
   }
 
   function onAngleDragStart(index: number, event: DragEvent) {
@@ -539,6 +797,28 @@
     <button type="button" class="take-main" onclick={() => cutToAngle(activeAngle)} disabled={!angleSlots[activeAngle].media}>TAKE · {angleSlots[activeAngle].label}</button>
   </div>
 
+  <div class="podcast-capture" aria-label="Live podcast recording controls">
+    <div class="capture-title"><span class:recording={isRecording} class="capture-led"></span><strong>LIVE PODCAST CAPTURE</strong><small>{isRecording ? 'RECORDING' : 'Connect camera inputs and a microphone'}</small><b>{recordingClock(recordingElapsed)}</b></div>
+    <label class="mic-select">Main microphone
+      <select aria-label="Podcast microphone" bind:value={microphoneDeviceId} disabled={isRecording || recordingBusy}>
+        <option value="">No separate microphone</option>
+        {#each microphoneDevices as device (device.deviceId)}<option value={device.deviceId}>{device.label || 'Microphone input'}</option>{/each}
+      </select>
+    </label>
+    {#if !microphoneStream && microphoneDeviceId && !isRecording}
+      <button type="button" class="capture-connect" onclick={() => void connectMicrophone(microphoneDeviceId)}>Connect mic</button>
+    {:else if microphoneStream && !isRecording}
+      <div class="mic-level" role="meter" aria-label="Microphone input level" aria-valuemin="0" aria-valuemax="100" aria-valuenow={microphoneLevel}><span style={`width:${microphoneLevel}%`}></span></div>
+      <button type="button" class="capture-disconnect" onclick={() => void connectMicrophone('')}>Disconnect mic</button>
+    {/if}
+    {#if isRecording}
+      <button type="button" class="capture-stop" onclick={() => void stopPodcastRecording()}>■ Stop & import all angles</button>
+    {:else}
+      <button type="button" class="capture-record" onclick={startPodcastRecording} disabled={recordingBusy || !liveStreams.some(Boolean)}>● Record session</button>
+    {/if}
+    <small class="capture-note">Each connected camera records independently. The microphone is a separate editable audio stem. All recordings start together and are placed on the shared timeline clock.</small>
+  </div>
+
   <div class="studio-stage" role="group" aria-label="Movable and resizable camera windows" bind:this={stageEl} onpointermove={moveStudioWindow} onpointerup={endStudioGesture} onpointercancel={endStudioGesture}>
     <div class="stage-watermark" aria-hidden="true">MULTICAM · FOUR INPUTS</div>
     {#each angleSlots as angle, i (i)}
@@ -557,7 +837,10 @@
         </header>
 
         <div class="angle-video">
-          {#if angle.media}
+          {#if liveStreams[i]}
+            <video bind:this={liveVideoEls[i]} autoplay muted playsinline class="live-preview"></video>
+            <span class="source-chip">LIVE INPUT · {angle.media?.name ?? 'CAMERA'}</span>
+          {:else if angle.media}
             <video bind:this={videoEls[i]} muted playsinline preload="metadata" draggable={!!angle.media} ondragstart={(event) => onAngleDragStart(i, event)}></video>
             <span class="source-chip">{angle.media.hasAudio ? 'VIDEO + AUDIO' : 'VIDEO ONLY'}</span>
           {:else}
@@ -574,6 +857,11 @@
 
         <div class="window-controls">
           <div class="window-primary-actions">
+            <select aria-label={`Live camera input for ${angle.label}`} bind:value={cameraDeviceIds[i]} disabled={isRecording || recordingBusy || !!liveStreams[i]} onchange={(event) => void connectLiveCamera(i, event.currentTarget.value)}>
+              <option value="">{liveStreams[i] ? 'Camera connected' : 'Connect live camera…'}</option>
+              {#each cameraDevices as device (device.deviceId)}<option value={device.deviceId} disabled={liveStreams.some((stream, slot) => slot !== i && !!stream && stream.getVideoTracks()[0]?.getSettings().deviceId === device.deviceId)}>{device.label || 'Camera input'}</option>{/each}
+            </select>
+            {#if liveStreams[i] && !isRecording}<button type="button" class="capture-disconnect" onclick={() => void disconnectLiveCamera(i)}>Disconnect</button>{/if}
             {#if angle.media}
               <label class="replace-angle">Replace<input type="file" accept="video/*" onchange={(event) => { void assignAngle(i, event.currentTarget.files?.[0] ?? null); event.currentTarget.value = ''; }} /></label>
               <select aria-label={`Copy ${angle.label} to another angle`} onchange={(event) => { const target = Number(event.currentTarget.value); if (Number.isInteger(target)) copyAngleToSlot(i, target); event.currentTarget.value = ''; }}>
@@ -616,6 +904,12 @@
   .studio-title{display:flex;align-items:center;gap:9px;min-width:0}.studio-title strong{display:block;font-size:15px;letter-spacing:-.02em}.studio-title small{display:block;margin-top:3px;color:var(--text-muted);font-size:10px}
   .live-dot{width:9px;height:9px;border-radius:50%;background:#34d399;box-shadow:0 0 0 4px #34d39922;flex:none}.studio-clock{font-size:9px;letter-spacing:.1em;color:var(--text-muted);font-weight:800}.studio-clock b{color:#34d399;margin-left:4px}
   .production-toolbar{display:flex;align-items:center;gap:7px;flex-wrap:wrap;flex:none}
+  .podcast-capture{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 10px;border:1px solid #344258;border-radius:6px;background:linear-gradient(110deg,#152236,#101a29);color:#e7eef8;flex:none}
+  .capture-title{display:flex;align-items:center;gap:7px;margin-right:auto}.capture-title strong{font-size:9px;letter-spacing:.1em}.capture-title small{font-size:8px;color:#91a4bd}.capture-title b{font:700 12px var(--font-editor);font-variant-numeric:tabular-nums}
+  .capture-led{width:7px;height:7px;border-radius:50%;background:#64748b}.capture-led.recording{background:#ef4444;box-shadow:0 0 0 4px #ef444433}
+  .mic-select{display:flex;align-items:center;gap:6px;color:#aebdd0;font-size:8px}.mic-select select,.window-primary-actions>select[aria-label^="Live camera"]{max-width:150px;min-width:100px;border:1px solid #3c4d65;border-radius:4px;padding:5px;background:#172438;color:#d5e0ed;font-size:8px}
+  .capture-connect,.capture-disconnect,.capture-record,.capture-stop{border:1px solid #40516b;border-radius:4px;padding:6px 9px;background:#1d3550;color:#e5effb;font-size:8px;font-weight:800;cursor:pointer}.capture-record{background:#b8323b;border-color:#b8323b;color:white}.capture-stop{background:#7f1d1d;border-color:#7f1d1d;color:white}.capture-note{flex-basis:100%;color:#91a4bd;font-size:8px;line-height:1.35}.capture-record:disabled{opacity:.4;cursor:not-allowed}
+  .angle-video video.live-preview{object-fit:cover}
   .import-all,.mic-button,.take-main,.layout-presets button{border:1px solid var(--border);border-radius:5px;background:var(--bg-elevated);color:var(--text-primary);padding:7px 9px;font-size:9px;cursor:pointer;white-space:nowrap}
   .import-all{background:var(--accent);color:white;border-color:var(--accent);font-weight:800}.import-all input,.replace-angle input,.browse-camera input{display:none}
   .layout-presets{display:flex;gap:3px;padding:3px;border:1px solid var(--border);border-radius:6px;background:var(--bg-elevated)}.layout-presets button{padding:5px 8px;border:0;background:transparent;color:var(--text-muted)}.layout-presets button.chosen{background:var(--accent);color:white}
@@ -643,5 +937,5 @@
   .studio-footer{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:8px;flex:none}.studio-workflow,.multicam-help{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px;border:1px solid var(--border);border-radius:5px;background:var(--bg-elevated);font-size:8px;color:var(--text-muted)}.studio-workflow b{color:#d6e1ef;font-size:7px;letter-spacing:.1em}.studio-workflow span{white-space:nowrap}.multicam-help{display:flex;align-items:flex-start;flex-direction:column;gap:3px}.multicam-help strong{color:var(--text-primary);font-size:9px}.multicam-help small{line-height:1.35}
   footer{min-height:24px;padding:6px 8px;border-radius:4px;background:var(--bg-elevated);font-size:9px;color:var(--text-muted);line-height:1.4;flex:none}.spinner{display:inline-block;width:8px;height:8px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;margin-right:7px;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
   @media(max-width:900px){.studio-footer{grid-template-columns:1fr}.studio-stage{min-height:480px}.layout-presets button{padding:5px 6px}}
-  @media(max-width:600px){.multicam{padding:8px}.studio-stage{min-height:620px}.angle-card{min-width:0}.studio-title strong{font-size:12px}.studio-title small{font-size:8px}.production-toolbar{gap:4px}.mic-button{max-width:145px;overflow:hidden;text-overflow:ellipsis}.layout-presets button{font-size:8px;padding:5px 4px}}
+  @media(max-width:600px){.multicam{padding:8px}.studio-stage{min-height:620px}.angle-card{min-width:0}.studio-title strong{font-size:12px}.studio-title small{font-size:8px}.production-toolbar{gap:4px}.mic-button{max-width:145px;overflow:hidden;text-overflow:ellipsis}.layout-presets button{font-size:8px;padding:5px 4px}.podcast-capture{gap:6px}.capture-title{flex-basis:100%}.mic-select{flex:1}.mic-select select{max-width:100%;min-width:0;flex:1}}
 </style>
