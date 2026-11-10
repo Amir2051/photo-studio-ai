@@ -884,6 +884,20 @@
     });
   }
 
+  function setFadeDuration(clipId: Id, direction: 'in' | 'out', seconds: number) {
+    editSequence(`adjust fade ${direction}`, (sequence) => {
+      const target = ops.findClipById(sequence, clipId)?.clip;
+      if (!target || target.kind !== 'audio') return;
+      const volume = target.effects.find((effect) => effect.type === 'volume');
+      if (!volume) return;
+      const added = fadeKeyframes(direction, target.duration, seconds);
+      const from = added[0].time;
+      const to = added[added.length - 1].time;
+      const kept = (volume.keyframes.level ?? []).filter((keyframe) => keyframe.time < from - 1e-6 || keyframe.time > to + 1e-6);
+      volume.keyframes.level = [...kept, ...added].sort((a, b) => a.time - b.time);
+    });
+  }
+
   function fade(direction: 'in' | 'out') {
     withSelected(direction === 'in' ? 'fade in' : 'fade out', (_, clip) => {
       if (clip.kind !== 'audio') return;

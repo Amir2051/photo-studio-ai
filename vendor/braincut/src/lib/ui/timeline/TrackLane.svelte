@@ -16,7 +16,8 @@
     dropClipId,
     media,
     showThumbs,
-    showWaves
+    showWaves,
+    onFadeDuration
   }: {
     track: Track;
     zoom: number;
@@ -30,6 +31,7 @@
     media: Map<string, MediaItem>;
     showThumbs: boolean;
     showWaves: boolean;
+    onFadeDuration?: (clipId: string, direction: 'in' | 'out', seconds: number) => void;
   } = $props();
 
   // a quarter screen of margin on both sides keeps clips from popping in
@@ -63,6 +65,7 @@
       dropTarget={clip.id === dropClipId}
       {showThumbs}
       {showWaves}
+      {onFadeDuration}
       height={clipH} />
   {/each}
   {#each transitions as transition (transition.id)}

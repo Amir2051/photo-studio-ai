@@ -47,7 +47,8 @@
     dropTarget,
     showThumbs,
     showWaves,
-    height
+    height,
+    onFadeDuration
   }: {
     clip: Clip;
     track: Track;
@@ -62,6 +63,7 @@
     showThumbs: boolean;
     showWaves: boolean;
     height: number;
+    onFadeDuration?: (clipId: string, direction: 'in' | 'out', seconds: number) => void;
   } = $props();
 
   const x = $derived(timeToX(clip.start, zoom, scroll));
@@ -101,6 +103,41 @@
     d += ` L${visibleWidth} ${py(keyframes[keyframes.length - 1].value)}`;
     return d;
   });
+
+  let fadeDrag = $state<{ direction: 'in' | 'out'; startX: number; seconds: number } | null>(null);
+
+  function beginFadeDrag(event: PointerEvent, direction: 'in' | 'out') {
+    if (!onFadeDuration || clip.kind !== 'audio') return;
+    event.preventDefault();
+    event.stopPropagation();
+    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+    const rect = (event.currentTarget as HTMLElement).closest('.clip')!.getBoundingClientRect();
+    const edge = direction === 'in' ? rect.left : rect.right;
+    fadeDrag = { direction, startX: edge, seconds: Math.min(1, clip.duration) };
+  }
+
+  function moveFadeDrag(event: PointerEvent) {
+    if (!fadeDrag) return;
+    event.preventDefault();
+    const distance = fadeDrag.direction === 'in' ? event.clientX - fadeDrag.startX : fadeDrag.startX - event.clientX;
+    fadeDrag.seconds = Math.max(0.04, Math.min(clip.duration, distance / zoom));
+  }
+
+  function finishFadeDrag(event: PointerEvent) {
+    if (!fadeDrag) return;
+    moveFadeDrag(event);
+    const { direction, seconds } = fadeDrag;
+    fadeDrag = null;
+    onFadeDuration?.(clip.id, direction, seconds);
+  }
+
+  function adjustFadeByKeyboard(event: KeyboardEvent, direction: 'in' | 'out') {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    const current = Math.min(clip.duration, 1);
+    const delta = event.key === 'ArrowRight' ? 0.1 : -0.1;
+    onFadeDuration?.(clip.id, direction, Math.max(0.04, Math.min(clip.duration, current + delta)));
+  }
 
   let strip = $state<HTMLCanvasElement | null>(null);
   let wave = $state<HTMLCanvasElement | null>(null);
@@ -270,6 +307,10 @@
         </svg>
       {/if}
     </div>
+  {/if}
+  {#if selected && clip.kind === 'audio' && onFadeDuration}
+    <div class="fade-handle fade-in" class:active={fadeDrag?.direction === 'in'} style="left: {Math.min(clip.duration, fadeDrag?.direction === 'in' ? fadeDrag.seconds : 1) * zoom}px" title="Drag to adjust fade in" role="slider" tabindex="0" aria-label="Fade in duration" aria-valuemin="0" aria-valuemax={clip.duration} aria-valuenow={Math.min(clip.duration, 1)} onkeydown={(event) => adjustFadeByKeyboard(event, 'in')} onpointerdown={(event) => beginFadeDrag(event, 'in')} onpointermove={moveFadeDrag} onpointerup={finishFadeDrag} onpointercancel={finishFadeDrag}><span></span></div>
+    <div class="fade-handle fade-out" class:active={fadeDrag?.direction === 'out'} style="right: {Math.min(clip.duration, fadeDrag?.direction === 'out' ? fadeDrag.seconds : 1) * zoom}px" title="Drag to adjust fade out" role="slider" tabindex="0" aria-label="Fade out duration" aria-valuemin="0" aria-valuemax={clip.duration} aria-valuenow={Math.min(clip.duration, 1)} onkeydown={(event) => adjustFadeByKeyboard(event, 'out')} onpointerdown={(event) => beginFadeDrag(event, 'out')} onpointermove={moveFadeDrag} onpointerup={finishFadeDrag} onpointercancel={finishFadeDrag}><span></span></div>
   {/if}
   <div class="clip-edge head"></div>
   <div class="clip-edge tail"></div>
@@ -452,6 +493,34 @@
   .kf:hover {
     fill: var(--accent);
   }
+
+  .fade-handle {
+    position: absolute;
+    top: 15px;
+    bottom: 2px;
+    z-index: 5;
+    width: 10px;
+    cursor: ew-resize;
+    touch-action: none;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    background: linear-gradient(90deg, rgba(120, 210, 255, 0.2), transparent);
+  }
+
+  .fade-handle.fade-out {
+    background: linear-gradient(270deg, rgba(120, 210, 255, 0.2), transparent);
+  }
+
+  .fade-handle span {
+    width: 3px;
+    height: 12px;
+    border-radius: 3px;
+    background: #9de4ff;
+    box-shadow: 0 0 7px rgba(90, 190, 255, 0.85);
+  }
+
+  .fade-handle.active span { background: #fff; }
 
   .clip-edge {
     position: absolute;
