@@ -6,7 +6,7 @@
   import Icon from './Icon.svelte';
 </script>
 
-<div class="tool-strip" role="toolbar" aria-label="Timeline tools and quick edits" aria-orientation="vertical">
+<div class="tool-strip" role="toolbar" aria-label="Timeline tools and quick edits" aria-orientation="horizontal">
   <div class="tool-group" aria-label="Timeline tools">
     {#each tools as tool (tool.id)}
       <button
@@ -16,7 +16,8 @@
         aria-label={tool.label}
         aria-pressed={$activeTool === tool.id}
         onclick={() => activeTool.set(tool.id)}>
-        <Icon name={tool.icon} size={16} />
+        <Icon name={tool.icon} size={15} />
+        <span class="tool-label">{tool.label}</span>
       </button>
     {/each}
   </div>
@@ -25,47 +26,55 @@
 
   <div class="tool-group quick-edits" aria-label="Quick edit actions">
     <button class="tool-btn quick" title="Split at playhead (Ctrl+K)" aria-label="Split at playhead" disabled={!$activeSequence} onclick={() => timelineActions.splitAtPlayhead(false)}>
-      <Icon name="razor" size={16} />
+      <Icon name="razor" size={15} />
+      <span class="tool-label">Split</span>
     </button>
     <button class="tool-btn quick" title="Delete selected clips (Delete)" aria-label="Delete selected clips" disabled={!$activeSequence || $selection.length === 0} onclick={() => timelineActions.deleteSelection()}>
-      <Icon name="trash" size={15} />
+      <Icon name="trash" size={14} />
+      <span class="tool-label">Delete</span>
     </button>
     <button class="tool-btn quick" title="Undo (Ctrl+Z)" aria-label="Undo" disabled={!$history.canUndo} onclick={undo}>
-      <Icon name="undo" size={15} />
+      <Icon name="undo" size={14} />
+      <span class="tool-label">Undo</span>
     </button>
     <button class="tool-btn quick" title="Redo (Ctrl+Shift+Z)" aria-label="Redo" disabled={!$history.canRedo} onclick={redo}>
-      <Icon name="redo" size={15} />
+      <Icon name="redo" size={14} />
+      <span class="tool-label">Redo</span>
     </button>
   </div>
 </div>
 
 <style>
   .tool-strip {
-    width: var(--toolbar-h);
+    min-height: 42px;
     flex-shrink: 0;
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     align-items: center;
-    gap: 8px;
-    padding: 8px 0;
-    background: linear-gradient(180deg, var(--bg-surface), #0a1221);
-    border-right: 1px solid var(--border);
-    overflow-y: auto;
+    gap: 10px;
+    padding: 5px 10px;
+    background: linear-gradient(90deg, var(--bg-surface), #0a1221);
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+    overflow-y: hidden;
   }
 
   .tool-group {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     align-items: center;
     gap: 4px;
+    flex-shrink: 0;
   }
 
   .tool-btn {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 30px;
+    min-width: 34px;
     height: 30px;
+    padding: 0 8px;
+    gap: 6px;
     color: var(--text-secondary);
     flex-shrink: 0;
     border: 1px solid transparent;
@@ -83,17 +92,23 @@
     background: var(--accent-dim);
     color: var(--accent);
     border-color: rgba(141, 165, 255, 0.28);
-    box-shadow: inset 2px 0 0 var(--accent);
+    box-shadow: inset 0 -2px 0 var(--accent);
   }
 
   .tool-btn:disabled {
     opacity: 0.28;
   }
 
+  .tool-label {
+    font-size: 10px;
+    white-space: nowrap;
+  }
+
   .tool-divider {
-    width: 22px;
-    height: 1px;
+    width: 1px;
+    height: 22px;
     background: var(--border);
+    flex-shrink: 0;
   }
 
   .quick-edits .tool-btn {

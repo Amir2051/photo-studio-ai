@@ -64,7 +64,7 @@
     </button>
     <button class="action-btn" onclick={onimport} disabled={!$project} title={$project ? 'Import video and audio footage (Ctrl+I)' : 'Create a video project before importing footage'}>
       <Icon name="importIcon" size={14} />
-      <span>Import video</span>
+      <span>Add media</span>
     </button>
     <button class="action-btn" onclick={onsave} title="Save the project (Ctrl+S)">
       <Icon name="save" size={14} />

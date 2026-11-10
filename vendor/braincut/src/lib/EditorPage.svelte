@@ -60,14 +60,14 @@
 
   const topTabs = [
     { id: 'source', label: 'Source' },
-    { id: 'effect-controls', label: 'Inspector' },
+    { id: 'effect-controls', label: 'Adjust' },
     { id: 'color', label: 'Color' },
     { id: 'audio-mixer', label: 'Audio' }
   ];
 
   const bottomTabs = [
     { id: 'project', label: 'Media' },
-    { id: 'effects', label: 'Effects & Transitions' },
+    { id: 'effects', label: 'Effects' },
     { id: 'text', label: 'Text' },
     { id: 'markers', label: 'Markers' },
     { id: 'history', label: 'History' }
@@ -75,7 +75,7 @@
 
   // a workspace is just a pair of tabs to start from, any tab stays a click away
   const workspaceTabs: Record<string, { left: LeftPanelTab; bottom: BottomPanelTab }> = {
-    edit: { left: 'source', bottom: 'project' },
+    edit: { left: 'effect-controls', bottom: 'project' },
     color: { left: 'color', bottom: 'project' },
     effects: { left: 'effect-controls', bottom: 'effects' },
     audio: { left: 'audio-mixer', bottom: 'project' }
@@ -171,7 +171,7 @@
     <main
       class="main-area"
       bind:this={main}
-      style="grid-template-columns: {$panelSizes.leftWidth}px 3px 1fr; grid-template-rows: {$panelSizes.topHeight}fr 3px {1 -
+      style="grid-template-columns: {$panelSizes.leftWidth}px 3px minmax(0, 1fr) 3px {$panelSizes.leftWidth}px; grid-template-rows: {$panelSizes.topHeight}fr 3px {1 -
         $panelSizes.topHeight}fr">
       <section class="panel left-top" data-panel={$leftPanelTab} tabindex="-1">
         <PanelTabs
@@ -289,7 +289,9 @@
     display: flex;
   }
 
-  .left-top {
+  /* Familiar editing layout: media library left, preview center,
+     contextual adjustments right, and the multitrack timeline below. */
+  .left-bottom {
     grid-column: 1;
     grid-row: 1;
     border-right: 1px solid var(--border);
@@ -306,6 +308,17 @@
     background: var(--bg-deep);
   }
 
+  .rz-v-bottom {
+    grid-column: 4;
+    grid-row: 1;
+  }
+
+  .left-top {
+    grid-column: 5;
+    grid-row: 1;
+    border-left: 1px solid var(--border);
+  }
+
   .rz-h {
     grid-column: 1 / -1;
     grid-row: 2;
@@ -315,21 +328,10 @@
     flex: 1;
   }
 
-  .left-bottom {
-    grid-column: 1;
-    grid-row: 3;
-    border-right: 1px solid var(--border);
-  }
-
-  .rz-v-bottom {
-    grid-column: 2;
-    grid-row: 3;
-  }
-
   .timeline-area {
-    grid-column: 3;
+    grid-column: 1 / -1;
     grid-row: 3;
-    flex-direction: row;
+    flex-direction: column;
     background: var(--bg-surface);
   }
 
@@ -365,17 +367,17 @@
       border-top: 1px solid var(--border);
     }
 
-    .left-top {
+    .left-bottom {
       grid-column: 1;
       grid-row: 3;
       border-right: none;
       border-top: 1px solid var(--border);
     }
 
-    .left-bottom {
+    .left-top {
       grid-column: 1;
       grid-row: 4;
-      border-right: none;
+      border-left: none;
       border-top: 1px solid var(--border);
     }
   }
