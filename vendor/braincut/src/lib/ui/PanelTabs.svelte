@@ -47,7 +47,7 @@
     align-items: center;
     justify-content: space-between;
     gap: 6px;
-    height: 32px;
+    height: 38px;
     border-bottom: 1px solid var(--border);
     padding: 0 3px;
     flex-shrink: 0;
@@ -69,9 +69,9 @@
     display: flex;
     align-items: center;
     gap: 4px;
-    padding: 5px 12px;
-    font-size: 11px;
-    font-weight: 500;
+    padding: 7px 13px;
+    font-size: 12px;
+    font-weight: 600;
     color: var(--text-muted);
     white-space: nowrap;
   }
@@ -83,6 +83,7 @@
   .panel-tab.active {
     color: var(--text-primary);
     background: var(--bg-hover);
+    box-shadow: inset 0 -2px 0 var(--accent);
   }
 
   .badge {

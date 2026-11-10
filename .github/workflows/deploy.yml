@@ -2,7 +2,7 @@ name: Build and deploy Every Frame First Studio
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, 'fix/**']
   push:
     branches: [main, 'fix/**']
   workflow_dispatch:
@@ -29,6 +29,24 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
+      - name: Install BrainCUT editor dependencies
+        run: npm ci --prefix vendor/braincut
+      - name: Check BrainCUT editor
+        run: npm run check --prefix vendor/braincut
+      - name: Test BrainCUT editor
+        run: npm test --prefix vendor/braincut
+      - name: Build BrainCUT editor
+        run: npm run build --prefix vendor/braincut
+      - name: Sync compiled editor into the published site
+        run: |
+          rm -rf public/video-studio
+          mkdir -p public/video-studio
+          cp -a vendor/braincut/build/. public/video-studio/
+      - name: Verify published editor bundle
+        run: |
+          test -s public/video-studio/index.html
+          grep -R -q 'CLIP ACTIONS' public/video-studio/_app/immutable
+          grep -R -q 'PRODUCER AUDIO DESK' public/video-studio/_app/immutable
       - name: Run root application tests
         run: npx vitest run tests
       - name: Type-check and build
