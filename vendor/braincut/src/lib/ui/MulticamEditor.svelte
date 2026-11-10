@@ -278,13 +278,18 @@
   }
 
   function useMic(index: number) {
+    const angle = angleSlots[index];
+    if (!angle.media?.hasAudio) {
+      addToast(`${angle.label} has no audio track. Choose another camera microphone.`, 'warning');
+      return;
+    }
     editSequence('choose multicam audio source', (seq) => {
       for (let i = 0; i < 4; i++) {
         const track = findAngleAudioTrack(seq, i);
         if (track) track.muted = i !== index;
       }
     });
-    status = `Using ${angleSlots[index].label} as the active microphone. Other camera audio tracks are muted.`;
+    status = `Using ${angle.label} as the active microphone. Other camera audio tracks are muted.`;
   }
 
   function cutToAngle(index: number) {
@@ -342,7 +347,7 @@
     <label class="import-all">＋ Import up to 4 recordings
       <input type="file" accept="video/*" multiple onchange={(event) => void importFour(event.currentTarget.files)} />
     </label>
-    <button type="button" class="mic-button" onclick={() => useMic(activeAngle)} disabled={!angleSlots[activeAngle].media}>Use {angleSlots[activeAngle].label} audio</button>
+    <button type="button" class="mic-button" onclick={() => useMic(activeAngle)} disabled={!angleSlots[activeAngle].media?.hasAudio}>Use {angleSlots[activeAngle].label} audio</button>
   </div>
 
   <div class="angle-grid">
@@ -372,7 +377,7 @@
             <label class="offset">Sync offset (seconds)
               <input type="number" min={-angle.media.duration} max={angle.media.duration} step="0.01" value={angle.offset} onchange={(event) => setOffset(i, event.currentTarget.value)} />
             </label>
-            <small>{angle.audioTrack?.muted === false ? '● Active microphone' : 'Audio muted'}</small>
+            <small>{!angle.media.hasAudio ? 'No audio in this recording' : angle.audioTrack?.muted === false ? '● Active microphone' : 'Audio muted'}</small>
           {/if}
         </div>
       </article>
