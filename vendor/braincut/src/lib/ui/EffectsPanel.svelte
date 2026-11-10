@@ -1,15 +1,15 @@
 <script lang="ts">
-  import { browser } from '$app/environment';
+  import { browser } from '$app/env';
   import Icon from './Icon.svelte';
-  import type { Clip, Id, Track } from '$lib/project/types';
-  import { activeSequence, editSequence, selectedClips } from '$lib/project/store';
-  import { addTransition, clipEnd, trackOf } from '$lib/project/ops';
-  import { nearlyEqual } from '$lib/project/time';
-  import { addToast, contextMenu, type MenuItem } from '$lib/stores/app';
-  import { preferences } from '$lib/stores/preferences';
-  import { audioEffectGroups, createEffectInstance, effectsInGroup, videoEffectGroups, type EffectDef } from '$lib/engine/effects/registry';
-  import { transitionGroups, transitionsInGroup, type TransitionDef } from '$lib/engine/transitions/registry';
-  import { endDrag, startDrag } from '$lib/editor/drag';
+  import type { Clip, Id, Track } from '#lib/project/types.ts';
+  import { activeSequence, editSequence, selectedClips } from '#lib/project/store.ts';
+  import { addTransition, clipEnd, trackOf } from '#lib/project/ops.ts';
+  import { nearlyEqual } from '#lib/project/time.ts';
+  import { addToast, contextMenu, type MenuItem } from '#lib/stores/app.ts';
+  import { preferences } from '#lib/stores/preferences.ts';
+  import { audioEffectGroups, createEffectInstance, effectsInGroup, videoEffectGroups, type EffectDef } from '#lib/engine/effects/registry.ts';
+  import { transitionGroups, transitionsInGroup, type TransitionDef } from '#lib/engine/transitions/registry.ts';
+  import { endDrag, startDrag } from '#lib/editor/drag.ts';
 
   interface Row {
     id: string;
@@ -19,18 +19,8 @@
     description?: string;
   }
 
-  interface Group {
-    key: string;
-    name: string;
-    icon: string;
-    rows: Row[];
-  }
-
-  interface Section {
-    key: string;
-    name: string;
-    groups: Group[];
-  }
+  interface Group { key: string; name: string; icon: string; rows: Row[] }
+  interface Section { key: string; name: string; groups: Group[] }
 
   const COLLAPSED_KEY = 'braincut-effects-collapsed';
 

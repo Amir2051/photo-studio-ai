@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
-  import type { Session } from '$lib/engine/session';
+  import type { Session } from '#lib/engine/session.ts';
 
   // the black viewport both monitors share. the canvas belongs to the
   // compositor and keeps the sequence size, this only decides how big it is

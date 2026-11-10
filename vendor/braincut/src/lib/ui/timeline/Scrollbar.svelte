@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { zoomAround } from '$lib/editor/timeline-interactions';
+  import { zoomAround } from '#lib/editor/timeline-interactions.ts';
 
   // the thumb is the visible window of the sequence. dragging it scrolls,
   // dragging either end zooms around the playhead

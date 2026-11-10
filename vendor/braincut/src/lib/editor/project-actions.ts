@@ -1,6 +1,11 @@
 import { get } from 'svelte/store';
-import { closeProject, dirty, loadProject, markSaved, project } from '$lib/project/store';
-import { PROJECT_EXTENSION, parseProject, projectFileName, serializeProject } from '$lib/project/serialize';
+import { closeProject, dirty, loadProject, markSaved, project } from '#lib/project/store.ts';
+import {
+  PROJECT_EXTENSION,
+  parseProject,
+  projectFileName,
+  serializeProject,
+} from '#lib/project/serialize.ts';
 import {
   cancelAutosave,
   flushAutosave,
@@ -10,22 +15,26 @@ import {
   scheduleAutosave,
   setLastOpenedId,
   touchRecent,
-  type RecentProject
-} from '$lib/project/persistence';
-import { restoreSources } from '$lib/media/sources';
-import { createProject, createSequence } from '$lib/project/defaults';
-import { presets } from '$lib/templates/sequences';
-import { importFiles, isMediaFile } from '$lib/media/import';
-import { downloadBlob } from '$lib/export/download';
-import { addToast, dialog, projectHandle, sourceMedia } from '$lib/stores/app';
-import { preferences } from '$lib/stores/preferences';
-import type { Project } from '$lib/project/types';
+  type RecentProject,
+} from '#lib/project/persistence.ts';
+import { restoreSources } from '#lib/media/sources.ts';
+import { createProject, createSequence } from '#lib/project/defaults.ts';
+import { presets } from '#lib/templates/sequences.ts';
+import { importFiles, isMediaFile } from '#lib/media/import.ts';
+import { downloadBlob } from '#lib/export/download.ts';
+import { addToast, dialog, projectHandle, sourceMedia } from '#lib/stores/app.ts';
+import { preferences } from '#lib/stores/preferences.ts';
+import type { Project } from '#lib/project/types.ts';
 
 const PICKER_TYPES: FilePickerAcceptType[] = [
-  { description: 'brainCUT project', accept: { 'application/json': [PROJECT_EXTENSION] } }
+  { description: 'brainCUT project', accept: { 'application/json': [PROJECT_EXTENSION] } },
 ];
 
-type SavePicker = (opts: { suggestedName?: string; types?: FilePickerAcceptType[]; id?: string }) => Promise<FileSystemFileHandle>;
+type SavePicker = (opts: {
+  suggestedName?: string;
+  types?: FilePickerAcceptType[];
+  id?: string;
+}) => Promise<FileSystemFileHandle>;
 
 function savePicker(): SavePicker | null {
   const w = window as Window & { showSaveFilePicker?: SavePicker };
@@ -55,7 +64,11 @@ async function write(p: Project, askForFile: boolean): Promise<boolean> {
     if (!handle) {
       const picker = savePicker();
       if (picker) {
-        handle = await picker({ suggestedName: projectFileName(p), types: PICKER_TYPES, id: 'braincut-project' });
+        handle = await picker({
+          suggestedName: projectFileName(p),
+          types: PICKER_TYPES,
+          id: 'braincut-project',
+        });
       } else {
         downloadBlob(new Blob([text], { type: 'application/json' }), projectFileName(p));
         return true;
@@ -66,7 +79,11 @@ async function write(p: Project, askForFile: boolean): Promise<boolean> {
     return true;
   } catch (e) {
     if (aborted(e)) return false;
-    addToast(`Could not save the project: ${message(e, 'the file could not be written')}`, 'error', 6000);
+    addToast(
+      `Could not save the project: ${message(e, 'the file could not be written')}`,
+      'error',
+      6000,
+    );
     return false;
   }
 }
@@ -112,7 +129,7 @@ export function ensureProjectForImport(): void {
     name: 'Sequence 1',
     width: preset.width,
     height: preset.height,
-    fps: preset.fps
+    fps: preset.fps,
   });
   next.sequences.push(sequence);
   next.activeSequenceId = sequence.id;
@@ -131,7 +148,11 @@ async function openSelectedFile(file: File, handle: FileSystemFileHandle | null)
       await importFiles([file]);
       return;
     }
-    addToast(`${file.name} is not a brainCUT project. Choose a .braincut project file or use Import video for media.`, 'error', 6000);
+    addToast(
+      `${file.name} is not a brainCUT project. Choose a .braincut project file or use Import video for media.`,
+      'error',
+      6000,
+    );
     return;
   }
   if (!confirmDiscard()) return;
@@ -192,7 +213,11 @@ export async function openProjectFile(): Promise<void> {
   // media import; only project replacement should ask about discarding work.
   try {
     if ('showOpenFilePicker' in window) {
-      const [handle] = await window.showOpenFilePicker({ multiple: false, types: PICKER_TYPES, id: 'braincut-project' });
+      const [handle] = await window.showOpenFilePicker({
+        multiple: false,
+        types: PICKER_TYPES,
+        id: 'braincut-project',
+      });
       if (!handle) return;
       await openSelectedFile(await handle.getFile(), handle);
       return;
@@ -201,7 +226,11 @@ export async function openProjectFile(): Promise<void> {
     if (file) await openSelectedFile(file, null);
   } catch (e) {
     if (aborted(e)) return;
-    addToast(`Could not open the project: ${message(e, 'the file could not be read')}`, 'error', 6000);
+    addToast(
+      `Could not open the project: ${message(e, 'the file could not be read')}`,
+      'error',
+      6000,
+    );
   }
 }
 
@@ -211,7 +240,11 @@ export async function openRecent(id: string): Promise<void> {
   try {
     p = await loadProjectLocal(id);
   } catch (e) {
-    addToast(`Could not open the project: ${message(e, 'the stored copy is damaged')}`, 'error', 6000);
+    addToast(
+      `Could not open the project: ${message(e, 'the stored copy is damaged')}`,
+      'error',
+      6000,
+    );
     return;
   }
   if (!p) {

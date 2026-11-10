@@ -1,5 +1,5 @@
 import { ALL_FORMATS, BlobSource, CanvasSink, Input } from 'mediabunny';
-import type { MediaItem } from '$lib/project/types';
+import type { MediaItem } from '#lib/project/types.ts';
 
 const MAX_BITMAPS = 400;
 const MAX_SINKS = 4;
@@ -62,7 +62,10 @@ async function openSink(media: MediaItem, blob: Blob, width: number): Promise<Op
     input.dispose();
     return null;
   }
-  const opened = { input, sink: new CanvasSink(track, { width, fit: 'contain', poolSize: 2, alpha: media.alpha }) };
+  const opened = {
+    input,
+    sink: new CanvasSink(track, { width, fit: 'contain', poolSize: 2, alpha: media.alpha }),
+  };
   sinks.set(key, opened);
   while (sinks.size > MAX_SINKS) {
     const oldest = sinks.keys().next().value!;
@@ -72,7 +75,11 @@ async function openSink(media: MediaItem, blob: Blob, width: number): Promise<Op
   return opened;
 }
 
-function canvasToDataUrl(canvas: HTMLCanvasElement | OffscreenCanvas, width: number, height: number): Promise<string> {
+function canvasToDataUrl(
+  canvas: HTMLCanvasElement | OffscreenCanvas,
+  width: number,
+  height: number,
+): Promise<string> {
   const out = document.createElement('canvas');
   out.width = width;
   out.height = height;
@@ -85,12 +92,20 @@ function scaled(media: MediaItem, width: number): { width: number; height: numbe
   return { width, height: Math.max(1, Math.round(width * ratio)) };
 }
 
-export async function posterThumbnail(blob: Blob, media: MediaItem, opts: { width?: number } = {}): Promise<string | null> {
+export async function posterThumbnail(
+  blob: Blob,
+  media: MediaItem,
+  opts: { width?: number } = {},
+): Promise<string | null> {
   const width = opts.width ?? 160;
   if (media.kind === 'audio' || !media.hasVideo) return null;
   const size = scaled(media, width);
   if (media.kind === 'image') {
-    const bitmap = await createImageBitmap(blob, { resizeWidth: size.width, resizeHeight: size.height, resizeQuality: 'medium' }).catch(() => null);
+    const bitmap = await createImageBitmap(blob, {
+      resizeWidth: size.width,
+      resizeHeight: size.height,
+      resizeQuality: 'medium',
+    }).catch(() => null);
     if (!bitmap) return null;
     try {
       return await canvasToDataUrl(bitmapCanvas(bitmap), size.width, size.height);
@@ -145,12 +160,17 @@ async function runJob(job: Job) {
     try {
       const opened = await openSink(job.media, job.blob, job.width);
       if (opened) {
-        const wanted = [...new Set(missing.map(bucket))].sort((a, b) => a - b).map((b) => b / BUCKETS_PER_SECOND);
+        const wanted = [...new Set(missing.map(bucket))]
+          .sort((a, b) => a - b)
+          .map((b) => b / BUCKETS_PER_SECOND);
         let i = 0;
         for await (const wrapped of opened.sink.canvasesAtTimestamps(wanted)) {
           const time = wanted[i++];
           if (!wrapped) continue;
-          remember(cacheKey(job.media.id, job.width, time), await createImageBitmap(wrapped.canvas));
+          remember(
+            cacheKey(job.media.id, job.width, time),
+            await createImageBitmap(wrapped.canvas),
+          );
         }
       }
     } catch {}
@@ -170,7 +190,11 @@ function pump() {
   }
 }
 
-export function filmstripFrames(media: MediaItem, blob: Blob, opts: { times: number[]; width: number }): Promise<(ImageBitmap | null)[]> {
+export function filmstripFrames(
+  media: MediaItem,
+  blob: Blob,
+  opts: { times: number[]; width: number },
+): Promise<(ImageBitmap | null)[]> {
   return new Promise((resolve) => {
     const job: Job = { media, blob, times: opts.times, width: opts.width, resolve };
     const cached = fromCache(job);
@@ -188,10 +212,19 @@ export function filmstripFrames(media: MediaItem, blob: Blob, opts: { times: num
   });
 }
 
-export function getFilmstrip(media: MediaItem, blob: Blob, start: number, end: number, count: number, width: number): Promise<(ImageBitmap | null)[]> {
+export function getFilmstrip(
+  media: MediaItem,
+  blob: Blob,
+  start: number,
+  end: number,
+  count: number,
+  width: number,
+): Promise<(ImageBitmap | null)[]> {
   const n = Math.max(1, count);
   const span = Math.max(0, end - start);
-  const times = Array.from({ length: n }, (_, i) => Math.min(media.duration, start + (span * (i + 0.5)) / n));
+  const times = Array.from({ length: n }, (_, i) =>
+    Math.min(media.duration, start + (span * (i + 0.5)) / n),
+  );
   return filmstripFrames(media, blob, { times, width });
 }
 

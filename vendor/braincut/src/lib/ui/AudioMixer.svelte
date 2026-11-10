@@ -4,18 +4,18 @@
   import MicrophoneRecorder from './MicrophoneRecorder.svelte';
   import LiveCameraCapture from './LiveCameraCapture.svelte';
   import MultiCameraStudio from './MultiCameraStudio.svelte';
-  import { importFiles } from '$lib/media/import';
-  import { createClipFromMedia } from '$lib/project/defaults';
-  import { addTrack, canPlace, placeClips } from '$lib/project/ops';
-  import { addToast } from '$lib/stores/app';
-  import { program, type Session } from '$lib/engine/session';
-  import type { Levels } from '$lib/engine/audio-engine';
-  import { isAnimated, setKeyframe, valueAt } from '$lib/project/keyframes';
-  import { fadeKeyframes } from '$lib/engine/effects/registry';
-  import { findClipById } from '$lib/project/ops';
-  import { activeSequence, commitPreview, editSequence, preview } from '$lib/project/store';
-  import type { Project } from '$lib/project/types';
-  import { playhead, selection } from '$lib/stores/app';
+  import { importFiles } from '#lib/media/import.ts';
+  import { createClipFromMedia } from '#lib/project/defaults.ts';
+  import { addTrack, canPlace, placeClips } from '#lib/project/ops.ts';
+  import { addToast } from '#lib/stores/app.ts';
+  import { program, type Session } from '#lib/engine/session.ts';
+  import type { Levels } from '#lib/engine/audio-engine.ts';
+  import { isAnimated, setKeyframe, valueAt } from '#lib/project/keyframes.ts';
+  import { fadeKeyframes } from '#lib/engine/effects/registry.ts';
+  import { findClipById } from '#lib/project/ops.ts';
+  import { activeSequence, commitPreview, editSequence, preview } from '#lib/project/store.ts';
+  import type { Project } from '#lib/project/types.ts';
+  import { playhead, selection } from '#lib/stores/app.ts';
   import Fader from './Fader.svelte';
   import Meter from './Meter.svelte';
   import NumberField from './NumberField.svelte';
@@ -59,7 +59,7 @@
     addToast(`Recorded audio added to ${draftSeqTrackName(get(activeSequence), placedTrackId)}.`, 'success');
   }
 
-  function draftSeqTrackName(seq: import('$lib/project/types').Sequence | null, id: string): string {
+  function draftSeqTrackName(seq: import('#lib/project/types.ts').Sequence | null, id: string): string {
     return seq?.tracks.find((track) => track.id === id)?.name ?? 'the timeline';
   }
 

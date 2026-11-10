@@ -1,4 +1,4 @@
-import type { MediaItem } from '$lib/project/types';
+import type { MediaItem } from '#lib/project/types.ts';
 import { MediaReader, type FrameHandle, type VideoCursor } from './media-reader';
 
 export type FrameMode = 'scrub' | 'play' | 'export';
@@ -7,7 +7,12 @@ export type FrameMode = 'scrub' | 'play' | 'export';
 // cursors of clips that share a media file, so a transition between two cuts
 // of the same clip doesn't make one decoder jump back and forth
 export interface FrameProvider {
-  getFrame(media: MediaItem, sourceTime: number, mode: FrameMode, lane?: string): Promise<FrameHandle | null>;
+  getFrame(
+    media: MediaItem,
+    sourceTime: number,
+    mode: FrameMode,
+    lane?: string,
+  ): Promise<FrameHandle | null>;
   // why a media can't be shown, so the compositor can draw a placeholder
   // instead of a hole and the ui can say something useful once
   failure?(mediaId: string): string | undefined;
@@ -221,7 +226,12 @@ export class MediaCache implements FrameProvider {
     }
   }
 
-  async getFrame(media: MediaItem, sourceTime: number, mode: FrameMode, lane = ''): Promise<FrameHandle | null> {
+  async getFrame(
+    media: MediaItem,
+    sourceTime: number,
+    mode: FrameMode,
+    lane = '',
+  ): Promise<FrameHandle | null> {
     if (this.disposed) return null;
     if (this.broken.has(media.id)) return null;
     try {
@@ -232,12 +242,23 @@ export class MediaCache implements FrameProvider {
     }
   }
 
-  private async decodeFrame(media: MediaItem, sourceTime: number, mode: FrameMode, lane: string): Promise<FrameHandle | null> {
+  private async decodeFrame(
+    media: MediaItem,
+    sourceTime: number,
+    mode: FrameMode,
+    lane: string,
+  ): Promise<FrameHandle | null> {
     if (media.kind === 'image') {
       const bitmap = await this.image(media);
       if (!bitmap) return null;
       // the cache owns the bitmap, releasing a handle is a no-op
-      return { image: bitmap, width: bitmap.width, height: bitmap.height, timestamp: 0, release: () => {} };
+      return {
+        image: bitmap,
+        width: bitmap.width,
+        height: bitmap.height,
+        timestamp: 0,
+        release: () => {},
+      };
     }
     if (media.kind !== 'video') return null;
 
@@ -291,7 +312,9 @@ export class MediaCache implements FrameProvider {
   // clip on the timeline while the current one plays
   prefetch(media: MediaItem, sourceTime: number, lane = ''): void {
     if (this.disposed) return;
-    void this.getFrame(media, sourceTime, 'play', lane).then((h) => h?.release()).catch(() => {});
+    void this.getFrame(media, sourceTime, 'play', lane)
+      .then((h) => h?.release())
+      .catch(() => {});
   }
 
   release(mediaId?: string): void {
@@ -315,7 +338,13 @@ export class MediaCache implements FrameProvider {
     this.broken.delete(mediaId);
   }
 
-  stats(): { readers: number; cursors: number; images: number; imageBytes: number; frames: number } {
+  stats(): {
+    readers: number;
+    cursors: number;
+    images: number;
+    imageBytes: number;
+    frames: number;
+  } {
     let frames = 0;
     for (const e of this.readers.values()) frames += e.reader.stats().frames;
     return {
@@ -323,7 +352,7 @@ export class MediaCache implements FrameProvider {
       cursors: this.cursors.size,
       images: this.images.size,
       imageBytes: this.imageBytes(),
-      frames
+      frames,
     };
   }
 

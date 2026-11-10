@@ -1,6 +1,6 @@
 <script lang="ts">
-  import type { MediaItem, Track } from '$lib/project/types';
-  import { clipsInRange } from '$lib/editor/timeline-interactions';
+  import type { MediaItem, Track } from '#lib/project/types.ts';
+  import { clipsInRange } from '#lib/editor/timeline-interactions.ts';
   import ClipView from './ClipView.svelte';
   import TransitionView from './TransitionView.svelte';
 

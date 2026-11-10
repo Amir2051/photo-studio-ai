@@ -1,22 +1,22 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { get } from 'svelte/store';
-  import { browser } from '$app/environment';
+  import { browser } from '$app/env';
   import Icon from './Icon.svelte';
   import Menu from './Menu.svelte';
   import MediaTile, { labels, labelName } from './MediaTile.svelte';
-  import type { Bin, Id, Label, MediaItem, Sequence } from '$lib/project/types';
-  import { activeSequence, edit, editSequence, project, setActiveSequence } from '$lib/project/store';
-  import { createAdjustmentClip, createClipFromMedia, createColorClip, createSequence, createTitleClip } from '$lib/project/defaults';
-  import { overwriteClip, placeClips, validateTransitions, type Placement } from '$lib/project/ops';
-  import { id as newId } from '$lib/project/ids';
-  import { addToast, contextMenu, dialog, dragPayload, importProgress, leftPanelTab, playhead, sourceMedia, type MenuItem } from '$lib/stores/app';
-  import { preferences } from '$lib/stores/preferences';
-  import { pickFiles, pickFolder } from '$lib/media/import';
-  import { forgetSource, getBlobForMedia, grantAccess, needsPermission, relinkMissing } from '$lib/media/sources';
-  import { createProxy, proxyStatus, removeProxy } from '$lib/media/proxy';
-  import { convertForEditing, ffmpegAvailable } from '$lib/media/transcode';
-  import { endDrag, readDrag, startDrag } from '$lib/editor/drag';
+  import type { Bin, Id, Label, MediaItem, Sequence } from '#lib/project/types.ts';
+  import { activeSequence, edit, editSequence, project, setActiveSequence } from '#lib/project/store.ts';
+  import { createAdjustmentClip, createClipFromMedia, createColorClip, createSequence, createTitleClip } from '#lib/project/defaults.ts';
+  import { overwriteClip, placeClips, validateTransitions, type Placement } from '#lib/project/ops.ts';
+  import { id as newId } from '#lib/project/ids.ts';
+  import { addToast, contextMenu, dialog, dragPayload, importProgress, leftPanelTab, playhead, sourceMedia, type MenuItem } from '#lib/stores/app.ts';
+  import { preferences } from '#lib/stores/preferences.ts';
+  import { pickFiles, pickFolder } from '#lib/media/import.ts';
+  import { forgetSource, getBlobForMedia, grantAccess, needsPermission, relinkMissing } from '#lib/media/sources.ts';
+  import { createProxy, proxyStatus, removeProxy } from '#lib/media/proxy.ts';
+  import { convertForEditing, ffmpegAvailable } from '#lib/media/transcode.ts';
+  import { endDrag, readDrag, startDrag } from '#lib/editor/drag.ts';
 
   type View = 'icons' | 'list';
   type SortKey = 'name' | 'duration' | 'added';
@@ -255,8 +255,18 @@
     const many = ids.length > 1;
     const busy = item.status === 'converting' || converting.has(item.id) || $proxyStatus.has(item.id);
     return [
-      { label: 'Open in source monitor', action: () => openInSource(item), disabled: many },
-      { label: 'Rename…', action: () => dialog.set({ kind: 'rename', target: 'media', id: item.id }), disabled: many },
+      {
+        label: 'Open in source monitor',
+        action: () => openInSource(item),
+        disabled: many
+      },
+
+      {
+        label: 'Rename…',
+        action: () => dialog.set({ kind: 'rename', target: 'media', id: item.id }),
+        disabled: many
+      },
+
       {
         label: 'Label',
         children: [
@@ -267,13 +277,36 @@
       { label: 'New sequence from clip', action: () => sequenceFromMedia(item), disabled: many || item.status !== 'ready' },
       { separator: true, label: '' },
       item.proxy
-        ? { label: 'Remove proxy', action: () => removeProxy(item), disabled: many }
-        : { label: 'Create proxy', action: () => makeProxy(item), disabled: many || busy || item.kind !== 'video' || item.status !== 'ready' },
-      ...(item.status === 'unsupported'
-        ? [{ label: 'Convert for editing', action: () => convert(item), disabled: many || busy || !ffmpegAvailable() }]
-        : []),
-      { label: 'Relink…', action: () => dialog.set({ kind: 'relink', mediaId: item.id }), disabled: many },
-      ...(missing.length > 1 ? [{ label: 'Relink all…', action: () => void relinkMissing() }] : []),
+        ? {
+          label: 'Remove proxy',
+          action: () => removeProxy(item),
+          disabled: many
+        }
+        : {
+          label: 'Create proxy',
+          action: () => makeProxy(item),
+          disabled: many || busy || item.kind !== 'video' || item.status !== 'ready'
+        },
+
+      ...item.status === 'unsupported'
+        ? [
+          {
+            label: 'Convert for editing',
+            action: () => convert(item),
+            disabled: many || busy || !ffmpegAvailable()
+          }
+        ]
+        : [],
+
+      {
+        label: 'Relink…',
+        action: () => dialog.set({ kind: 'relink', mediaId: item.id }),
+        disabled: many
+      },
+
+      ...missing.length > 1
+        ? [{ label: 'Relink all…', action: () => void relinkMissing() }]
+        : [],
       { separator: true, label: '' },
       { label: many ? `Remove ${ids.length} items` : 'Remove', danger: true, action: () => removeMedia(ids) }
     ];
@@ -496,7 +529,9 @@
     return () => window.removeEventListener('braincut:reveal-media', handler);
   });
 
-  const importPercent = $derived($importProgress && $importProgress.total > 0 ? Math.round(($importProgress.done / $importProgress.total) * 100) : 0);
+  const importPercent = $derived($importProgress && $importProgress.total > 0
+    ? Math.round($importProgress.done / $importProgress.total * 100)
+    : 0);
 </script>
 
 <div class="project-panel">
@@ -578,7 +613,7 @@
     aria-multiselectable="true"
     aria-label="Project items"
     tabindex="0"
-    {onkeydown}
+    onkeydown={onkeydown}
     onclick={(e) => {
       if (e.target === e.currentTarget) clearSelected();
     }}
@@ -694,7 +729,7 @@
       {#each items as item (item.id)}
         <MediaTile
           media={item}
-          {view}
+          view={view}
           size={$preferences.thumbnailSize}
           selected={selected.has(item.id)}
           progress={converting.get(item.id) ?? $proxyStatus.get(item.id) ?? null}

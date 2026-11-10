@@ -1,6 +1,6 @@
 <script lang="ts" module>
-  import { getBlobForMedia } from '$lib/media/sources';
-  import type { MediaItem } from '$lib/project/types';
+  import { getBlobForMedia } from '#lib/media/sources.ts';
+  import type { MediaItem } from '#lib/project/types.ts';
 
   // one blob lookup per media, shared by every clip that shows it
   const blobs = new Map<string, Promise<Blob | null>>();
@@ -27,12 +27,12 @@
 </script>
 
 <script lang="ts">
-  import type { Clip, Track } from '$lib/project/types';
-  import { filmstripFrames } from '$lib/media/thumbnails';
-  import { computePeaks, DEFAULT_PEAKS_PER_SECOND, getPeaks, peaksVersion } from '$lib/media/waveform';
-  import { clipSourceRange, sourceTimeAt } from '$lib/engine/clip-time';
-  import { bandKey, bandParam, bandValueToY, peakOfRange, timeToX, waveformGain } from '$lib/editor/timeline-interactions';
-  import Icon from '$lib/ui/Icon.svelte';
+  import type { Clip, Track } from '#lib/project/types.ts';
+  import { filmstripFrames } from '#lib/media/thumbnails.ts';
+  import { computePeaks, DEFAULT_PEAKS_PER_SECOND, getPeaks, peaksVersion } from '#lib/media/waveform.ts';
+  import { clipSourceRange, sourceTimeAt } from '#lib/engine/clip-time.ts';
+  import { bandKey, bandParam, bandValueToY, peakOfRange, timeToX, waveformGain } from '#lib/editor/timeline-interactions.ts';
+  import Icon from '#lib/ui/Icon.svelte';
 
   let {
     clip,

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { tick, untrack, type Snippet } from 'svelte';
-  import type { MenuItem } from '$lib/stores/app';
+  import type { MenuItem } from '#lib/stores/app.ts';
   import Icon from './Icon.svelte';
   import Self from './Menu.svelte';
 

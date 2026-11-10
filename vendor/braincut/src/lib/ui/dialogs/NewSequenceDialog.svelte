@@ -3,9 +3,9 @@
   import Field from '../Field.svelte';
   import NumberField from '../NumberField.svelte';
   import SelectField from '../SelectField.svelte';
-  import { createSequence } from '$lib/project/defaults';
-  import { edit, project, setActiveSequence } from '$lib/project/store';
-  import { fpsOptions, presetById, presets } from '$lib/templates/sequences';
+  import { createSequence } from '#lib/project/defaults.ts';
+  import { edit, project, setActiveSequence } from '#lib/project/store.ts';
+  import { fpsOptions, presetById, presets } from '#lib/templates/sequences.ts';
 
   let { onclose }: { onclose: () => void } = $props();
 

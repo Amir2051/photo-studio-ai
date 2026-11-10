@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
-  import { recordingFile, supportedRecordingMimeType } from '$lib/media/recording';
-  import type { Track } from '$lib/project/types';
+  import { recordingFile, supportedRecordingMimeType } from '#lib/media/recording.ts';
+  import type { Track } from '#lib/project/types.ts';
 
   let { tracks, onrecord }: { tracks: Track[]; onrecord: (file: File, trackId: string) => Promise<void> | void } = $props();
   let devices = $state<Array<{ deviceId: string; label: string }>>([]);

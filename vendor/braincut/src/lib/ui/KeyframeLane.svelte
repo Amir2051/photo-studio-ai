@@ -1,6 +1,6 @@
 <script lang="ts">
-  import type { Keyframe } from '$lib/project/types';
-  import { formatTimecode, snapToFrame } from '$lib/project/time';
+  import type { Keyframe } from '#lib/project/types.ts';
+  import { formatTimecode, snapToFrame } from '#lib/project/time.ts';
 
   // one strip of the mini timeline on the right of the effect controls. it
   // spans the clip, shows the playhead and, for an animated param, its

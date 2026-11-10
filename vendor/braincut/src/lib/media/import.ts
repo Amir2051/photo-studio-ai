@@ -1,19 +1,65 @@
 import { get } from 'svelte/store';
-import { id } from '$lib/project/ids';
-import { edit, project } from '$lib/project/store';
-import type { MediaItem } from '$lib/project/types';
-import { addToast, importProgress, renderStatus } from '$lib/stores/app';
+import { id } from '#lib/project/ids.ts';
+import { edit, project } from '#lib/project/store.ts';
+import type { MediaItem } from '#lib/project/types.ts';
+import { addToast, importProgress, renderStatus } from '#lib/stores/app.ts';
 import { probeFile } from './probe';
 import { registerSource } from './sources';
 import { posterThumbnail } from './thumbnails';
 
-export const VIDEO_EXTENSIONS = ['mp4', 'm4v', 'mov', 'webm', 'mkv', 'ts', 'm2ts', 'mts', 'avi', 'wmv', 'flv', '3gp', 'mxf', 'mpg', 'mpeg'];
-export const AUDIO_EXTENSIONS = ['mp3', 'wav', 'ogg', 'oga', 'opus', 'flac', 'aac', 'm4a', 'aiff', 'aif', 'wma'];
-export const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'avif', 'tif', 'tiff'];
+export const VIDEO_EXTENSIONS = [
+  'mp4',
+  'm4v',
+  'mov',
+  'webm',
+  'mkv',
+  'ts',
+  'm2ts',
+  'mts',
+  'avi',
+  'wmv',
+  'flv',
+  '3gp',
+  'mxf',
+  'mpg',
+  'mpeg',
+];
+export const AUDIO_EXTENSIONS = [
+  'mp3',
+  'wav',
+  'ogg',
+  'oga',
+  'opus',
+  'flac',
+  'aac',
+  'm4a',
+  'aiff',
+  'aif',
+  'wma',
+];
+export const IMAGE_EXTENSIONS = [
+  'png',
+  'jpg',
+  'jpeg',
+  'gif',
+  'webp',
+  'bmp',
+  'svg',
+  'avif',
+  'tif',
+  'tiff',
+];
 export const MEDIA_EXTENSIONS = [...VIDEO_EXTENSIONS, ...AUDIO_EXTENSIONS, ...IMAGE_EXTENSIONS];
 
 const PICKER_TYPES: FilePickerAcceptType[] = [
-  { description: 'Media', accept: { 'video/*': VIDEO_EXTENSIONS.map((e) => `.${e}`), 'audio/*': AUDIO_EXTENSIONS.map((e) => `.${e}`), 'image/*': IMAGE_EXTENSIONS.map((e) => `.${e}`) } }
+  {
+    description: 'Media',
+    accept: {
+      'video/*': VIDEO_EXTENSIONS.map((e) => `.${e}`),
+      'audio/*': AUDIO_EXTENSIONS.map((e) => `.${e}`),
+      'image/*': IMAGE_EXTENSIONS.map((e) => `.${e}`),
+    },
+  },
 ];
 
 export function isMediaFile(name: string, type = ''): boolean {
@@ -34,10 +80,15 @@ export type ImportInput = File[] | FileSystemFileHandle[] | ImportEntry[] | Data
 
 const PROBE_CONCURRENCY = 2;
 
-async function walkHandle(handle: FileSystemFileHandle | FileSystemDirectoryHandle, out: Entry[], prefix = '') {
+async function walkHandle(
+  handle: FileSystemFileHandle | FileSystemDirectoryHandle,
+  out: Entry[],
+  prefix = '',
+) {
   if (handle.kind === 'file') {
     const file = await handle.getFile();
-    if (isMediaFile(file.name, file.type)) out.push({ file, handle, path: prefix ? `${prefix}/${handle.name}` : null });
+    if (isMediaFile(file.name, file.type))
+      out.push({ file, handle, path: prefix ? `${prefix}/${handle.name}` : null });
     return;
   }
   for await (const child of handle.values()) {
@@ -58,7 +109,8 @@ async function walkEntry(entry: FileSystemEntry, out: Entry[]) {
   if (entry.isFile) {
     const file = await entryFile(entry as FileSystemFileEntry);
     const path = entry.fullPath ? entry.fullPath.replace(/^\//, '') : null;
-    if (isMediaFile(file.name, file.type)) out.push({ file, handle: null, path: path === file.name ? null : path });
+    if (isMediaFile(file.name, file.type))
+      out.push({ file, handle: null, path: path === file.name ? null : path });
     return;
   }
   if (!entry.isDirectory) return;
@@ -84,13 +136,23 @@ function collectDrop(transfer: DataTransfer): Promise<Entry[]> {
     for (const item of items) {
       if (item.kind !== 'file') continue;
       if (item.getAsFileSystemHandle) {
-        work.push(item.getAsFileSystemHandle().then((handle) => (handle ? walkHandle(handle as FileSystemFileHandle | FileSystemDirectoryHandle, out) : undefined)).catch(() => {}));
+        work.push(
+          item
+            .getAsFileSystemHandle()
+            .then((handle) =>
+              handle
+                ? walkHandle(handle as FileSystemFileHandle | FileSystemDirectoryHandle, out)
+                : undefined,
+            )
+            .catch(() => {}),
+        );
       } else {
         const entry = item.webkitGetAsEntry?.();
         if (entry) work.push(walkEntry(entry, out).catch(() => {}));
         else {
           const file = item.getAsFile();
-          if (file && isMediaFile(file.name, file.type)) out.push({ file, handle: null, path: null });
+          if (file && isMediaFile(file.name, file.type))
+            out.push({ file, handle: null, path: null });
         }
       }
     }
@@ -123,20 +185,43 @@ async function buildItem(entry: Entry, binId: string | null): Promise<MediaItem>
   const mediaId = id();
   const base: MediaItem = {
     ...(await probeFile(entry.file, entry.file.name).catch((e: unknown) => ({
-      name: entry.file.name, kind: 'video' as const, duration: 0, width: 0, height: 0, fps: null,
-      hasVideo: false, hasAudio: false, channels: 0, sampleRate: 0,
-      videoCodec: null, audioCodec: null, container: null,
-      mimeType: entry.file.type, fileSize: entry.file.size, rotation: 0 as const, alpha: false,
-      status: 'unsupported' as const, statusReason: `This file can't be read: ${e instanceof Error ? e.message : String(e)}`,
-      proxy: null, converted: null
+      name: entry.file.name,
+      kind: 'video' as const,
+      duration: 0,
+      width: 0,
+      height: 0,
+      fps: null,
+      hasVideo: false,
+      hasAudio: false,
+      channels: 0,
+      sampleRate: 0,
+      videoCodec: null,
+      audioCodec: null,
+      container: null,
+      mimeType: entry.file.type,
+      fileSize: entry.file.size,
+      rotation: 0 as const,
+      alpha: false,
+      status: 'unsupported' as const,
+      statusReason: `This file can't be read: ${e instanceof Error ? e.message : String(e)}`,
+      proxy: null,
+      converted: null,
     }))),
-    id: mediaId, binId, label: 'none', addedAt: Date.now(), thumbnail: null
+    id: mediaId,
+    binId,
+    label: 'none',
+    addedAt: Date.now(),
+    thumbnail: null,
   };
   // what it takes to find the same file again after the project is reopened
   base.fileName = entry.file.name;
   base.lastModified = entry.file.lastModified;
   if (entry.path) base.relativePath = entry.path;
-  registerSource(mediaId, { file: entry.file, handle: entry.handle ?? undefined, relativePath: entry.path });
+  registerSource(mediaId, {
+    file: entry.file,
+    handle: entry.handle ?? undefined,
+    relativePath: entry.path,
+  });
   if (base.status === 'ready') {
     base.thumbnail = await posterThumbnail(entry.file, base, { width: 160 }).catch(() => null);
   }
@@ -146,16 +231,22 @@ async function buildItem(entry: Entry, binId: string | null): Promise<MediaItem>
 function summarize(items: MediaItem[]) {
   const ready = items.filter((m) => m.status === 'ready');
   const unsupported = items.filter((m) => m.status === 'unsupported');
-  if (ready.length) addToast(`${ready.length} file${ready.length === 1 ? '' : 's'} imported`, 'success');
+  if (ready.length)
+    addToast(`${ready.length} file${ready.length === 1 ? '' : 's'} imported`, 'success');
   for (const item of unsupported.slice(0, 3)) {
-    addToast(`${item.name} needs converting before it can be used${item.statusReason ? `: ${item.statusReason}` : ''}`, 'warning', 7000);
+    addToast(
+      `${item.name} needs converting before it can be used${item.statusReason ? `: ${item.statusReason}` : ''}`,
+      'warning',
+      7000,
+    );
   }
-  if (unsupported.length > 3) addToast(`${unsupported.length - 3} more files need converting`, 'warning', 7000);
+  if (unsupported.length > 3)
+    addToast(`${unsupported.length - 3} more files need converting`, 'warning', 7000);
 }
 
 export async function importFiles(
   input: ImportInput,
-  opts: { binId?: string | null } = {}
+  opts: { binId?: string | null } = {},
 ): Promise<MediaItem[]> {
   if (!get(project)) {
     addToast('Open or create a project before importing media', 'warning');
@@ -226,7 +317,11 @@ function aborted(e: unknown): boolean {
 export async function pickFiles(opts: { binId?: string | null } = {}): Promise<MediaItem[]> {
   try {
     if ('showOpenFilePicker' in window) {
-      const handles = await window.showOpenFilePicker({ multiple: true, types: PICKER_TYPES, id: 'braincut-media' });
+      const handles = await window.showOpenFilePicker({
+        multiple: true,
+        types: PICKER_TYPES,
+        id: 'braincut-media',
+      });
       return importFiles(handles, opts);
     }
     return importFiles(await inputFallback(), opts);

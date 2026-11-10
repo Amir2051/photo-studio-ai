@@ -5,10 +5,10 @@
   import Field from '../Field.svelte';
   import NumberField from '../NumberField.svelte';
   import ToggleField from '../ToggleField.svelte';
-  import { activeSequence, editSequence, mediaById } from '$lib/project/store';
-  import { findClipById, linkedClips, setClipSpeed } from '$lib/project/ops';
-  import { formatTimecode, parseTimecode, snapToFrame } from '$lib/project/time';
-  import { addToast } from '$lib/stores/app';
+  import { activeSequence, editSequence, mediaById } from '#lib/project/store.ts';
+  import { findClipById, linkedClips, setClipSpeed } from '#lib/project/ops.ts';
+  import { formatTimecode, parseTimecode, snapToFrame } from '#lib/project/time.ts';
+  import { addToast } from '#lib/stores/app.ts';
 
   let { clipIds, onclose }: { clipIds: string[]; onclose: () => void } = $props();
 

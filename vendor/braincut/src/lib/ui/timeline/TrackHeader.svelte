@@ -1,11 +1,11 @@
 <script lang="ts">
-  import type { Sequence, Track } from '$lib/project/types';
-  import { commitPreview, editSequence, preview } from '$lib/project/store';
-  import * as ops from '$lib/project/ops';
-  import { AUDIO_TRACK_HEIGHT, VIDEO_TRACK_HEIGHT } from '$lib/project/defaults';
-  import { contextMenu, type MenuItem } from '$lib/stores/app';
-  import { MAX_TRACK_H, MIN_TRACK_H, kindIndex } from '$lib/editor/timeline-interactions';
-  import Icon from '$lib/ui/Icon.svelte';
+  import type { Sequence, Track } from '#lib/project/types.ts';
+  import { commitPreview, editSequence, preview } from '#lib/project/store.ts';
+  import * as ops from '#lib/project/ops.ts';
+  import { AUDIO_TRACK_HEIGHT, VIDEO_TRACK_HEIGHT } from '#lib/project/defaults.ts';
+  import { contextMenu, type MenuItem } from '#lib/stores/app.ts';
+  import { MAX_TRACK_H, MIN_TRACK_H, kindIndex } from '#lib/editor/timeline-interactions.ts';
+  import Icon from '#lib/ui/Icon.svelte';
 
   let { track, seq }: { track: Track; seq: Sequence } = $props();
 

@@ -1,7 +1,17 @@
-import { ALL_FORMATS, BlobSource, Conversion, ConversionCanceledError, Input, Mp4OutputFormat, Output, QUALITY_MEDIUM, StreamTarget } from 'mediabunny';
+import {
+  ALL_FORMATS,
+  BlobSource,
+  Conversion,
+  ConversionCanceledError,
+  Input,
+  Mp4OutputFormat,
+  Output,
+  QUALITY_MEDIUM,
+  StreamTarget,
+} from 'mediabunny';
 import { writable } from 'svelte/store';
-import { edit } from '$lib/project/store';
-import type { MediaItem } from '$lib/project/types';
+import { edit } from '#lib/project/store.ts';
+import type { MediaItem } from '#lib/project/types.ts';
 import { ensureRoom, proxyKey, remove, writeStream } from './opfs';
 import { invalidate } from './thumbnails';
 
@@ -33,7 +43,7 @@ export async function createProxy(
   blob: Blob,
   opts: { height?: number } = {},
   onProgress?: (value: number) => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<void> {
   if (media.kind !== 'video' || !media.hasVideo) throw new Error('Only video gets a proxy');
   const size = proxySize(media, opts.height ?? 540);
@@ -45,7 +55,7 @@ export async function createProxy(
   const writable = await writeStream(key);
   const output = new Output({
     format: new Mp4OutputFormat({ fastStart: false }),
-    target: new StreamTarget(writable, { chunked: true })
+    target: new StreamTarget(writable, { chunked: true }),
   });
 
   setProgress(media.id, 0);
@@ -54,10 +64,18 @@ export async function createProxy(
       input,
       output,
       tracks: 'primary',
-      video: { height: size.height, width: size.width, fit: 'contain', codec: 'avc', quality: QUALITY_MEDIUM, alpha: 'discard' },
-      audio: media.hasAudio ? { codec: 'aac', bitrate: 128_000 } : { discard: true }
+      video: {
+        height: size.height,
+        width: size.width,
+        fit: 'contain',
+        codec: 'avc',
+        quality: QUALITY_MEDIUM,
+        alpha: 'discard',
+      },
+      audio: media.hasAudio ? { codec: 'aac', bitrate: 128_000 } : { discard: true },
     });
-    if (!conversion.isValid) throw new Error('This file can\'t be turned into a proxy by this browser');
+    if (!conversion.isValid)
+      throw new Error("This file can't be turned into a proxy by this browser");
     conversion.onProgress = (value) => {
       setProgress(media.id, value);
       onProgress?.(value);
@@ -76,7 +94,8 @@ export async function createProxy(
     });
   } catch (e) {
     await remove(key).catch(() => {});
-    if (e instanceof ConversionCanceledError) throw new DOMException('Proxy cancelled', 'AbortError');
+    if (e instanceof ConversionCanceledError)
+      throw new DOMException('Proxy cancelled', 'AbortError');
     throw e;
   } finally {
     input.dispose();

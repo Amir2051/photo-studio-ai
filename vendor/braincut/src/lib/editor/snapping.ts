@@ -1,4 +1,4 @@
-import type { Id, Sequence } from '$lib/project/types';
+import type { Id, Sequence } from '#lib/project/types.ts';
 
 export type SnapKind = 'clip-start' | 'clip-end' | 'playhead' | 'marker' | 'in' | 'out' | 'start';
 
@@ -47,7 +47,10 @@ export function snap(time: number, points: SnapPoint[], tolerance: number): Snap
   let bestDistance = tolerance;
   for (const point of points) {
     const distance = Math.abs(point.time - time);
-    if (distance < bestDistance || (distance === bestDistance && best && point.kind === 'playhead')) {
+    if (
+      distance < bestDistance ||
+      (distance === bestDistance && best && point.kind === 'playhead')
+    ) {
       best = point;
       bestDistance = distance;
     }
@@ -62,12 +65,18 @@ export interface SnapRangeResult {
 }
 
 // a dragged clip snaps with whichever of its edges is closer to something
-export function snapRange(start: number, duration: number, points: SnapPoint[], tolerance: number): SnapRangeResult {
+export function snapRange(
+  start: number,
+  duration: number,
+  points: SnapPoint[],
+  tolerance: number,
+): SnapRangeResult {
   const head = snap(start, points, tolerance);
   const tail = snap(start + duration, points, tolerance);
   const headDistance = head.point ? Math.abs(head.time - start) : Infinity;
   const tailDistance = tail.point ? Math.abs(tail.time - (start + duration)) : Infinity;
-  if (head.point && headDistance <= tailDistance) return { start: head.time, point: head.point, edge: 'start' };
+  if (head.point && headDistance <= tailDistance)
+    return { start: head.time, point: head.point, edge: 'start' };
   if (tail.point) return { start: tail.time - duration, point: tail.point, edge: 'end' };
   return { start, point: null, edge: null };
 }

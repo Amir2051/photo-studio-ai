@@ -35,18 +35,6 @@ jobs:
         run: npm run check --prefix vendor/braincut
       - name: Test BrainCUT editor
         run: npm test --prefix vendor/braincut
-      - name: Build BrainCUT editor
-        run: npm run build --prefix vendor/braincut
-      - name: Sync compiled editor into the published site
-        run: |
-          rm -rf public/video-studio
-          mkdir -p public/video-studio
-          cp -a vendor/braincut/build/. public/video-studio/
-      - name: Verify published editor bundle
-        run: |
-          test -s public/video-studio/index.html
-          grep -R -q 'CLIP ACTIONS' public/video-studio/_app/immutable
-          grep -R -q 'PRODUCER AUDIO DESK' public/video-studio/_app/immutable
       - name: Run root application tests
         run: npx vitest run tests
       - name: Type-check and build
@@ -59,6 +47,11 @@ jobs:
           VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
           VITE_FIREBASE_MEASUREMENT_ID: ${{ secrets.VITE_FIREBASE_MEASUREMENT_ID }}
         run: npm run build
+      - name: Verify published editor bundle
+        run: |
+          test -s public/video-studio/index.html
+          grep -R -q 'CLIP ACTIONS' public/video-studio/_app/immutable
+          grep -R -q 'PRODUCER AUDIO DESK' public/video-studio/_app/immutable
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:

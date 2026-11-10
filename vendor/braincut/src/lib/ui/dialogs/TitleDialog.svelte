@@ -5,9 +5,9 @@
   import ColorField from '../ColorField.svelte';
   import SelectField from '../SelectField.svelte';
   import ToggleField from '../ToggleField.svelte';
-  import { activeSequence, commitPreview, preview } from '$lib/project/store';
-  import type { TitleData } from '$lib/project/types';
-  import { ensureFontLoaded, fontFamilies } from '$lib/engine/text';
+  import { activeSequence, commitPreview, preview } from '#lib/project/store.ts';
+  import type { TitleData } from '#lib/project/types.ts';
+  import { ensureFontLoaded, fontFamilies } from '#lib/engine/text.ts';
 
   // edits the title of one clip in place. every control writes straight into
   // the project, so the program monitor shows the text while it is typed;

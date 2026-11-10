@@ -4,9 +4,13 @@
   "private": true,
   "description": "Every Frame First Studio — private-by-default photo editing",
   "type": "module",
+  "engines": {
+    "node": ">=22.17"
+  },
   "scripts": {
     "dev": "vite --config vite.config.ts",
-    "build": "tsc -b && vite build --config vite.config.ts",
+    "build": "npm run build:video-studio && tsc -b && vite build --config vite.config.ts",
+    "build:video-studio": "node scripts/build-video-studio.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run tests",

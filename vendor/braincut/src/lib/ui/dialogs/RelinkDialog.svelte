@@ -1,11 +1,11 @@
 <script lang="ts">
   import Dialog from '../Dialog.svelte';
   import Icon from '../Icon.svelte';
-  import { mediaById, project } from '$lib/project/store';
-  import { formatDuration } from '$lib/project/time';
-  import { formatBytes } from '$lib/media/opfs';
-  import { relinkMedia, relinkMissing, sourceName } from '$lib/media/sources';
-  import { addToast } from '$lib/stores/app';
+  import { mediaById, project } from '#lib/project/store.ts';
+  import { formatDuration } from '#lib/project/time.ts';
+  import { formatBytes } from '#lib/media/opfs.ts';
+  import { relinkMedia, relinkMissing, sourceName } from '#lib/media/sources.ts';
+  import { addToast } from '#lib/stores/app.ts';
 
   let { mediaId, onclose }: { mediaId: string; onclose: () => void } = $props();
 

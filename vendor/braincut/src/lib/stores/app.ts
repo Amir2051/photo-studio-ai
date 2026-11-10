@@ -1,7 +1,7 @@
 import { writable } from 'svelte/store';
-import { browser } from '$app/environment';
-import type { ToolId } from '$lib/editor/tools';
-import type { DragPayload } from '$lib/editor/drag';
+import { browser } from '$app/env';
+import type { ToolId } from '#lib/editor/tools.ts';
+import type { DragPayload } from '#lib/editor/drag.ts';
 
 export type ToastType = 'info' | 'success' | 'warning' | 'error';
 
@@ -44,7 +44,12 @@ export const timelineScroll = writable(0);
 export const snapEnabled = writable(true);
 
 // what the source monitor is showing, with its own in/out and playhead
-export const sourceMedia = writable<{ mediaId: string; in: number; out: number; time: number } | null>(null);
+export const sourceMedia = writable<{
+  mediaId: string;
+  in: number;
+  out: number;
+  time: number;
+} | null>(null);
 
 export type LeftPanelTab = 'source' | 'effect-controls' | 'audio-mixer' | 'color' | 'multicam';
 export type BottomPanelTab = 'project' | 'effects' | 'markers' | 'history' | 'text';
@@ -62,7 +67,11 @@ export type Dialog =
   | { kind: 'relink'; mediaId: string }
   | { kind: 'speed'; clipIds: string[] }
   | { kind: 'title'; clipId: string }
-  | { kind: 'rename'; target: 'project' | 'clip' | 'media' | 'sequence' | 'bin'; id: string };
+  | {
+      kind: 'rename';
+      target: 'project' | 'clip' | 'media' | 'sequence' | 'bin';
+      id: string;
+    };
 
 export const dialog = writable<Dialog | null>(null);
 
@@ -84,11 +93,16 @@ export interface MenuItem {
 
 export const contextMenu = writable<{ x: number; y: number; items: MenuItem[] } | null>(null);
 
-export const exportJob = writable<{ progress: number; stage: string; eta: number | null; cancel(): void } | null>(null);
+export const exportJob = writable<{
+  progress: number;
+  stage: string;
+  eta: number | null;
+  cancel(): void;
+} | null>(null);
 
 export type RenderStatus = 'idle' | 'playing' | 'rendering' | 'importing' | 'converting';
-export const renderStatus = writable<RenderStatus>('idle');
 
+export const renderStatus = writable<RenderStatus>('idle');
 export const importProgress = writable<{ done: number; total: number; name: string } | null>(null);
 
 // preview resolution factor, dropped while scrubbing big sequences
@@ -136,7 +150,7 @@ function createPanelSizes() {
         persist(next);
         return next;
       });
-    }
+    },
   };
 }
 

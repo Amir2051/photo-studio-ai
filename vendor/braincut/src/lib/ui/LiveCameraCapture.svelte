@@ -1,13 +1,13 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import { get } from 'svelte/store';
-  import { recordingFile } from '$lib/media/recording';
-  import { importFiles } from '$lib/media/import';
-  import { createClipFromMedia } from '$lib/project/defaults';
-  import { addTrack, canPlace, placeClips } from '$lib/project/ops';
-  import { activeSequence, editSequence } from '$lib/project/store';
-  import { addToast, playhead, selection } from '$lib/stores/app';
-  import type { Track, TrackKind } from '$lib/project/types';
+  import { recordingFile } from '#lib/media/recording.ts';
+  import { importFiles } from '#lib/media/import.ts';
+  import { createClipFromMedia } from '#lib/project/defaults.ts';
+  import { addTrack, canPlace, placeClips } from '#lib/project/ops.ts';
+  import { activeSequence, editSequence } from '#lib/project/store.ts';
+  import { addToast, playhead, selection } from '#lib/stores/app.ts';
+  import type { Track, TrackKind } from '#lib/project/types.ts';
 
   let videoElement = $state<HTMLVideoElement | null>(null);
   let cameras = $state<MediaDeviceInfo[]>([]);
@@ -104,7 +104,7 @@
     }
   }
 
-  function freeTrack(seq: import('$lib/project/types').Sequence, kind: TrackKind, start: number, duration: number, preferred?: string): Track | undefined {
+  function freeTrack(seq: import('#lib/project/types.ts').Sequence, kind: TrackKind, start: number, duration: number, preferred?: string): Track | undefined {
     const tracks = seq.tracks.filter((track) => track.kind === kind && !track.locked);
     const chosen = tracks.find((track) => track.id === preferred && canPlace(seq, track.id, start, duration))
       ?? tracks.find((track) => canPlace(seq, track.id, start, duration));
@@ -144,7 +144,7 @@
     addToast(`Camera recording added to ${trackName(get(activeSequence), videoTrackId)}${audioTrackId ? ` + ${trackName(get(activeSequence), audioTrackId)}` : ''}.`, 'success');
   }
 
-  function trackName(seq: import('$lib/project/types').Sequence | null, id: string): string {
+  function trackName(seq: import('#lib/project/types.ts').Sequence | null, id: string): string {
     return seq?.tracks.find((track) => track.id === id)?.name ?? 'timeline';
   }
 

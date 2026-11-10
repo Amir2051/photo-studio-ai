@@ -1,12 +1,17 @@
 import { get } from 'svelte/store';
 import { tick } from 'svelte';
-import type { Clip, Id, Sequence } from '$lib/project/types';
-import { activeSequence, editSequence, mediaById, selectedClips } from '$lib/project/store';
-import * as ops from '$lib/project/ops';
-import { clipEnd, createAdjustmentClip, createColorClip, createTitleClip } from '$lib/project/defaults';
-import { isAnimated, setKeyframe } from '$lib/project/keyframes';
-import { fitScale } from '$lib/engine/transform';
-import { program } from '$lib/engine/session';
+import type { Clip, Id, Sequence } from '#lib/project/types.ts';
+import { activeSequence, editSequence, mediaById, selectedClips } from '#lib/project/store.ts';
+import * as ops from '#lib/project/ops.ts';
+import {
+  clipEnd,
+  createAdjustmentClip,
+  createColorClip,
+  createTitleClip,
+} from '#lib/project/defaults.ts';
+import { isAnimated, setKeyframe } from '#lib/project/keyframes.ts';
+import { fitScale } from '#lib/engine/transform.ts';
+import { program } from '#lib/engine/session.ts';
 import {
   addToast,
   bottomPanelTab,
@@ -17,9 +22,9 @@ import {
   playhead,
   previewQuality,
   selection,
-  snapEnabled
-} from '$lib/stores/app';
-import { preferences } from '$lib/stores/preferences';
+  snapEnabled,
+} from '#lib/stores/app.ts';
+import { preferences } from '#lib/stores/preferences.ts';
 
 // the actions the shortcuts and the command palette share that don't belong
 // to the timeline module: marks, ripple trims, generated clips, the player
@@ -58,7 +63,8 @@ function clipsUnderPlayhead(s: Sequence, time: number): { trackId: Id; clip: Cli
   const selected = new Set(get(selection));
   const wanted = new Set<Id>();
   if (selected.size) {
-    for (const track of s.tracks) if (track.clips.some((c) => selected.has(c.id))) wanted.add(track.id);
+    for (const track of s.tracks)
+      if (track.clips.some((c) => selected.has(c.id))) wanted.add(track.id);
   }
   const out: { trackId: Id; clip: Clip }[] = [];
   for (const track of s.tracks) {
@@ -86,7 +92,7 @@ export function rippleTrimToPlayhead(edge: 'previous' | 'next'): void {
   const to = edge === 'previous' ? time : Math.min(...under.map((u) => clipEnd(u.clip)));
   if (to - from < 1 / s.fps / 2) return;
   editSequence(edge === 'previous' ? 'ripple trim previous edit' : 'ripple trim next edit', (d) =>
-    ops.extractRange(d, from, to, trackIds)
+    ops.extractRange(d, from, to, trackIds),
   );
 }
 
@@ -127,7 +133,11 @@ export function addGeneratedClip(kind: 'title' | 'color' | 'adjustment'): void {
   const duration = get(preferences).stillImageDuration;
   const at = get(playhead);
   const clip =
-    kind === 'title' ? createTitleClip(at, duration) : kind === 'color' ? createColorClip(at, duration, '#000000') : createAdjustmentClip(at, duration);
+    kind === 'title'
+      ? createTitleClip(at, duration)
+      : kind === 'color'
+        ? createColorClip(at, duration, '#000000')
+        : createAdjustmentClip(at, duration);
   editSequence(`add ${clip.name.toLowerCase()}`, (d) => {
     ops.overwriteClip(d, track.id, clip, at);
   });

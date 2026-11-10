@@ -1,10 +1,10 @@
 import { createStore, del, get, set } from 'idb-keyval';
 import { get as read, writable, type Readable } from 'svelte/store';
-import { dirty, edit, markSaved, project } from '$lib/project/store';
-import type { MediaItem, MediaStatus, Project } from '$lib/project/types';
+import { dirty, edit, markSaved, project } from '#lib/project/store.ts';
+import type { MediaItem, MediaStatus, Project } from '#lib/project/types.ts';
 import { probeFile, type ProbeResult } from './probe';
 import { readBlob } from './opfs';
-import { addToast } from '$lib/stores/app';
+import { addToast } from '#lib/stores/app.ts';
 
 // the project file only knows a media item by id. where the bytes actually
 // come from lives here: a file handle when the browser gave us one, else
@@ -49,7 +49,9 @@ const prior = new Map<string, { status: MediaStatus; reason?: string }>();
 // handles whose permission ended with the last session. asking needs a
 // click, so the project panel offers one button for all of them at once
 const locked = writable<Map<string, { handle: FileSystemFileHandle; name: string }>>(new Map());
-export const needsPermission: Readable<Map<string, { handle: FileSystemFileHandle; name: string }>> = { subscribe: locked.subscribe };
+export const needsPermission: Readable<
+  Map<string, { handle: FileSystemFileHandle; name: string }>
+> = { subscribe: locked.subscribe };
 
 function identityKeys(name: string, size: number, lastModified?: number): string[] {
   if (!name || !size) return [];
@@ -63,7 +65,7 @@ function keysForMedia(media: MediaItem): string[] {
 
 export function registerSource(
   mediaId: string,
-  source: { file?: File | Blob; handle?: FileSystemFileHandle; relativePath?: string | null }
+  source: { file?: File | Blob; handle?: FileSystemFileHandle; relativePath?: string | null },
 ): void {
   const file = source.file instanceof File ? source.file : null;
   const record: SourceRecord = {
@@ -72,7 +74,7 @@ export function registerSource(
     name: file?.name ?? source.handle?.name ?? '',
     size: source.file?.size ?? 0,
     lastModified: file?.lastModified ?? 0,
-    relativePath: source.relativePath ?? null
+    relativePath: source.relativePath ?? null,
   };
   memory.set(mediaId, record);
   const stored: StoredRecord = {
@@ -81,7 +83,7 @@ export function registerSource(
     name: record.name,
     size: record.size,
     lastModified: record.lastModified,
-    relativePath: record.relativePath
+    relativePath: record.relativePath,
   };
   set(mediaId, stored, store).catch(() => {});
   for (const key of identityKeys(record.name, record.size, record.lastModified)) {
@@ -97,9 +99,14 @@ export function sourceName(mediaId: string): string | null {
   return memory.get(mediaId)?.name ?? null;
 }
 
-async function fromHandle(handle: FileSystemFileHandle, interactive: boolean): Promise<File | null> {
+async function fromHandle(
+  handle: FileSystemFileHandle,
+  interactive: boolean,
+): Promise<File | null> {
   try {
-    const state = handle.queryPermission ? await handle.queryPermission({ mode: 'read' }) : 'granted';
+    const state = handle.queryPermission
+      ? await handle.queryPermission({ mode: 'read' })
+      : 'granted';
     if (state === 'granted') return await handle.getFile();
     // requesting needs a user gesture, outside of one it only throws
     if (state !== 'prompt' || !interactive || !handle.requestPermission) return null;
@@ -117,7 +124,7 @@ function toRecord(stored: StoredRecord): SourceRecord {
     name: stored.name,
     size: stored.size,
     lastModified: stored.lastModified ?? 0,
-    relativePath: stored.relativePath ?? null
+    relativePath: stored.relativePath ?? null,
   };
 }
 
@@ -164,7 +171,10 @@ export async function getBlob(mediaId: string): Promise<Blob | null> {
 
 // the original is what exports read. a proxy only stands in for preview,
 // a converted copy stands in whenever the browser can't decode the original
-export async function getBlobForMedia(media: MediaItem, opts: { preferProxy?: boolean } = {}): Promise<Blob | null> {
+export async function getBlobForMedia(
+  media: MediaItem,
+  opts: { preferProxy?: boolean } = {},
+): Promise<Blob | null> {
   if (opts.preferProxy && media.proxy) {
     const proxy = await readBlob(media.proxy.key);
     if (proxy) return proxy;
@@ -180,7 +190,7 @@ export async function getBlobForMedia(media: MediaItem, opts: { preferProxy?: bo
 function missingReason(record: SourceRecord | null): string {
   return record?.handle
     ? 'The file needs permission again, or it moved. Grant access or relink it'
-    : 'The file isn\'t available anymore, relink it to keep editing';
+    : "The file isn't available anymore, relink it to keep editing";
 }
 
 export async function restoreSources(p: Project): Promise<void> {
@@ -192,16 +202,19 @@ export async function restoreSources(p: Project): Promise<void> {
   for (const media of p.media) {
     const record = await recordFor(media.id, media);
     const blob = record ? await readRecord(record, false) : null;
-    const usable = blob !== null || (media.converted !== null && (await readBlob(media.converted.key)) !== null);
+    const usable =
+      blob !== null || (media.converted !== null && (await readBlob(media.converted.key)) !== null);
     if (usable) {
       // a project saved while a file was gone comes back to life here
       if (media.status === 'missing') back.push(media.id);
       continue;
     }
     missing.push(media.id);
-    if (media.status !== 'missing') prior.set(media.id, { status: media.status, reason: media.statusReason });
+    if (media.status !== 'missing')
+      prior.set(media.id, { status: media.status, reason: media.statusReason });
     reasons.set(media.id, missingReason(record));
-    if (record?.handle) waiting.set(media.id, { handle: record.handle, name: record.name || media.name });
+    if (record?.handle)
+      waiting.set(media.id, { handle: record.handle, name: record.name || media.name });
   }
   locked.set(waiting);
   if ((!missing.length && !back.length) || read(project)?.id !== p.id) return;
@@ -219,7 +232,11 @@ export async function restoreSources(p: Project): Promise<void> {
   // hooking the media back up is bookkeeping, not an edit worth saving
   if (!wasDirty) markSaved();
   if (missing.length) {
-    addToast(`${missing.length} file${missing.length === 1 ? ' is' : 's are'} missing, the project panel can relink ${missing.length === 1 ? 'it' : 'them'}`, 'warning', 7000);
+    addToast(
+      `${missing.length} file${missing.length === 1 ? ' is' : 's are'} missing, the project panel can relink ${missing.length === 1 ? 'it' : 'them'}`,
+      'warning',
+      7000,
+    );
   }
 }
 
@@ -285,7 +302,10 @@ function stopWaiting(mediaId: string): void {
   });
 }
 
-export async function relinkMedia(mediaId: string, source: File | FileSystemFileHandle): Promise<void> {
+export async function relinkMedia(
+  mediaId: string,
+  source: File | FileSystemFileHandle,
+): Promise<void> {
   const file = source instanceof File ? source : await source.getFile();
   registerSource(mediaId, source instanceof File ? { file } : { file, handle: source });
   stopWaiting(mediaId);
@@ -297,7 +317,12 @@ export async function relinkMedia(mediaId: string, source: File | FileSystemFile
   // a single file picker gives no way to look at the folder around it, so
   // the rest of the missing files need one more pick
   const left = (read(project)?.media ?? []).filter((m) => m.status === 'missing').length;
-  if (left) addToast(`${left} more file${left === 1 ? '' : 's'} still missing, Relink all points at their folder`, 'warning', 6000);
+  if (left)
+    addToast(
+      `${left} more file${left === 1 ? '' : 's'} still missing, Relink all points at their folder`,
+      'warning',
+      6000,
+    );
 }
 
 interface Candidate {
@@ -308,7 +333,11 @@ interface Candidate {
 
 // the file a missing item most likely is: same name and size first, then the
 // same name, then a file of exactly the same size whose duration matches
-async function match(media: MediaItem, candidates: Candidate[], used: Set<Candidate>): Promise<Candidate | null> {
+async function match(
+  media: MediaItem,
+  candidates: Candidate[],
+  used: Set<Candidate>,
+): Promise<Candidate | null> {
   const free = candidates.filter((c) => !used.has(c));
   const wanted = (media.fileName ?? media.name).toLowerCase();
   const byName = free.filter((c) => c.file.name.toLowerCase() === wanted);
@@ -325,7 +354,11 @@ async function match(media: MediaItem, candidates: Candidate[], used: Set<Candid
   return null;
 }
 
-async function walk(dir: FileSystemDirectoryHandle, prefix: string, out: Candidate[]): Promise<void> {
+async function walk(
+  dir: FileSystemDirectoryHandle,
+  prefix: string,
+  out: Candidate[],
+): Promise<void> {
   for await (const entry of dir.values()) {
     if (entry.name.startsWith('.')) continue;
     const path = prefix ? `${prefix}/${entry.name}` : entry.name;
@@ -335,7 +368,9 @@ async function walk(dir: FileSystemDirectoryHandle, prefix: string, out: Candida
 }
 
 // relinks every missing item at once, from one folder or one set of files
-export async function relinkAll(input: File[] | FileSystemDirectoryHandle): Promise<{ relinked: number; total: number }> {
+export async function relinkAll(
+  input: File[] | FileSystemDirectoryHandle,
+): Promise<{ relinked: number; total: number }> {
   const candidates: Candidate[] = [];
   if (Array.isArray(input)) {
     for (const file of input) {
@@ -356,7 +391,11 @@ export async function relinkAll(input: File[] | FileSystemDirectoryHandle): Prom
     used.add(candidate);
     const probe = await probeFile(candidate.file, candidate.file.name).catch(() => null);
     if (!probe) continue;
-    registerSource(media.id, { file: candidate.file, handle: candidate.handle ?? undefined, relativePath: candidate.path });
+    registerSource(media.id, {
+      file: candidate.file,
+      handle: candidate.handle ?? undefined,
+      relativePath: candidate.path,
+    });
     stopWaiting(media.id);
     hits.push({ mediaId: media.id, candidate, probe });
   }
@@ -376,7 +415,12 @@ export async function relinkAll(input: File[] | FileSystemDirectoryHandle): Prom
 // the folder the footage moved to, or the files themselves when the browser
 // has no directory picker
 function pickSources(): Promise<File[] | FileSystemDirectoryHandle | null> {
-  const w = window as Window & { showDirectoryPicker?: (opts: { mode: string; id: string }) => Promise<FileSystemDirectoryHandle> };
+  const w = window as Window & {
+    showDirectoryPicker?: (opts: {
+      mode: string;
+      id: string;
+    }) => Promise<FileSystemDirectoryHandle>;
+  };
   if (typeof w.showDirectoryPicker === 'function') {
     return w.showDirectoryPicker({ mode: 'read', id: 'braincut-media' }).catch(() => null);
   }
@@ -405,7 +449,12 @@ export async function relinkMissing(): Promise<void> {
   const { relinked, total } = await relinkAll(picked);
   if (!total) addToast('Nothing is missing right now', 'info');
   else if (!relinked) addToast('None of the missing files were in there', 'warning', 5000);
-  else addToast(`Relinked ${relinked} of ${total} file${total === 1 ? '' : 's'}`, relinked === total ? 'success' : 'warning', 5000);
+  else
+    addToast(
+      `Relinked ${relinked} of ${total} file${total === 1 ? '' : 's'}`,
+      relinked === total ? 'success' : 'warning',
+      5000,
+    );
 }
 
 export async function forgetSource(mediaId: string): Promise<void> {

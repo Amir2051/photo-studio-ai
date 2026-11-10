@@ -1,7 +1,7 @@
 <script lang="ts">
-  import type { Transition } from '$lib/project/types';
-  import { transitionDef } from '$lib/engine/transitions/registry';
-  import { timeToX } from '$lib/editor/timeline-interactions';
+  import type { Transition } from '#lib/project/types.ts';
+  import { transitionDef } from '#lib/engine/transitions/registry.ts';
+  import { timeToX } from '#lib/editor/timeline-interactions.ts';
 
   let {
     transition,

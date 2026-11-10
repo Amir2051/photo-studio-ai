@@ -3,7 +3,7 @@
 // setInputs, drives progress and draws a full-frame sprite with this filter
 import { Filter, GlProgram, Texture, defaultFilterVert } from 'pixi.js';
 import type { UniformData } from 'pixi.js';
-import type { ParamValue } from '$lib/project/types';
+import type { ParamValue } from '#lib/project/types.ts';
 import { hexToRgb } from '../effects/filters';
 import { filterCompiles } from '../effects/shader-check';
 import { buildTransitionFragment, uniformTypeFor } from './glsl';
@@ -13,17 +13,28 @@ import type { TransitionDef } from './registry';
 
 type GlDefault = number | boolean | number[];
 
-function initialValue(type: GlParamType, def: GlDefault | undefined): number | Float32Array | Int32Array {
+function initialValue(
+  type: GlParamType,
+  def: GlDefault | undefined,
+): number | Float32Array | Int32Array {
   const list = Array.isArray(def) ? def : [];
   switch (type) {
-    case 'float': return typeof def === 'number' ? def : 0;
-    case 'int': return typeof def === 'number' ? def : 0;
-    case 'bool': return def ? 1 : 0;
-    case 'vec2': return new Float32Array([list[0] ?? 0, list[1] ?? 0]);
-    case 'ivec2': return new Int32Array([list[0] ?? 0, list[1] ?? 0]);
-    case 'vec3': return new Float32Array([list[0] ?? 0, list[1] ?? 0, list[2] ?? 0]);
-    case 'vec4': return new Float32Array([list[0] ?? 0, list[1] ?? 0, list[2] ?? 0, list[3] ?? 1]);
-    default: return 0;
+    case 'float':
+      return typeof def === 'number' ? def : 0;
+    case 'int':
+      return typeof def === 'number' ? def : 0;
+    case 'bool':
+      return def ? 1 : 0;
+    case 'vec2':
+      return new Float32Array([list[0] ?? 0, list[1] ?? 0]);
+    case 'ivec2':
+      return new Int32Array([list[0] ?? 0, list[1] ?? 0]);
+    case 'vec3':
+      return new Float32Array([list[0] ?? 0, list[1] ?? 0, list[2] ?? 0]);
+    case 'vec4':
+      return new Float32Array([list[0] ?? 0, list[1] ?? 0, list[2] ?? 0, list[3] ?? 1]);
+    default:
+      return 0;
   }
 }
 
@@ -38,7 +49,7 @@ export class TransitionFilter extends Filter {
 
     const uniforms: Record<string, UniformData> = {
       progress: { value: 0, type: 'f32' },
-      ratio: { value: 1, type: 'f32' }
+      ratio: { value: 1, type: 'f32' },
     };
     const glTypes: Record<string, GlParamType> = {};
     for (const [key, type] of Object.entries(gl.paramsTypes)) {
@@ -53,15 +64,15 @@ export class TransitionFilter extends Filter {
       glProgram: GlProgram.from({
         vertex: defaultFilterVert,
         fragment: buildTransitionFragment(gl.name, gl.glsl),
-        name: `transition-${def.id}`
+        name: `transition-${def.id}`,
       }),
       resources: {
         transitionUniforms: uniforms,
         uFromTexture: empty,
         uFromSampler: empty.style,
         uToTexture: empty,
-        uToSampler: empty.style
-      }
+        uToSampler: empty.style,
+      },
     });
     this.def = def;
     this.glTypes = glTypes;
@@ -112,7 +123,8 @@ export class TransitionFilter extends Filter {
       switch (type) {
         case 'float':
         case 'int':
-          if (typeof value === 'number') this.uniforms[key] = type === 'int' ? Math.round(value) : value;
+          if (typeof value === 'number')
+            this.uniforms[key] = type === 'int' ? Math.round(value) : value;
           break;
         case 'bool':
           this.uniforms[key] = value ? 1 : 0;

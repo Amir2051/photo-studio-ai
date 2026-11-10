@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { base } from '$app/paths';
-  import Logo from '$lib/ui/Logo.svelte';
+  import { resolve } from '$app/paths';
+  import Logo from '#lib/ui/Logo.svelte';
 </script>
 
 <svelte:head>
@@ -14,7 +14,7 @@
 <div class="legal">
   <nav class="nav">
     <div class="nav-inner">
-      <a href="{base}/" class="logo">
+      <a href="{resolve('')}/" class="logo">
         <span class="logo-mark"><Logo size={24} /></span>
         <span class="logo-name">brainCUT</span>
       </a>
@@ -60,12 +60,18 @@
       <code>braincut-effects-collapsed</code> (which effect groups you have folded away).
     </p>
     <p>
-      <strong>IndexedDB</strong> holds two databases. <code>braincut</code> keeps your saved projects, the
-      recents list and which project was open last. <code>braincut-media</code> keeps three stores:
-      <code>sources</code>, what points a project back at its footage &mdash; the file's name, size, last
-      modified date and the path it was picked from, plus a handle to it on disk, a copy of the file, or
-      both, following the rule above; <code>peaks</code>, the computed audio waveforms; and <code>files</code>,
-      used only in browsers that cannot write to the origin private file system directly.
+      <strong>IndexedDB</strong>
+      holds two databases. 
+      <code>braincut</code>
+      keeps your saved projects, the recents list and which project was open last. 
+      <code>braincut-media</code>
+      keeps three stores: 
+      <code>sources</code>
+      , what points a project back at its footage — the file's name, size, last modified date and the path it was picked from, plus a handle to it on disk, a copy of the file, or both, following the rule above; 
+      <code>peaks</code>
+      , the computed audio waveforms; and 
+      <code>files</code>
+      , used only in browsers that cannot write to the origin private file system directly.
     </p>
     <p>
       <strong>The origin private file system</strong> holds the generated copies of your media: proxies
@@ -83,28 +89,21 @@
     </p>
 
     <h2>Analytics</h2>
+    <p>We do not use tracking scripts, analytics services, or advertising networks.</p>
+    <h2>Third-Party Services</h2>
+    <p>Exactly two things ever talk to the network, and neither of them receives your media.</p>
+
     <p>
-      We do not use tracking scripts, analytics services, or advertising networks.
+      <strong>Fonts.</strong>
+      The interface loads its fonts from Google Fonts (fonts.googleapis.com and fonts.gstatic.com) while the page loads. Google's privacy policy applies to that request.
     </p>
 
-    <h2>Third-Party Services</h2>
     <p>
-      Exactly two things ever talk to the network, and neither of them receives your media.
+      <strong>The converter, only when you convert.</strong>
+      Some files use codecs the browser cannot decode on its own, HEVC and ProRes among them. Converting one of those downloads the ffmpeg.wasm core from jsDelivr, once, and keeps it in the browser cache for later. Only the core's own file names are requested, never your media. If you never convert a file, this request never happens. The mirror can be changed or emptied entirely through the ffmpegMirror preference, which turns conversion off.
     </p>
     <p>
-      <strong>Fonts.</strong> The interface loads its fonts from Google Fonts (fonts.googleapis.com and
-      fonts.gstatic.com) while the page loads. Google's privacy policy applies to that request.
-    </p>
-    <p>
-      <strong>The converter, only when you convert.</strong> Some files use codecs the browser cannot decode
-      on its own, HEVC and ProRes among them. Converting one of those downloads the ffmpeg.wasm core from
-      jsDelivr, once, and keeps it in the browser cache for later. Only the core's own file names are
-      requested, never your media. If you never convert a file, this request never happens. The mirror can
-      be changed or emptied entirely through the ffmpegMirror preference, which turns conversion off.
-    </p>
-    <p>
-      That is the complete list. There is no backend, no API, no error reporting and no update check. Once
-      the page has loaded, the editor works with the network switched off.
+      That is the complete list. There is no backend, no API, no error reporting and no update check. Once the page has loaded, the editor works with the network switched off.
     </p>
 
     <h2>Cookies</h2>
@@ -125,9 +124,7 @@
     </p>
   </div>
 
-  <footer class="footer">
-    <a href="{base}/">&larr; Back to brainCUT</a>
-  </footer>
+  <footer class="footer"><a href="{resolve('')}/">← Back to brainCUT</a></footer>
 </div>
 
 <style>

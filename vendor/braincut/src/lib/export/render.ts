@@ -1,14 +1,39 @@
-import { AudioBufferSource, BufferTarget, CanvasSource, Output, Quality, StreamTarget, type Target } from 'mediabunny';
-import { renderAudio } from '$lib/engine/audio-render';
-import { ensureRoom, list as opfsList, readBlob, remove as opfsRemove, writeStream } from '$lib/media/opfs';
-import type { Sequence } from '$lib/project/types';
+import {
+  AudioBufferSource,
+  BufferTarget,
+  CanvasSource,
+  Output,
+  Quality,
+  StreamTarget,
+  type Target,
+} from 'mediabunny';
+import { renderAudio } from '#lib/engine/audio-render.ts';
+import {
+  ensureRoom,
+  list as opfsList,
+  readBlob,
+  remove as opfsRemove,
+  writeStream,
+} from '#lib/media/opfs.ts';
+import type { Sequence } from '#lib/project/types.ts';
 import { rebuildAvcDescription } from './avcc';
 import { downloadBlob } from './download';
 import { exportGif } from './gif';
 import { estimateSize, formatFor, mimeTypeFor, type ExportSettings } from './presets';
-import { abortError, Eta, exportRange, openCache, openScene, throwIfAborted, yieldToBrowser, type GetMedia, type Scene } from './scene';
+import {
+  abortError,
+  Eta,
+  exportRange,
+  openCache,
+  openScene,
+  throwIfAborted,
+  yieldToBrowser,
+  type GetMedia,
+  type Scene,
+} from './scene';
 
-export type ExportTarget = { kind: 'download'; fileName: string } | { kind: 'handle'; handle: FileSystemFileHandle };
+export type ExportTarget =
+  { kind: 'download'; fileName: string } | { kind: 'handle'; handle: FileSystemFileHandle };
 
 export interface ExportCallbacks {
   onProgress(progress: number, stage: string, eta: number | null): void;
@@ -31,27 +56,36 @@ const scratchPrefix = 'exports/';
 // saves the download. the next export is late enough to clear it away
 async function clearScratch(): Promise<void> {
   const keys = await opfsList().catch(() => [] as string[]);
-  await Promise.all(keys.filter((k) => k.startsWith(scratchPrefix)).map((k) => opfsRemove(k).catch(() => {})));
+  await Promise.all(
+    keys.filter((k) => k.startsWith(scratchPrefix)).map((k) => opfsRemove(k).catch(() => {})),
+  );
 }
 
 // a file system writable never reports itself as full, so the muxer would
 // queue the whole export in memory while the disk catches up. one chunk of
 // room is enough to keep the writes flowing and the queue short
-function backpressured(target: WritableStream<FileSystemWriteChunkType>): WritableStream<FileSystemWriteChunkType> {
+function backpressured(
+  target: WritableStream<FileSystemWriteChunkType>,
+): WritableStream<FileSystemWriteChunkType> {
   const writer = target.getWriter();
   return new WritableStream<FileSystemWriteChunkType>(
     {
       write: (chunk) => writer.write(chunk),
       close: () => writer.close(),
-      abort: (reason) => writer.abort(reason)
+      abort: (reason) => writer.abort(reason),
     },
-    new CountQueuingStrategy({ highWaterMark: 1 })
+    new CountQueuingStrategy({ highWaterMark: 1 }),
   );
 }
 
 // a clip whose file has gone missing would come out as black picture and
 // silence without a word, so the export stops and names the files instead
-function missingFiles(sequence: Sequence, start: number, end: number, getMedia: GetMedia): string[] {
+function missingFiles(
+  sequence: Sequence,
+  start: number,
+  end: number,
+  getMedia: GetMedia,
+): string[] {
   const names = new Set<string>();
   for (const track of sequence.tracks) {
     if (track.hidden || track.muted) continue;
@@ -87,11 +121,12 @@ export async function exportSequence(
   settings: ExportSettings,
   target: ExportTarget,
   callbacks: ExportCallbacks,
-  getMedia: GetMedia
+  getMedia: GetMedia,
 ): Promise<{ bytes: number }> {
   const { signal, onProgress } = callbacks;
   throwIfAborted(signal);
-  if (settings.container === 'png') throw new Error('A still image is exported with Export frame, not with the render dialog.');
+  if (settings.container === 'png')
+    throw new Error('A still image is exported with Export frame, not with the render dialog.');
 
   const { start, end } = exportRange(sequence, settings.range);
   const duration = end - start;
@@ -99,13 +134,19 @@ export async function exportSequence(
 
   const missing = missingFiles(sequence, start, end, getMedia);
   if (missing.length) {
-    const list = missing.slice(0, 3).join(', ') + (missing.length > 3 ? ` and ${missing.length - 3} more` : '');
-    throw new Error(`Some clips point at files that are not there any more: ${list}. Relink them in the project panel, then export again.`);
+    const list =
+      missing.slice(0, 3).join(', ') +
+      (missing.length > 3 ? ` and ${missing.length - 3} more` : '');
+    throw new Error(
+      `Some clips point at files that are not there any more: ${list}. Relink them in the project panel, then export again.`,
+    );
   }
 
   const estimated = estimateSize(settings, duration, sequence.sampleRate);
   if (target.kind === 'download' && estimated > downloadWarnBytes) {
-    callbacks.onNote?.('This file will be large. Saving straight to disk is safer than a download for files over 1.5 GB.');
+    callbacks.onNote?.(
+      'This file will be large. Saving straight to disk is safer than a download for files over 1.5 GB.',
+    );
   }
 
   if (settings.container === 'gif') {
@@ -114,9 +155,11 @@ export async function exportSequence(
     return { bytes: await writeBlob(blob, target) };
   }
 
-  const wantVideo = settings.includeVideo && settings.container !== 'wav' && settings.videoCodec !== null;
+  const wantVideo =
+    settings.includeVideo && settings.container !== 'wav' && settings.videoCodec !== null;
   const wantAudio = settings.includeAudio && settings.audioCodec !== null;
-  if (!wantVideo && !wantAudio) throw new Error('Nothing to export, both video and audio are switched off.');
+  if (!wantVideo && !wantAudio)
+    throw new Error('Nothing to export, both video and audio are switched off.');
 
   const inMemory = target.kind === 'download' && estimated <= streamToDiskBytes;
   if (target.kind === 'download') await clearScratch();
@@ -149,7 +192,10 @@ export async function exportSequence(
     scene = openScene(sequence, settings.width, settings.height, getMedia);
     videoSource = new CanvasSource(scene.canvas, {
       codec: settings.videoCodec,
-      quality: settings.quality === 'custom' ? new Quality({ bitrate: settings.videoBitrate }) : new Quality(settings.quality),
+      quality:
+        settings.quality === 'custom'
+          ? new Quality({ bitrate: settings.videoBitrate })
+          : new Quality(settings.quality),
       keyFrameInterval: settings.keyFrameInterval,
       hardwareAcceleration: settings.hardwareAcceleration,
       latencyMode: 'quality',
@@ -158,15 +204,16 @@ export async function exportSequence(
       onEncodedPacket: (packet, meta) => {
         const config = meta?.decoderConfig;
         if (settings.videoCodec !== 'avc' || packet.type !== 'key' || !config?.description) return;
-        config.description = rebuildAvcDescription(config.description, packet.data) ?? config.description;
-      }
+        config.description =
+          rebuildAvcDescription(config.description, packet.data) ?? config.description;
+      },
     });
     output.addVideoTrack(videoSource, { frameRate: fps });
   }
   if (wantAudio && settings.audioCodec) {
     audioSource = new AudioBufferSource({
       codec: settings.audioCodec,
-      quality: new Quality({ bitrate: settings.audioBitrate })
+      quality: new Quality({ bitrate: settings.audioBitrate }),
     });
     output.addAudioTrack(audioSource);
   }
@@ -218,7 +265,7 @@ export async function exportSequence(
         (p: number) => {
           audioProgress = p;
           report();
-        }
+        },
       );
     } finally {
       if (!scene) cache.dispose();

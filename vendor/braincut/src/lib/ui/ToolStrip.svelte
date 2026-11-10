@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { tools } from '$lib/editor/tools';
-  import { timelineActions } from '$lib/editor/timeline-interactions';
-  import { activeTool, selection } from '$lib/stores/app';
-  import { activeSequence, history, undo, redo } from '$lib/project/store';
+  import { tools } from '#lib/editor/tools.ts';
+  import { timelineActions } from '#lib/editor/timeline-interactions.ts';
+  import { activeTool, selection } from '#lib/stores/app.ts';
+  import { activeSequence, history, undo, redo } from '#lib/project/store.ts';
   import Icon from './Icon.svelte';
   import Menu from './Menu.svelte';
 

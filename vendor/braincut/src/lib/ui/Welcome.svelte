@@ -1,8 +1,8 @@
 <script lang="ts">
   import Logo from './Logo.svelte';
   import Icon from './Icon.svelte';
-  import { dialog } from '$lib/stores/app';
-  import type { RecentProject } from '$lib/project/persistence';
+  import { dialog } from '#lib/stores/app.ts';
+  import type { RecentProject } from '#lib/project/persistence.ts';
 
   let {
     recents = [],

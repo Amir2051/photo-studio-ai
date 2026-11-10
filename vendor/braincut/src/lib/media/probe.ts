@@ -1,6 +1,6 @@
 import { ALL_FORMATS, BlobSource, Input, UnsupportedInputFormatError } from 'mediabunny';
 import type { InputAudioTrack, InputVideoTrack } from 'mediabunny';
-import type { MediaItem, MediaKind, Rotation } from '$lib/project/types';
+import type { MediaItem, MediaKind, Rotation } from '#lib/project/types.ts';
 
 export type ProbeResult = Omit<MediaItem, 'id' | 'binId' | 'label' | 'addedAt' | 'thumbnail'>;
 
@@ -16,8 +16,20 @@ export function roundFrameRate(measured: number): number {
 }
 
 const CODEC_NAMES: Record<string, string> = {
-  avc: 'H.264', hevc: 'HEVC', vp8: 'VP8', vp9: 'VP9', av1: 'AV1', prores: 'ProRes',
-  aac: 'AAC', opus: 'Opus', mp3: 'MP3', vorbis: 'Vorbis', flac: 'FLAC', ac3: 'AC-3', eac3: 'E-AC-3', dts: 'DTS'
+  avc: 'H.264',
+  hevc: 'HEVC',
+  vp8: 'VP8',
+  vp9: 'VP9',
+  av1: 'AV1',
+  prores: 'ProRes',
+  aac: 'AAC',
+  opus: 'Opus',
+  mp3: 'MP3',
+  vorbis: 'Vorbis',
+  flac: 'FLAC',
+  ac3: 'AC-3',
+  eac3: 'E-AC-3',
+  dts: 'DTS',
 };
 
 export function codecName(codec: string | null): string {
@@ -31,18 +43,32 @@ export function codecName(codec: string | null): string {
 // do. a decoder that configures is the platform actually saying yes, and it
 // costs nothing as long as no chunk goes through it, so a file only lands as
 // unsupported when the real decoder refused it
-async function configures(config: VideoDecoderConfig | AudioDecoderConfig, kind: 'video' | 'audio'): Promise<boolean> {
-  const available = kind === 'video' ? typeof VideoDecoder !== 'undefined' : typeof AudioDecoder !== 'undefined';
+async function configures(
+  config: VideoDecoderConfig | AudioDecoderConfig,
+  kind: 'video' | 'audio',
+): Promise<boolean> {
+  const available =
+    kind === 'video' ? typeof VideoDecoder !== 'undefined' : typeof AudioDecoder !== 'undefined';
   if (!available) return true;
   let decoder: VideoDecoder | AudioDecoder;
   let failed = false;
   try {
     if (kind === 'video') {
-      const d = new VideoDecoder({ output: (frame) => frame.close(), error: () => { failed = true; } });
+      const d = new VideoDecoder({
+        output: (frame) => frame.close(),
+        error: () => {
+          failed = true;
+        },
+      });
       d.configure(config as VideoDecoderConfig);
       decoder = d;
     } else {
-      const d = new AudioDecoder({ output: (sample) => sample.close(), error: () => { failed = true; } });
+      const d = new AudioDecoder({
+        output: (sample) => sample.close(),
+        error: () => {
+          failed = true;
+        },
+      });
       d.configure(config as AudioDecoderConfig);
       decoder = d;
     }
@@ -66,19 +92,41 @@ function extension(name: string): string {
 
 function empty(name: string, kind: MediaKind, mimeType: string, fileSize: number): ProbeResult {
   return {
-    name, kind, duration: 0, width: 0, height: 0, fps: null,
-    hasVideo: false, hasAudio: false, channels: 0, sampleRate: 0,
-    videoCodec: null, audioCodec: null, container: null,
-    mimeType, fileSize, rotation: 0, alpha: false,
-    status: 'ready', proxy: null, converted: null
+    name,
+    kind,
+    duration: 0,
+    width: 0,
+    height: 0,
+    fps: null,
+    hasVideo: false,
+    hasAudio: false,
+    channels: 0,
+    sampleRate: 0,
+    videoCodec: null,
+    audioCodec: null,
+    container: null,
+    mimeType,
+    fileSize,
+    rotation: 0,
+    alpha: false,
+    status: 'ready',
+    proxy: null,
+    converted: null,
   };
 }
 
 export async function probeFile(file: File | Blob, name: string): Promise<ProbeResult> {
   const mime = file.type || '';
   const ext = extension(name);
-  if (mime.startsWith('image/') || ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'avif', 'tif', 'tiff'].includes(ext)) {
-    return probeImage(file, name, mime || `image/${ext === 'svg' ? 'svg+xml' : ext === 'jpg' ? 'jpeg' : ext}`);
+  if (
+    mime.startsWith('image/') ||
+    ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'avif', 'tif', 'tiff'].includes(ext)
+  ) {
+    return probeImage(
+      file,
+      name,
+      mime || `image/${ext === 'svg' ? 'svg+xml' : ext === 'jpg' ? 'jpeg' : ext}`,
+    );
   }
   return probeContainer(file, name, mime);
 }
@@ -94,7 +142,7 @@ async function probeImage(file: Blob, name: string, mime: string): Promise<Probe
     result.container = mime.replace('image/', '').replace('svg+xml', 'svg');
   } catch {
     result.status = 'unsupported';
-    result.statusReason = 'This image can\'t be decoded by this browser';
+    result.statusReason = "This image can't be decoded by this browser";
   }
   return result;
 }
@@ -126,7 +174,7 @@ async function probeContainer(file: Blob, name: string, mime: string): Promise<P
   try {
     const format = await input.getFormat();
     result.container = format.name;
-    result.mimeType = await input.getMimeType().catch(() => mime) || mime;
+    result.mimeType = (await input.getMimeType().catch(() => mime)) || mime;
 
     const video = await input.getPrimaryVideoTrack();
     const audio = await input.getPrimaryAudioTrack();
@@ -142,7 +190,9 @@ async function probeContainer(file: Blob, name: string, mime: string): Promise<P
     result.kind = result.hasVideo || video ? 'video' : 'audio';
 
     const tracks = [video, audio].filter((t): t is InputVideoTrack | InputAudioTrack => t !== null);
-    result.duration = await input.computeDuration(tracks).catch(async () => (await input.getDurationFromMetadata(tracks)) ?? 0);
+    result.duration = await input
+      .computeDuration(tracks)
+      .catch(async () => (await input.getDurationFromMetadata(tracks)) ?? 0);
 
     // a file where nothing can be decoded is useless in the timeline until
     // it's converted, one with a dead audio track can still be cut silently
@@ -157,9 +207,10 @@ async function probeContainer(file: Blob, name: string, mime: string): Promise<P
     return result;
   } catch (e) {
     result.status = 'unsupported';
-    result.statusReason = e instanceof UnsupportedInputFormatError
-      ? `${extension(name).toUpperCase() || 'This'} files can't be read directly, they need converting first`
-      : `This file can't be read: ${e instanceof Error ? e.message : String(e)}`;
+    result.statusReason =
+      e instanceof UnsupportedInputFormatError
+        ? `${extension(name).toUpperCase() || 'This'} files can't be read directly, they need converting first`
+        : `This file can't be read: ${e instanceof Error ? e.message : String(e)}`;
     return result;
   } finally {
     input.dispose();
@@ -186,9 +237,11 @@ async function readVideo(track: InputVideoTrack, result: ProbeResult, reasons: s
   }
   result.hasVideo = decodable;
   if (!decodable) {
-    reasons.push(codec
-      ? `${codecName(codec)} video can't be decoded by this browser, convert it to H.264 to use it here`
-      : 'The video codec isn\'t recognised');
+    reasons.push(
+      codec
+        ? `${codecName(codec)} video can't be decoded by this browser, convert it to H.264 to use it here`
+        : "The video codec isn't recognised",
+    );
   }
 }
 
@@ -204,8 +257,10 @@ async function readAudio(track: InputAudioTrack, result: ProbeResult, reasons: s
   }
   result.hasAudio = decodable;
   if (!decodable) {
-    reasons.push(codec
-      ? `${codecName(codec)} audio can't be decoded by this browser, convert the file to use its sound`
-      : 'The audio codec isn\'t recognised');
+    reasons.push(
+      codec
+        ? `${codecName(codec)} audio can't be decoded by this browser, convert the file to use its sound`
+        : "The audio codec isn't recognised",
+    );
   }
 }

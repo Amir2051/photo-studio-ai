@@ -1,7 +1,16 @@
 import { writable, type Readable } from 'svelte/store';
-import type { Clip, Id, MediaItem, Sequence, Track } from '$lib/project/types';
+import type { Clip, Id, MediaItem, Sequence, Track } from '#lib/project/types.ts';
 import type { MediaCache } from './media-cache';
-import { buildClipChain, clipAudio, mergePieces, scheduleBuffer, trimPiece, volumeAt, type AudioPiece, type ClipChain } from './audio-graph';
+import {
+  buildClipChain,
+  clipAudio,
+  mergePieces,
+  scheduleBuffer,
+  trimPiece,
+  volumeAt,
+  type AudioPiece,
+  type ClipChain,
+} from './audio-graph';
 import { chunkSequenceEnd, dbToGain, gainToDb, sourceWindow } from './audio-math';
 import { clipEnd, sourceTimeAt } from './clip-time';
 
@@ -101,8 +110,11 @@ export class AudioEngine {
   }
 
   getLevels(): Levels {
-    const out: Levels = { master: [this.peakDb(this.masterMeter.left), this.peakDb(this.masterMeter.right)] };
-    for (const [id, t] of this.tracks) out[id] = [this.peakDb(t.meter.left), this.peakDb(t.meter.right)];
+    const out: Levels = {
+      master: [this.peakDb(this.masterMeter.left), this.peakDb(this.masterMeter.right)],
+    };
+    for (const [id, t] of this.tracks)
+      out[id] = [this.peakDb(t.meter.left), this.peakDb(t.meter.right)];
     return out;
   }
 
@@ -115,9 +127,10 @@ export class AudioEngine {
   // clock holds still through the start latency, the picture waits for sound
   currentTime(): number {
     if (!this.running) return this.lastTime;
-    const elapsed = this.ctx.state === 'running'
-      ? this.ctx.currentTime - this.ctxStart
-      : (performance.now() - this.perfStart) / 1000;
+    const elapsed =
+      this.ctx.state === 'running'
+        ? this.ctx.currentTime - this.ctxStart
+        : (performance.now() - this.perfStart) / 1000;
     this.lastTime = this.seqStart + Math.max(0, elapsed) * this.rate;
     return this.lastTime;
   }
@@ -130,7 +143,13 @@ export class AudioEngine {
     return this.rate > 0 && this.rate <= MAX_AUDIBLE_RATE;
   }
 
-  start(sequence: Sequence, getMedia: (id: Id) => MediaItem | undefined, cache: MediaCache, fromTime: number, rate = 1): void {
+  start(
+    sequence: Sequence,
+    getMedia: (id: Id) => MediaItem | undefined,
+    cache: MediaCache,
+    fromTime: number,
+    rate = 1,
+  ): void {
     if (this.destroyed) return;
     this.stopStreams();
     this.sequence = sequence;
@@ -147,14 +166,17 @@ export class AudioEngine {
     if (this.ctx.state !== 'running') {
       // the wall clock stands in until the context runs, then the clock is
       // anchored again so the switch doesn't jump and sound is rescheduled
-      void this.ctx.resume().then(() => {
-        if (session !== this.session || !this.running) return;
-        const now = this.currentTime();
-        this.seqStart = now;
-        this.ctxStart = this.ctx.currentTime + START_LATENCY;
-        this.perfStart = performance.now() + START_LATENCY * 1000;
-        this.restartFrom(now);
-      }, () => {});
+      void this.ctx.resume().then(
+        () => {
+          if (session !== this.session || !this.running) return;
+          const now = this.currentTime();
+          this.seqStart = now;
+          this.ctxStart = this.ctx.currentTime + START_LATENCY;
+          this.perfStart = performance.now() + START_LATENCY * 1000;
+          this.restartFrom(now);
+        },
+        () => {},
+      );
     }
     if (this.timer === null) this.timer = setInterval(() => this.tick(), TICK_MS);
     this.tick();
@@ -289,11 +311,12 @@ export class AudioEngine {
                 scheduledTo: Math.max(now, clip.start),
                 pumping: false,
                 done: false,
-                sources: new Set()
+                sources: new Set(),
               };
               this.streams.set(clip.id, stream);
             }
-            if (!stream.done && !stream.pumping && stream.scheduledTo < horizon) void this.pump(stream, this.session);
+            if (!stream.done && !stream.pumping && stream.scheduledTo < horizon)
+              void this.pump(stream, this.session);
           }
         }
       }
@@ -327,14 +350,22 @@ export class AudioEngine {
           stream.done = true;
           return;
         }
-        const window = sourceWindow(stream.clip, stream.scheduledTo, clipEnd(stream.clip), media.duration);
+        const window = sourceWindow(
+          stream.clip,
+          stream.scheduledTo,
+          clipEnd(stream.clip),
+          media.duration,
+        );
         if (stream.done) return;
         this.holds.get(stream.clip.id)?.();
         this.holds.set(stream.clip.id, cache.hold(media.id));
         stream.pieces = clipAudio(reader, stream.clip, this.ctx, window);
       }
       const clock = { seqToCtx: (t: number) => this.seqToCtx(t), rate: this.rate };
-      while (session === this.session && stream.scheduledTo < this.currentTime() + LOOKAHEAD * Math.abs(this.rate)) {
+      while (
+        session === this.session &&
+        stream.scheduledTo < this.currentTime() + LOOKAHEAD * Math.abs(this.rate)
+      ) {
         const next = await stream.pieces.next();
         if (session !== this.session) return;
         if (next.done) {
@@ -342,7 +373,15 @@ export class AudioEngine {
           return;
         }
         const piece = next.value;
-        const node = scheduleBuffer(this.ctx, stream.chain, stream.clip, stream.track, piece.buffer, piece.timestamp, clock);
+        const node = scheduleBuffer(
+          this.ctx,
+          stream.chain,
+          stream.clip,
+          stream.track,
+          piece.buffer,
+          piece.timestamp,
+          clock,
+        );
         if (node) {
           stream.sources.add(node);
           node.onended = () => {
@@ -350,7 +389,10 @@ export class AudioEngine {
             node.disconnect();
           };
         }
-        stream.scheduledTo = Math.max(stream.scheduledTo, chunkSequenceEnd(stream.clip, piece.timestamp, piece.buffer.duration));
+        stream.scheduledTo = Math.max(
+          stream.scheduledTo,
+          chunkSequenceEnd(stream.clip, piece.timestamp, piece.buffer.duration),
+        );
       }
     } catch (e) {
       stream.done = true;
@@ -375,7 +417,12 @@ export class AudioEngine {
   }
 
   // a short slice of what sits under the playhead, for scrubbing with sound
-  async scrubTo(sequence: Sequence, getMedia: (id: Id) => MediaItem | undefined, cache: MediaCache, time: number): Promise<void> {
+  async scrubTo(
+    sequence: Sequence,
+    getMedia: (id: Id) => MediaItem | undefined,
+    cache: MediaCache,
+    time: number,
+  ): Promise<void> {
     if (this.destroyed || this.running || this.scrubbing) return;
     this.scrubbing = true;
     try {
@@ -402,7 +449,14 @@ export class AudioEngine {
     }
   }
 
-  private async playSlice(clip: Clip, media: MediaItem, cache: MediaCache, time: number, destination: AudioNode, when: number): Promise<void> {
+  private async playSlice(
+    clip: Clip,
+    media: MediaItem,
+    cache: MediaCache,
+    time: number,
+    destination: AudioNode,
+    when: number,
+  ): Promise<void> {
     const reader = await cache.reader(media);
     if (!reader || !reader.hasAudio) return;
     const src = sourceTimeAt(clip, time, media.duration);

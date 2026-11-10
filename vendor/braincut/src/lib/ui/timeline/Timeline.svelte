@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { get } from 'svelte/store';
   import './timeline.css';
-  import type { Clip, Id, Label, Project, Sequence, Track, TrackKind } from '$lib/project/types';
+  import type { Clip, Id, Label, Project, Sequence, Track, TrackKind } from '#lib/project/types.ts';
   import {
     activeSequence,
     cancelPreview,
@@ -12,20 +12,20 @@
     mediaById,
     preview,
     selectClips
-  } from '$lib/project/store';
-  import * as ops from '$lib/project/ops';
-  import { clipEnd, createClipFromMedia, createMarker, sequenceDuration } from '$lib/project/defaults';
-  import { formatTimecode, nearlyEqual, snapToFrame } from '$lib/project/time';
-  import { moveKeyframe, setKeyframe, valueAt } from '$lib/project/keyframes';
-  import { id as newId } from '$lib/project/ids';
-  import { snap, snapPoints, snapRange, type SnapPoint } from '$lib/editor/snapping';
-  import { endDrag, readDrag, type DragPayload } from '$lib/editor/drag';
-  import { importFiles } from '$lib/media/import';
-  import { openProjectFromFile } from '$lib/editor/project-actions';
-  import { frameExportItems } from '$lib/editor/export-actions';
-  import { PROJECT_EXTENSION } from '$lib/project/serialize';
-  import { hasClipboard } from '$lib/editor/clipboard';
-  import { toolById } from '$lib/editor/tools';
+  } from '#lib/project/store.ts';
+  import * as ops from '#lib/project/ops.ts';
+  import { clipEnd, createClipFromMedia, createMarker, sequenceDuration } from '#lib/project/defaults.ts';
+  import { formatTimecode, nearlyEqual, snapToFrame } from '#lib/project/time.ts';
+  import { moveKeyframe, setKeyframe, valueAt } from '#lib/project/keyframes.ts';
+  import { id as newId } from '#lib/project/ids.ts';
+  import { snap, snapPoints, snapRange, type SnapPoint } from '#lib/editor/snapping.ts';
+  import { endDrag, readDrag, type DragPayload } from '#lib/editor/drag.ts';
+  import { importFiles } from '#lib/media/import.ts';
+  import { openProjectFromFile } from '#lib/editor/project-actions.ts';
+  import { frameExportItems } from '#lib/editor/export-actions.ts';
+  import { PROJECT_EXTENSION } from '#lib/project/serialize.ts';
+  import { hasClipboard } from '#lib/editor/clipboard.ts';
+  import { toolById } from '#lib/editor/tools.ts';
   import {
     HEADER_W,
     TRANSITION_DROP_PX,
@@ -61,7 +61,7 @@
     type Edge,
     type EdgeZone,
     type TrackRow
-  } from '$lib/editor/timeline-interactions';
+  } from '#lib/editor/timeline-interactions.ts';
   import {
     activeTool,
     addToast,
@@ -80,12 +80,12 @@
     timelineScroll,
     timelineZoom,
     type MenuItem
-  } from '$lib/stores/app';
-  import { preferences } from '$lib/stores/preferences';
-  import { createEffectInstance, fadeKeyframes, isAudioEffectType, isVideoEffectType } from '$lib/engine/effects/registry';
-  import { isAudioTransitionType, transitionDef } from '$lib/engine/transitions/registry';
-  import { fillScale, fitScale } from '$lib/engine/transform';
-  import { program } from '$lib/engine/session';
+  } from '#lib/stores/app.ts';
+  import { preferences } from '#lib/stores/preferences.ts';
+  import { createEffectInstance, fadeKeyframes, isAudioEffectType, isVideoEffectType } from '#lib/engine/effects/registry.ts';
+  import { isAudioTransitionType, transitionDef } from '#lib/engine/transitions/registry.ts';
+  import { fillScale, fitScale } from '#lib/engine/transform.ts';
+  import { program } from '#lib/engine/session.ts';
   import Ruler from './Ruler.svelte';
   import TrackHeader from './TrackHeader.svelte';
   import TrackLane from './TrackLane.svelte';

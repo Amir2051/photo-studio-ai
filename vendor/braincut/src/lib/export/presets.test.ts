@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import type { Sequence } from '$lib/project/types';
-import { defaultPresetForBrowser, estimateSize, fileNameFor, findPreset, presets, resolveCodecs, roundEven, settingsFromPreset, type CodecProbe } from './presets';
+import type { Sequence } from '#lib/project/types.ts';
+import {
+  defaultPresetForBrowser,
+  estimateSize,
+  fileNameFor,
+  findPreset,
+  presets,
+  resolveCodecs,
+  roundEven,
+  settingsFromPreset,
+  type CodecProbe,
+} from './presets';
 
 const sequence = (width: number, height: number, fps = 25): Sequence => ({
   id: 's',
@@ -12,7 +22,7 @@ const sequence = (width: number, height: number, fps = 25): Sequence => ({
   tracks: [],
   markers: [],
   inPoint: null,
-  outPoint: null
+  outPoint: null,
 });
 
 const preset = (id: string) => {
@@ -23,7 +33,7 @@ const preset = (id: string) => {
 
 const probe = (video: string[], audio: string[]): CodecProbe => ({
   video: async (codec) => video.includes(codec),
-  audio: async (codec) => audio.includes(codec)
+  audio: async (codec) => audio.includes(codec),
 });
 
 describe('roundEven', () => {
@@ -90,7 +100,7 @@ describe('estimateSize', () => {
       ...settingsFromPreset(preset('match'), sequence(1920, 1080)),
       quality: 'custom' as const,
       videoBitrate: 8_000_000,
-      includeAudio: false
+      includeAudio: false,
     };
     expect(estimateSize(s, 10)).toBe(10_000_000);
   });
@@ -132,12 +142,17 @@ describe('resolveCodecs', () => {
     expect(settings.videoCodec).toBe('avc');
     expect(settings.container).toBe('mp4');
     expect(settings.audioCodec).toBe('aac');
-    expect(notes.join(' ')).toMatch(/VP9 isn't available in this browser, using H\.264 in MP4 instead/);
+    expect(notes.join(' ')).toMatch(
+      /VP9 isn't available in this browser, using H\.264 in MP4 instead/,
+    );
     expect(notes.join(' ')).toMatch(/Opus isn't available in this browser, using AAC instead/);
   });
 
   it('moves audio to a codec the container holds', async () => {
-    const s = { ...settingsFromPreset(preset('webm-vp9'), sequence(1920, 1080)), audioCodec: 'aac' as const };
+    const s = {
+      ...settingsFromPreset(preset('webm-vp9'), sequence(1920, 1080)),
+      audioCodec: 'aac' as const,
+    };
     const { settings, notes } = await resolveCodecs(s, probe(['vp9'], ['aac', 'opus']));
     expect(settings.container).toBe('webm');
     expect(settings.audioCodec).toBe('opus');
@@ -145,7 +160,10 @@ describe('resolveCodecs', () => {
   });
 
   it('moves h.264 out of webm', async () => {
-    const s = { ...settingsFromPreset(preset('webm-vp9'), sequence(1920, 1080)), videoCodec: 'avc' as const };
+    const s = {
+      ...settingsFromPreset(preset('webm-vp9'), sequence(1920, 1080)),
+      videoCodec: 'avc' as const,
+    };
     const { settings, notes } = await resolveCodecs(s, probe(['avc'], ['opus']));
     expect(settings.container).toBe('mp4');
     expect(notes[0]).toMatch(/WebM can't hold H\.264/);
@@ -157,7 +175,9 @@ describe('resolveCodecs', () => {
     expect(settings.container).toBe('mp4');
     expect(settings.audioCodec).toBe('opus');
     expect(notes.join(' ')).toMatch(/AAC isn't available in this browser, using Opus instead/);
-    expect(notes.join(' ')).toMatch(/AAC encoding is unavailable in Firefox and desktop Linux browsers/);
+    expect(notes.join(' ')).toMatch(
+      /AAC encoding is unavailable in Firefox and desktop Linux browsers/,
+    );
     expect(notes.join(' ')).toMatch(/switch to the WebM VP9 \+ Opus preset/);
   });
 
@@ -190,20 +210,31 @@ describe('resolveCodecs', () => {
   });
 });
 
-
 describe('defaultPresetForBrowser', () => {
   it('keeps Match sequence when H.264 and AAC both encode', async () => {
-    const selected = await defaultPresetForBrowser(sequence(1920, 1080), presets, probe(['avc', 'vp9'], ['aac', 'opus']));
+    const selected = await defaultPresetForBrowser(
+      sequence(1920, 1080),
+      presets,
+      probe(['avc', 'vp9'], ['aac', 'opus']),
+    );
     expect(selected?.id).toBe('match');
   });
 
   it('starts with WebM VP9 + Opus when AAC encoding is unavailable', async () => {
-    const selected = await defaultPresetForBrowser(sequence(1920, 1080), presets, probe(['avc', 'vp9'], ['opus']));
+    const selected = await defaultPresetForBrowser(
+      sequence(1920, 1080),
+      presets,
+      probe(['avc', 'vp9'], ['opus']),
+    );
     expect(selected?.id).toBe('webm-vp9');
   });
 
   it('keeps Match sequence if a compatible WebM video/audio pair is unavailable', async () => {
-    const selected = await defaultPresetForBrowser(sequence(1920, 1080), presets, probe(['avc'], ['opus']));
+    const selected = await defaultPresetForBrowser(
+      sequence(1920, 1080),
+      presets,
+      probe(['avc'], ['opus']),
+    );
     expect(selected?.id).toBe('match');
   });
 });

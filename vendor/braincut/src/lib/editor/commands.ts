@@ -1,9 +1,15 @@
-import { clearSelection, redo, undo } from '$lib/project/store';
-import { program } from '$lib/engine/session';
-import { pickFiles, pickFolder } from '$lib/media/import';
+import { clearSelection, redo, undo } from '#lib/project/store.ts';
+import { program } from '#lib/engine/session.ts';
+import { pickFiles, pickFolder } from '#lib/media/import.ts';
 import { timelineActions } from './timeline-interactions';
 import { insertSource, overwriteSource } from './source-actions';
-import { closeCurrentProject, newProject, openProjectFile, saveProject, saveProjectAs } from './project-actions';
+import {
+  closeCurrentProject,
+  newProject,
+  openProjectFile,
+  saveProject,
+  saveProjectAs,
+} from './project-actions';
 import { exportCurrentFrame } from './export-actions';
 import {
   addGeneratedClip,
@@ -19,11 +25,17 @@ import {
   toggleFollowPlayhead,
   toggleLoop,
   toggleMuteSelection,
-  toggleSnapping
+  toggleSnapping,
 } from './edit-actions';
 import { tools } from './tools';
-import { connectClaude, disconnectClaude } from '$lib/agent/bridge';
-import { activeTool, dialog, selectedTransitionId, workspace, type Workspace } from '$lib/stores/app';
+import { connectClaude, disconnectClaude } from '#lib/agent/bridge.ts';
+import {
+  activeTool,
+  dialog,
+  selectedTransitionId,
+  workspace,
+  type Workspace,
+} from '#lib/stores/app.ts';
 
 export interface Command {
   id: string;
@@ -37,7 +49,7 @@ const workspaces: { id: Workspace; label: string }[] = [
   { id: 'edit', label: 'Edit' },
   { id: 'color', label: 'Color' },
   { id: 'effects', label: 'Effects' },
-  { id: 'audio', label: 'Audio' }
+  { id: 'audio', label: 'Audio' },
 ];
 
 function zoomEvent(name: 'zoom-in' | 'zoom-out' | 'zoom-fit'): void {
@@ -47,12 +59,18 @@ function zoomEvent(name: 'zoom-in' | 'zoom-out' | 'zoom-fit'): void {
 // everything the palette lists. the shortcut strings are for people, the
 // keys themselves are bound in shortcuts.ts
 export function buildCommands(): Command[] {
-  const c = (id: string, label: string, category: string, action: () => unknown, shortcut?: string): Command => ({
+  const c = (
+    id: string,
+    label: string,
+    category: string,
+    action: () => unknown,
+    shortcut?: string,
+  ): Command => ({
     id,
     label,
     category,
     shortcut,
-    action: () => void action()
+    action: () => void action(),
   });
 
   const commands: Command[] = [
@@ -64,16 +82,38 @@ export function buildCommands(): Command[] {
     c('close-project', 'Close project', 'Project', closeCurrentProject),
     c('import', 'Import media', 'Project', () => pickFiles(), 'Ctrl+I'),
     c('import-folder', 'Import folder', 'Project', () => pickFolder()),
-    c('new-sequence', 'New sequence', 'Project', () => dialog.set({ kind: 'new-sequence' }), 'Ctrl+N'),
-    c('sequence-settings', 'Sequence settings', 'Project', () => dialog.set({ kind: 'sequence-settings' })),
+    c(
+      'new-sequence',
+      'New sequence',
+      'Project',
+      () => dialog.set({ kind: 'new-sequence' }),
+      'Ctrl+N',
+    ),
+    c('sequence-settings', 'Sequence settings', 'Project', () =>
+      dialog.set({ kind: 'sequence-settings' }),
+    ),
     c('export', 'Export', 'Project', () => dialog.set({ kind: 'export' }), 'Ctrl+M'),
-    c('export-frame', 'Export current frame (PNG)', 'Project', () => exportCurrentFrame('png'), 'Ctrl+Shift+E'),
-    c('export-frame-jpeg', 'Export current frame (JPEG)', 'Project', () => exportCurrentFrame('jpeg')),
+    c(
+      'export-frame',
+      'Export current frame (PNG)',
+      'Project',
+      () => exportCurrentFrame('png'),
+      'Ctrl+Shift+E',
+    ),
+    c('export-frame-jpeg', 'Export current frame (JPEG)', 'Project', () =>
+      exportCurrentFrame('jpeg'),
+    ),
 
     // playback
     c('play', 'Play / pause', 'Playback', () => program().player.toggle(), 'Space'),
     c('go-start', 'Go to start', 'Playback', () => program().player.seek(0), 'Home'),
-    c('go-end', 'Go to end', 'Playback', () => program().player.seek(program().player.duration()), 'End'),
+    c(
+      'go-end',
+      'Go to end',
+      'Playback',
+      () => program().player.seek(program().player.duration()),
+      'End',
+    ),
     c('prev-edit', 'Go to previous edit', 'Playback', () => timelineActions.goToPrevEdit(), '↑'),
     c('next-edit', 'Go to next edit', 'Playback', () => timelineActions.goToNextEdit(), '↓'),
     c('go-in', 'Go to in point', 'Playback', goToIn, 'Shift+I'),
@@ -97,16 +137,64 @@ export function buildCommands(): Command[] {
 
     // editing
     c('split', 'Split at playhead', 'Edit', () => timelineActions.splitAtPlayhead(false), 'Ctrl+K'),
-    c('split-all', 'Split all tracks at playhead', 'Edit', () => timelineActions.splitAtPlayhead(true), 'Ctrl+Shift+K'),
+    c(
+      'split-all',
+      'Split all tracks at playhead',
+      'Edit',
+      () => timelineActions.splitAtPlayhead(true),
+      'Ctrl+Shift+K',
+    ),
     c('delete', 'Delete selection', 'Edit', () => timelineActions.deleteSelection(), 'Delete'),
-    c('ripple-delete', 'Ripple delete', 'Edit', () => timelineActions.rippleDeleteSelection(), 'Shift+Delete'),
-    c('ripple-trim-prev', 'Ripple trim previous edit to playhead', 'Edit', () => rippleTrimToPlayhead('previous'), 'Q'),
-    c('ripple-trim-next', 'Ripple trim next edit to playhead', 'Edit', () => rippleTrimToPlayhead('next'), 'W'),
+    c(
+      'ripple-delete',
+      'Ripple delete',
+      'Edit',
+      () => timelineActions.rippleDeleteSelection(),
+      'Shift+Delete',
+    ),
+    c(
+      'ripple-trim-prev',
+      'Ripple trim previous edit to playhead',
+      'Edit',
+      () => rippleTrimToPlayhead('previous'),
+      'Q',
+    ),
+    c(
+      'ripple-trim-next',
+      'Ripple trim next edit to playhead',
+      'Edit',
+      () => rippleTrimToPlayhead('next'),
+      'W',
+    ),
     c('close-gap', 'Close gap at playhead', 'Edit', () => timelineActions.closeGapAtPlayhead()),
-    c('nudge-left', 'Nudge selection one frame left', 'Edit', () => timelineActions.nudgeSelection(-1), 'Alt+←'),
-    c('nudge-right', 'Nudge selection one frame right', 'Edit', () => timelineActions.nudgeSelection(1), 'Alt+→'),
-    c('video-transition', 'Add default video transition', 'Edit', () => timelineActions.addDefaultTransition('video'), 'Ctrl+D'),
-    c('audio-transition', 'Add default audio transition', 'Edit', () => timelineActions.addDefaultTransition('audio'), 'Ctrl+Shift+D'),
+    c(
+      'nudge-left',
+      'Nudge selection one frame left',
+      'Edit',
+      () => timelineActions.nudgeSelection(-1),
+      'Alt+←',
+    ),
+    c(
+      'nudge-right',
+      'Nudge selection one frame right',
+      'Edit',
+      () => timelineActions.nudgeSelection(1),
+      'Alt+→',
+    ),
+    c(
+      'video-transition',
+      'Add default video transition',
+      'Edit',
+      () => timelineActions.addDefaultTransition('video'),
+      'Ctrl+D',
+    ),
+    c(
+      'audio-transition',
+      'Add default audio transition',
+      'Edit',
+      () => timelineActions.addDefaultTransition('audio'),
+      'Ctrl+Shift+D',
+    ),
     c('link', 'Link / unlink', 'Edit', () => timelineActions.linkSelection(), 'Ctrl+L'),
     c('enable', 'Enable / disable clip', 'Edit', () => timelineActions.toggleEnabled(), 'Shift+E'),
     c('speed', 'Speed / duration', 'Edit', openSpeedDialog, 'Ctrl+R'),
@@ -114,7 +202,9 @@ export function buildCommands(): Command[] {
     c('frame-size', 'Set to frame size', 'Edit', setToFrameSize),
     c('add-title', 'Add title at playhead', 'Edit', () => addGeneratedClip('title')),
     c('add-color', 'Add color matte at playhead', 'Edit', () => addGeneratedClip('color')),
-    c('add-adjustment', 'Add adjustment layer at playhead', 'Edit', () => addGeneratedClip('adjustment')),
+    c('add-adjustment', 'Add adjustment layer at playhead', 'Edit', () =>
+      addGeneratedClip('adjustment'),
+    ),
     c('undo', 'Undo', 'Edit', undo, 'Ctrl+Z'),
     c('redo', 'Redo', 'Edit', redo, 'Ctrl+Shift+Z'),
     c('copy', 'Copy', 'Edit', () => timelineActions.copySelection(), 'Ctrl+C'),
@@ -129,7 +219,7 @@ export function buildCommands(): Command[] {
         clearSelection();
         selectedTransitionId.set(null);
       },
-      'Ctrl+Shift+A'
+      'Ctrl+Shift+A',
     ),
 
     // view
@@ -141,14 +231,24 @@ export function buildCommands(): Command[] {
     c('preferences', 'Preferences', 'View', () => dialog.set({ kind: 'preferences' }), 'Ctrl+,'),
     c('about', 'About brainCUT', 'View', () => dialog.set({ kind: 'about' })),
     c('claude-connect', 'Connect to Claude Code', 'View', connectClaude),
-    c('claude-disconnect', 'Disconnect Claude Code', 'View', disconnectClaude)
+    c('claude-disconnect', 'Disconnect Claude Code', 'View', disconnectClaude),
   ];
 
   for (const ws of workspaces) {
-    commands.push(c(`workspace-${ws.id}`, `Workspace: ${ws.label}`, 'View', () => workspace.set(ws.id)));
+    commands.push(
+      c(`workspace-${ws.id}`, `Workspace: ${ws.label}`, 'View', () => workspace.set(ws.id)),
+    );
   }
   for (const tool of tools) {
-    commands.push(c(`tool-${tool.id}`, `Tool: ${tool.label}`, 'Tools', () => activeTool.set(tool.id), tool.shortcut));
+    commands.push(
+      c(
+        `tool-${tool.id}`,
+        `Tool: ${tool.label}`,
+        'Tools',
+        () => activeTool.set(tool.id),
+        tool.shortcut,
+      ),
+    );
   }
 
   // the palette closes before it runs an action, so a command that opens a

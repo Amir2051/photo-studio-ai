@@ -1,5 +1,12 @@
-import { ALL_FORMATS, AudioBufferSink, BlobSource, Input, VideoSampleSink, type VideoSample } from 'mediabunny';
-import type { MediaItem, Rotation } from '$lib/project/types';
+import {
+  ALL_FORMATS,
+  AudioBufferSink,
+  BlobSource,
+  Input,
+  VideoSampleSink,
+  type VideoSample,
+} from 'mediabunny';
+import type { MediaItem, Rotation } from '#lib/project/types.ts';
 
 // one decoded picture, handed to the compositor for exactly one draw. release
 // closes whatever must be closed, the reader keeps its own copy in the cache
@@ -67,7 +74,9 @@ function makeHandle(sample: VideoSample, rotation: Rotation): FrameHandle | null
   try {
     frame = sample.toVideoFrame();
   } catch (e) {
-    throw new Error(`the decoded picture cannot be used: ${e instanceof Error ? e.message : String(e)}`);
+    throw new Error(
+      `the decoded picture cannot be used: ${e instanceof Error ? e.message : String(e)}`,
+    );
   }
   let transfer: string | null = null;
   try {
@@ -84,7 +93,7 @@ function makeHandle(sample: VideoSample, rotation: Rotation): FrameHandle | null
       try {
         frame.close();
       } catch {}
-    }
+    },
   };
 }
 
@@ -117,7 +126,7 @@ class Cursor implements VideoCursor {
     private readonly fps: number,
     private readonly duration: number,
     private readonly rotation: Rotation,
-    private readonly onClose: (c: Cursor) => void
+    private readonly onClose: (c: Cursor) => void,
   ) {}
 
   frameAt(t: number): Promise<FrameHandle | null> {
@@ -250,7 +259,10 @@ export class MediaReader {
 
   private readonly cache: CachedSample[] = [];
   private tick = 0;
-  private readonly scrubs = new Map<string, { iter: AsyncGenerator<VideoSample, void, unknown>; last: number; used: number; ended: boolean }>();
+  private readonly scrubs = new Map<
+    string,
+    { iter: AsyncGenerator<VideoSample, void, unknown>; last: number; used: number; ended: boolean }
+  >();
   private readonly chain = new Chain();
   private readonly cursors = new Set<Cursor>();
   private closed = false;
@@ -260,7 +272,15 @@ export class MediaReader {
     private readonly input: Input,
     private readonly videoSink: VideoSampleSink | null,
     private readonly audioSink: AudioBufferSink | null,
-    info: { rotation: Rotation; displayWidth: number; displayHeight: number; codedWidth: number; codedHeight: number; fps: number; duration: number }
+    info: {
+      rotation: Rotation;
+      displayWidth: number;
+      displayHeight: number;
+      codedWidth: number;
+      codedHeight: number;
+      fps: number;
+      duration: number;
+    },
   ) {
     this.hasVideo = videoSink !== null;
     this.hasAudio = audioSink !== null;
@@ -279,7 +299,7 @@ export class MediaReader {
       const wantVideo = media.kind !== 'audio';
       const [videoTrack, audioTrack] = await Promise.all([
         wantVideo ? input.getPrimaryVideoTrack() : Promise.resolve(null),
-        input.getPrimaryAudioTrack()
+        input.getPrimaryAudioTrack(),
       ]);
 
       let videoSink: VideoSampleSink | null = null;
@@ -290,7 +310,7 @@ export class MediaReader {
         codedWidth: media.width,
         codedHeight: media.height,
         fps: media.fps && media.fps > 0 ? media.fps : 30,
-        duration: media.duration
+        duration: media.duration,
       };
       if (videoTrack && (await videoTrack.canDecode())) {
         videoSink = new VideoSampleSink(videoTrack, { hardwareAcceleration: decoderPreference });
@@ -299,7 +319,7 @@ export class MediaReader {
           videoTrack.getDisplayWidth(),
           videoTrack.getDisplayHeight(),
           videoTrack.getCodedWidth(),
-          videoTrack.getCodedHeight()
+          videoTrack.getCodedHeight(),
         ]);
         info.rotation = rotation;
         info.displayWidth = displayWidth;
@@ -429,7 +449,8 @@ export class MediaReader {
   private newestBefore(t: number): VideoSample | null {
     let best: CachedSample | null = null;
     for (const entry of this.cache) {
-      if (entry.sample.timestamp <= t && (!best || entry.sample.timestamp > best.sample.timestamp)) best = entry;
+      if (entry.sample.timestamp <= t && (!best || entry.sample.timestamp > best.sample.timestamp))
+        best = entry;
     }
     if (best) best.used = ++this.tick;
     return best?.sample ?? null;
@@ -487,12 +508,17 @@ export class MediaReader {
     if (this.closed || !this.videoSink) {
       return { frameAt: () => Promise.resolve(null), close: () => {} };
     }
-    const cursor = new Cursor(this.videoSink, this.fps, this.duration, this.rotation, (c) => this.cursors.delete(c));
+    const cursor = new Cursor(this.videoSink, this.fps, this.duration, this.rotation, (c) =>
+      this.cursors.delete(c),
+    );
     this.cursors.add(cursor);
     return cursor;
   }
 
-  async *audio(start: number, end: number): AsyncGenerator<{ buffer: AudioBuffer; timestamp: number }> {
+  async *audio(
+    start: number,
+    end: number,
+  ): AsyncGenerator<{ buffer: AudioBuffer; timestamp: number }> {
     if (this.closed || !this.audioSink) return;
     if (end <= start) return;
     for await (const chunk of this.audioSink.buffers(Math.max(0, start), end)) {

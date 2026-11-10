@@ -1,9 +1,9 @@
 import { get } from 'svelte/store';
 import type { FFmpeg } from '@ffmpeg/ffmpeg';
-import { preferences } from '$lib/stores/preferences';
-import { addToast } from '$lib/stores/app';
-import { edit } from '$lib/project/store';
-import type { MediaItem } from '$lib/project/types';
+import { preferences } from '#lib/stores/preferences.ts';
+import { addToast } from '#lib/stores/app.ts';
+import { edit } from '#lib/project/store.ts';
+import type { MediaItem } from '#lib/project/types.ts';
 import { convertedKey, ensureRoom, formatBytes, remove, writeBlob } from './opfs';
 import { probeFile } from './probe';
 import { invalidate } from './thumbnails';
@@ -26,12 +26,15 @@ async function loadFfmpeg(): Promise<FFmpeg> {
   if (instance?.loaded) return instance;
   if (loading) return loading;
   loading = (async () => {
-    const [{ FFmpeg }, { toBlobURL }] = await Promise.all([import('@ffmpeg/ffmpeg'), import('@ffmpeg/util')]);
+    const [{ FFmpeg }, { toBlobURL }] = await Promise.all([
+      import('@ffmpeg/ffmpeg'),
+      import('@ffmpeg/util'),
+    ]);
     const mirror = get(preferences).ffmpegMirror.trim().replace(/\/$/, '');
     const ffmpeg = new FFmpeg();
     await ffmpeg.load({
       coreURL: await toBlobURL(`${mirror}/ffmpeg-core.js`, 'text/javascript'),
-      wasmURL: await toBlobURL(`${mirror}/ffmpeg-core.wasm`, 'application/wasm')
+      wasmURL: await toBlobURL(`${mirror}/ffmpeg-core.wasm`, 'application/wasm'),
     });
     instance = ffmpeg;
     return ffmpeg;
@@ -61,14 +64,22 @@ export async function convertForEditing(
   media: MediaItem,
   blob: Blob,
   onProgress?: (value: number) => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<void> {
   if (!ffmpegAvailable()) {
-    addToast('Converting is turned off. Set a mirror for the converter in the preferences to enable it.', 'warning', 6000);
+    addToast(
+      'Converting is turned off. Set a mirror for the converter in the preferences to enable it.',
+      'warning',
+      6000,
+    );
     throw new Error('Converting is disabled');
   }
   if (blob.size > MAX_INPUT) {
-    addToast(`${media.name} is ${formatBytes(blob.size)}, the converter can only handle files up to 2 GB.`, 'error', 8000);
+    addToast(
+      `${media.name} is ${formatBytes(blob.size)}, the converter can only handle files up to 2 GB.`,
+      'error',
+      8000,
+    );
     throw new Error('File too large to convert');
   }
   await ensureRoom(Math.round(blob.size / 2));
@@ -77,12 +88,30 @@ export async function convertForEditing(
   const inputName = `input.${extension(media.name)}`;
   const outputName = 'output.mp4';
   const key = convertedKey(media.id);
-  const audioOnly = media.kind === 'audio' || (media.videoCodec === null && media.audioCodec !== null);
+  const audioOnly =
+    media.kind === 'audio' || (media.videoCodec === null && media.audioCodec !== null);
 
   const args = audioOnly
     ? ['-i', inputName, '-vn', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', outputName]
-    : ['-i', inputName, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p',
-      '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', outputName];
+    : [
+        '-i',
+        inputName,
+        '-c:v',
+        'libx264',
+        '-preset',
+        'veryfast',
+        '-crf',
+        '20',
+        '-pix_fmt',
+        'yuv420p',
+        '-c:a',
+        'aac',
+        '-b:a',
+        '192k',
+        '-movflags',
+        '+faststart',
+        outputName,
+      ];
 
   const progress = ({ progress: value }: { progress: number }) => {
     onProgress?.(Math.max(0, Math.min(1, value)));
@@ -106,7 +135,8 @@ export async function convertForEditing(
     await writeBlob(key, converted);
 
     const probe = await probeFile(converted, `${media.name}.mp4`);
-    if (probe.status !== 'ready') throw new Error(probe.statusReason ?? 'The converted file can\'t be decoded either');
+    if (probe.status !== 'ready')
+      throw new Error(probe.statusReason ?? "The converted file can't be decoded either");
 
     invalidate(media.id);
     await forgetPeaks(media.id);

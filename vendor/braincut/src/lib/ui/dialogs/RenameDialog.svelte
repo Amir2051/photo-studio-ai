@@ -1,7 +1,7 @@
 <script lang="ts">
   import { get } from 'svelte/store';
   import Dialog from '../Dialog.svelte';
-  import { edit, findClip, project } from '$lib/project/store';
+  import { edit, findClip, project } from '#lib/project/store.ts';
 
   type Target = 'project' | 'clip' | 'media' | 'sequence' | 'bin';
 

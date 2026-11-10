@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Marker } from '$lib/project/types';
+  import type { Marker } from '#lib/project/types.ts';
 
   let {
     marker,

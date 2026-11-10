@@ -1,5 +1,5 @@
 <script lang="ts" module>
-  import type { Label } from '$lib/project/types';
+  import type { Label } from '#lib/project/types.ts';
 
   // the label palette in the order the menus show it. 'none' has no swatch
   export const labels: Label[] = [
@@ -17,9 +17,9 @@
 </script>
 
 <script lang="ts">
-  import type { MediaItem } from '$lib/project/types';
-  import { formatDuration } from '$lib/project/time';
-  import { formatBytes } from '$lib/media/opfs';
+  import type { MediaItem } from '#lib/project/types.ts';
+  import { formatDuration } from '#lib/project/time.ts';
+  import { formatBytes } from '#lib/media/opfs.ts';
   import Icon from './Icon.svelte';
 
   let {

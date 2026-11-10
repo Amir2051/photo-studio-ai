@@ -1,9 +1,9 @@
 <script lang="ts">
-  import { base } from '$app/paths';
+  import { resolve } from '$app/paths';
   import Logo from './Logo.svelte';
   import Icon from './Icon.svelte';
-  import { project, dirty, history, undo, redo } from '$lib/project/store';
-  import { commandPaletteOpen, dialog, workspace, type Workspace } from '$lib/stores/app';
+  import { project, dirty, history, undo, redo } from '#lib/project/store.ts';
+  import { commandPaletteOpen, dialog, workspace, type Workspace } from '#lib/stores/app.ts';
 
   let {
     onimport,
@@ -33,7 +33,11 @@
 
 <div class="topbar">
   <div class="topbar-left">
-    <a href="{base}/" class="logo" title="Every Frame First Video Studio">
+    <a
+      href="{resolve('')}/"
+      class="logo"
+      title="Every Frame First Video Studio"
+    >
       <span class="logo-icon"><Logo size={20} /></span>
       <span class="logo-text">EVERY FRAME FIRST</span>
     </a>
@@ -92,9 +96,9 @@
       class="action-btn icon-only"
       onclick={() => commandPaletteOpen.set(true)}
       title="Command palette (Ctrl+Shift+P)"
-      aria-label="Command palette">
-      <span class="cmd-glyph">&#8984;</span>
-    </button>
+      aria-label="Command palette"
+    ><span class="cmd-glyph">⌘</span></button>
+
     <button
       class="action-btn icon-only"
       onclick={() => dialog.set({ kind: 'preferences' })}

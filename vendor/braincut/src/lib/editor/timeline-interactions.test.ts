@@ -24,25 +24,50 @@ import {
   xToTime,
   yToBandValue,
   zoomAround,
-  zoomToFit
+  zoomToFit,
 } from './timeline-interactions';
-import { createClipFromMedia, createSequence, createTitleClip } from '$lib/project/defaults';
-import { loadProject, project } from '$lib/project/store';
-import { timelineScroll, timelineZoom } from '$lib/stores/app';
-import type { MediaItem } from '$lib/project/types';
+import { createClipFromMedia, createSequence, createTitleClip } from '#lib/project/defaults.ts';
+import { loadProject, project } from '#lib/project/store.ts';
+import { timelineScroll, timelineZoom } from '#lib/stores/app.ts';
+import type { MediaItem } from '#lib/project/types.ts';
 
 function media(): MediaItem {
   return {
-    id: 'm1', name: 'clip.mp4', kind: 'video', binId: null, duration: 10, width: 1920, height: 1080, fps: 25,
-    hasVideo: true, hasAudio: true, channels: 2, sampleRate: 48000, videoCodec: 'avc', audioCodec: 'aac',
-    container: 'mp4', mimeType: 'video/mp4', fileSize: 1, rotation: 0, alpha: false, status: 'ready',
-    proxy: null, converted: null, thumbnail: null, label: 'none', addedAt: 0
+    id: 'm1',
+    name: 'clip.mp4',
+    kind: 'video',
+    binId: null,
+    duration: 10,
+    width: 1920,
+    height: 1080,
+    fps: 25,
+    hasVideo: true,
+    hasAudio: true,
+    channels: 2,
+    sampleRate: 48000,
+    videoCodec: 'avc',
+    audioCodec: 'aac',
+    container: 'mp4',
+    mimeType: 'video/mp4',
+    fileSize: 1,
+    rotation: 0,
+    alpha: false,
+    status: 'ready',
+    proxy: null,
+    converted: null,
+    thumbnail: null,
+    label: 'none',
+    addedAt: 0,
   };
 }
 
 function seq() {
   const s = createSequence({ name: 's', width: 1, height: 1, fps: 25 });
-  s.tracks[0].clips.push(createTitleClip(0, 2, 'a'), createTitleClip(2, 3, 'b'), createTitleClip(8, 1, 'c'));
+  s.tracks[0].clips.push(
+    createTitleClip(0, 2, 'a'),
+    createTitleClip(2, 3, 'b'),
+    createTitleClip(8, 1, 'c'),
+  );
   return s;
 }
 
@@ -139,7 +164,11 @@ describe('hit zones', () => {
     const { video, audio } = createClipFromMedia(media(), 1, { duration: 3, fps: 25 });
     s.tracks[1].clips.push(video!);
     s.tracks[3].clips.push(audio!);
-    expect(linkedEdges(s, video!.id, 'head').map((e) => e.clipId).sort()).toEqual([video!.id, audio!.id].sort());
+    expect(
+      linkedEdges(s, video!.id, 'head')
+        .map((e) => e.clipId)
+        .sort(),
+    ).toEqual([video!.id, audio!.id].sort());
     audio!.start = 1.5;
     audio!.duration = 2.5;
     expect(linkedEdges(s, video!.id, 'head').map((e) => e.clipId)).toEqual([video!.id]);
@@ -160,7 +189,17 @@ describe('rubber band', () => {
 describe('zoom to fit', () => {
   it('fits the sequence into the viewport', () => {
     const s = seq();
-    loadProject({ id: 'p', name: 'p', version: 1, createdAt: 0, modifiedAt: 0, media: [], bins: [], sequences: [s], activeSequenceId: s.id });
+    loadProject({
+      id: 'p',
+      name: 'p',
+      version: 1,
+      createdAt: 0,
+      modifiedAt: 0,
+      media: [],
+      bins: [],
+      sequences: [s],
+      activeSequenceId: s.id,
+    });
     timelineScroll.set(4);
     zoomToFit(1000);
     expect(get(timelineScroll)).toBe(0);
@@ -185,10 +224,14 @@ describe('edit points', () => {
     const [a, b, c] = s.tracks[0].clips;
     expect(editPointsOfClip(s, b.id).map((p) => p.cut)).toEqual([
       { cut: 2, leftClipId: a.id, rightClipId: b.id },
-      { cut: 5, leftClipId: b.id, rightClipId: null }
+      { cut: 5, leftClipId: b.id, rightClipId: null },
     ]);
     // nothing touches c on its head, so that edge comes out of black
-    expect(editPointsOfClip(s, c.id)[0].cut).toEqual({ cut: 8, leftClipId: null, rightClipId: c.id });
+    expect(editPointsOfClip(s, c.id)[0].cut).toEqual({
+      cut: 8,
+      leftClipId: null,
+      rightClipId: c.id,
+    });
     s.tracks[0].locked = true;
     expect(editPointsOfClip(s, b.id)).toEqual([]);
   });
@@ -246,9 +289,12 @@ describe('waveform gain', () => {
 
   it('fills the lane at every track height', () => {
     // what the canvas draws: half the body each way from the middle
-    const drawn = (peak: number, height: number) => Math.round(Math.min(1, peak * waveformGain(peak)) * (height / 2)) * 2;
+    const drawn = (peak: number, height: number) =>
+      Math.round(Math.min(1, peak * waveformGain(peak)) * (height / 2)) * 2;
     for (const height of [9, 23, 40, 79, 150]) {
-      expect(drawn(10 ** (-18 / 20), height), `height ${height}`).toBeGreaterThanOrEqual(Math.floor(height * 0.9));
+      expect(drawn(10 ** (-18 / 20), height), `height ${height}`).toBeGreaterThanOrEqual(
+        Math.floor(height * 0.9),
+      );
     }
   });
 });

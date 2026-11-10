@@ -1,4 +1,4 @@
-import type { Clip, Track } from '$lib/project/types';
+import type { Clip, Track } from '#lib/project/types.ts';
 import { clipSourceRange, sequenceTimeOfSource } from './clip-time';
 
 // the arithmetic behind audio scheduling, kept free of web audio so it can
@@ -29,7 +29,11 @@ export interface Placement {
 // source seconds [chunkStart, chunkStart + chunkDuration); for a reversed
 // clip the buffer has already been flipped, so its first sample is the
 // latest source time
-export function chunkPlacement(clip: Clip, chunkStart: number, chunkDuration: number): Placement | null {
+export function chunkPlacement(
+  clip: Clip,
+  chunkStart: number,
+  chunkDuration: number,
+): Placement | null {
   if (chunkDuration <= 0 || clip.speed <= 0) return null;
   const range = clipSourceRange(clip);
   const os = Math.max(chunkStart, range.start);
@@ -41,14 +45,14 @@ export function chunkPlacement(clip: Clip, chunkStart: number, chunkDuration: nu
       seqStart: sequenceTimeOfSource(clip, oe),
       seqDuration: play / clip.speed,
       offset: chunkStart + chunkDuration - oe,
-      duration: play
+      duration: play,
     };
   }
   return {
     seqStart: sequenceTimeOfSource(clip, os),
     seqDuration: play / clip.speed,
     offset: os - chunkStart,
-    duration: play
+    duration: play,
   };
 }
 
@@ -66,7 +70,7 @@ export function catchUp(
   p: Placement,
   ctxStart: number,
   ctxNow: number,
-  playbackRate: number
+  playbackRate: number,
 ): { when: number; offset: number; duration: number } | null {
   if (ctxStart >= ctxNow) return { when: ctxStart, offset: p.offset, duration: p.duration };
   const late = (ctxNow - ctxStart) * playbackRate;
@@ -79,7 +83,8 @@ export function automationTimes(seqStart: number, seqDuration: number, step: num
   const times = [seqStart];
   if (step <= 0) return times;
   // multiplied, not accumulated, so the times don't drift along a long piece
-  for (let i = 1; seqStart + i * step < seqStart + seqDuration - 1e-9; i++) times.push(seqStart + i * step);
+  for (let i = 1; seqStart + i * step < seqStart + seqDuration - 1e-9; i++)
+    times.push(seqStart + i * step);
   return times;
 }
 
@@ -89,7 +94,12 @@ export interface Curve {
 }
 
 // gain the audio transitions on a track apply to one of its clips at t
-export function transitionGainAt(track: Track, clip: Clip, t: number, curve: (type: string, progress: number) => Curve): number {
+export function transitionGainAt(
+  track: Track,
+  clip: Clip,
+  t: number,
+  curve: (type: string, progress: number) => Curve,
+): number {
   let gain = 1;
   for (const tr of track.transitions) {
     if (t < tr.start || t >= tr.start + tr.duration) continue;
@@ -102,7 +112,12 @@ export function transitionGainAt(track: Track, clip: Clip, t: number, curve: (ty
 
 // the piece of the source a clip needs between two sequence times, ordered
 // the way the file is read
-export function sourceWindow(clip: Clip, seqFrom: number, seqTo: number, mediaDuration: number): { start: number; end: number } {
+export function sourceWindow(
+  clip: Clip,
+  seqFrom: number,
+  seqTo: number,
+  mediaDuration: number,
+): { start: number; end: number } {
   const range = clipSourceRange(clip);
   const a = Math.max(seqFrom, clip.start);
   const b = Math.min(seqTo, clip.start + clip.duration);
