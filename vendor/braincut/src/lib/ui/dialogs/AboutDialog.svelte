@@ -2,7 +2,7 @@
   import Dialog from '../Dialog.svelte';
   import Logo from '../Logo.svelte';
   import Icon from '../Icon.svelte';
-  import { version } from '$lib/version';
+  import { version } from '#lib/version.ts';
 
   let { onclose }: { onclose: () => void } = $props();
 

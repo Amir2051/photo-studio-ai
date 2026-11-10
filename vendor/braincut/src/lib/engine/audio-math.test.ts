@@ -1,11 +1,33 @@
 import { describe, it, expect } from 'vitest';
-import type { Clip, Track } from '$lib/project/types';
-import { automationTimes, catchUp, chunkPlacement, chunkSequenceEnd, dbToGain, gainToDb, sourceWindow, transitionGainAt } from './audio-math';
+import type { Clip, Track } from '#lib/project/types.ts';
+import {
+  automationTimes,
+  catchUp,
+  chunkPlacement,
+  chunkSequenceEnd,
+  dbToGain,
+  gainToDb,
+  sourceWindow,
+  transitionGainAt,
+} from './audio-math';
 
 function clip(over: Partial<Clip> = {}): Clip {
   return {
-    id: 'c1', kind: 'audio', name: 'c', mediaId: 'm', start: 10, duration: 4, in: 2,
-    speed: 1, reverse: false, linkId: null, enabled: true, label: 'none', effects: [], keyframes: undefined, ...over
+    id: 'c1',
+    kind: 'audio',
+    name: 'c',
+    mediaId: 'm',
+    start: 10,
+    duration: 4,
+    in: 2,
+    speed: 1,
+    reverse: false,
+    linkId: null,
+    enabled: true,
+    label: 'none',
+    effects: [],
+    keyframes: undefined,
+    ...over,
   } as Clip;
 }
 
@@ -109,7 +131,17 @@ describe('automationTimes', () => {
 
 describe('transitionGainAt', () => {
   const track = {
-    transitions: [{ id: 't', type: 'crossfade', leftClipId: 'a', rightClipId: 'b', start: 5, duration: 2, params: {} }]
+    transitions: [
+      {
+        id: 't',
+        type: 'crossfade',
+        leftClipId: 'a',
+        rightClipId: 'b',
+        start: 5,
+        duration: 2,
+        params: {},
+      },
+    ],
   } as unknown as Track;
   const curve = (_type: string, progress: number) => ({ outGain: 1 - progress, inGain: progress });
 

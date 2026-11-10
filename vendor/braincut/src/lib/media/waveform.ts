@@ -1,6 +1,6 @@
 import { createStore, del, get, set } from 'idb-keyval';
 import { writable } from 'svelte/store';
-import type { MediaItem } from '$lib/project/types';
+import type { MediaItem } from '#lib/project/types.ts';
 import type { WorkerRequest, WorkerResponse } from './workers/waveform.worker';
 
 // peaks are min/max pairs per bucket: peaks[2i] is the lowest sample in
@@ -37,8 +37,13 @@ function getWorker(): Worker {
     const job = pending.get(message.id);
     if (!job) return;
     if (message.type === 'progress') job.onProgress?.(message.value);
-    else if (message.type === 'done') { pending.delete(message.id); job.resolve(message.peaks); }
-    else { pending.delete(message.id); job.reject(new Error(message.message)); }
+    else if (message.type === 'done') {
+      pending.delete(message.id);
+      job.resolve(message.peaks);
+    } else {
+      pending.delete(message.id);
+      job.reject(new Error(message.message));
+    }
   };
   worker.onerror = () => {
     for (const job of pending.values()) job.reject(new Error('The waveform worker crashed'));
@@ -59,7 +64,11 @@ export interface PeaksOptions {
   signal?: AbortSignal;
 }
 
-export function computePeaks(media: MediaItem, blob: Blob, opts: PeaksOptions = {}): Promise<Float32Array> {
+export function computePeaks(
+  media: MediaItem,
+  blob: Blob,
+  opts: PeaksOptions = {},
+): Promise<Float32Array> {
   const perSecond = opts.perSecond ?? DEFAULT_PEAKS_PER_SECOND;
   const cached = cache.get(media.id);
   if (cached) return Promise.resolve(cached);
@@ -73,12 +82,16 @@ export function computePeaks(media: MediaItem, blob: Blob, opts: PeaksOptions = 
     const peaks = await new Promise<Float32Array>((resolve, reject) => {
       const id = nextId++;
       pending.set(id, { resolve, reject, onProgress: opts.onProgress });
-      opts.signal?.addEventListener('abort', () => {
-        if (!pending.has(id)) return;
-        pending.delete(id);
-        postRequest({ type: 'cancel', id });
-        reject(new DOMException('Waveform cancelled', 'AbortError'));
-      }, { once: true });
+      opts.signal?.addEventListener(
+        'abort',
+        () => {
+          if (!pending.has(id)) return;
+          pending.delete(id);
+          postRequest({ type: 'cancel', id });
+          reject(new DOMException('Waveform cancelled', 'AbortError'));
+        },
+        { once: true },
+      );
       postRequest({ type: 'compute', id, blob, perSecond });
     });
     set(key, peaks, store).catch(() => {});
@@ -86,14 +99,20 @@ export function computePeaks(media: MediaItem, blob: Blob, opts: PeaksOptions = 
   })();
 
   inflight.set(media.id, promise);
-  promise.then((peaks) => {
-    cache.set(media.id, peaks);
-    peaksVersion.update((v) => v + 1);
-  }).catch(() => {}).finally(() => inflight.delete(media.id));
+  promise
+    .then((peaks) => {
+      cache.set(media.id, peaks);
+      peaksVersion.update((v) => v + 1);
+    })
+    .catch(() => {})
+    .finally(() => inflight.delete(media.id));
   return promise;
 }
 
-export async function forgetPeaks(mediaId: string, perSecond = DEFAULT_PEAKS_PER_SECOND): Promise<void> {
+export async function forgetPeaks(
+  mediaId: string,
+  perSecond = DEFAULT_PEAKS_PER_SECOND,
+): Promise<void> {
   cache.delete(mediaId);
   await del(`peaks:${mediaId}:${perSecond}`, store).catch(() => {});
   peaksVersion.update((v) => v + 1);

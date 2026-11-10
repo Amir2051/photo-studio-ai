@@ -1,12 +1,12 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { program, type Session } from '$lib/engine/session';
-  import { createEffectInstance, paramDef } from '$lib/engine/effects/registry';
-  import { isAnimated, setKeyframe, toggleAnimated, valueAt } from '$lib/project/keyframes';
-  import { findClipById } from '$lib/project/ops';
-  import { activeSequence, commitPreview, editSequence, preview } from '$lib/project/store';
-  import type { Clip, EffectInstance, Project } from '$lib/project/types';
-  import { playhead, selection } from '$lib/stores/app';
+  import { program, type Session } from '#lib/engine/session.ts';
+  import { createEffectInstance, paramDef } from '#lib/engine/effects/registry.ts';
+  import { isAnimated, setKeyframe, toggleAnimated, valueAt } from '#lib/project/keyframes.ts';
+  import { findClipById } from '#lib/project/ops.ts';
+  import { activeSequence, commitPreview, editSequence, preview } from '#lib/project/store.ts';
+  import type { Clip, EffectInstance, Project } from '#lib/project/types.ts';
+  import { playhead, selection } from '#lib/stores/app.ts';
   import Icon from './Icon.svelte';
   import Scopes from './Scopes.svelte';
   import Slider from './Slider.svelte';

@@ -1,8 +1,8 @@
-import { Compositor } from '$lib/engine/compositor';
-import { MediaCache } from '$lib/engine/media-cache';
-import { getBlobForMedia } from '$lib/media/sources';
-import { sequenceDuration } from '$lib/project/defaults';
-import type { Id, MediaItem, Sequence } from '$lib/project/types';
+import { Compositor } from '#lib/engine/compositor.ts';
+import { MediaCache } from '#lib/engine/media-cache.ts';
+import { getBlobForMedia } from '#lib/media/sources.ts';
+import { sequenceDuration } from '#lib/project/defaults.ts';
+import type { Id, MediaItem, Sequence } from '#lib/project/types.ts';
 import type { ExportSettings } from './presets';
 
 export type GetMedia = (id: Id) => MediaItem | undefined;
@@ -20,10 +20,17 @@ export interface Scene {
 }
 
 export function openCache(): MediaCache {
-  return new MediaCache({ getBlob: (media: MediaItem) => getBlobForMedia(media, { preferProxy: false }) });
+  return new MediaCache({
+    getBlob: (media: MediaItem) => getBlobForMedia(media, { preferProxy: false }),
+  });
 }
 
-export function openScene(sequence: Sequence, width: number, height: number, getMedia: GetMedia): Scene {
+export function openScene(
+  sequence: Sequence,
+  width: number,
+  height: number,
+  getMedia: GetMedia,
+): Scene {
   const cache = openCache();
   // the sequence is drawn at its own aspect and fitted into the export frame,
   // which is how a 16:9 edit ends up centred in a vertical export
@@ -64,13 +71,21 @@ export function openScene(sequence: Sequence, width: number, height: number, get
     close() {
       compositor.destroy();
       cache.dispose();
-    }
+    },
   };
 }
 
-export function exportRange(sequence: Sequence, range: ExportSettings['range']): { start: number; end: number } {
+export function exportRange(
+  sequence: Sequence,
+  range: ExportSettings['range'],
+): { start: number; end: number } {
   const whole = { start: 0, end: sequenceDuration(sequence) };
-  if (range === 'in-out' && sequence.inPoint !== null && sequence.outPoint !== null && sequence.outPoint > sequence.inPoint) {
+  if (
+    range === 'in-out' &&
+    sequence.inPoint !== null &&
+    sequence.outPoint !== null &&
+    sequence.outPoint > sequence.inPoint
+  ) {
     return { start: sequence.inPoint, end: sequence.outPoint };
   }
   return whole;

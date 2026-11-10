@@ -4,9 +4,9 @@
   import NumberField from '../NumberField.svelte';
   import SelectField from '../SelectField.svelte';
   import Icon from '../Icon.svelte';
-  import { activeSequence, editSequence } from '$lib/project/store';
-  import { snapToFrame } from '$lib/project/time';
-  import { fpsOptions } from '$lib/templates/sequences';
+  import { activeSequence, editSequence } from '#lib/project/store.ts';
+  import { snapToFrame } from '#lib/project/time.ts';
+  import { fpsOptions } from '#lib/templates/sequences.ts';
 
   let { onclose }: { onclose: () => void } = $props();
 

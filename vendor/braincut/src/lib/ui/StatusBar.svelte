@@ -1,11 +1,11 @@
 <script lang="ts">
-  import { activeSequence } from '$lib/project/store';
-  import { renderStatus, playhead, snapEnabled, timelineZoom } from '$lib/stores/app';
-  import { formatTimecode } from '$lib/project/time';
-  import { sequenceDuration } from '$lib/project/defaults';
-  import { fitZoom, timelineViewport } from '$lib/editor/timeline-interactions';
-  import { preferences } from '$lib/stores/preferences';
-  import { claude } from '$lib/agent/state';
+  import { activeSequence } from '#lib/project/store.ts';
+  import { renderStatus, playhead, snapEnabled, timelineZoom } from '#lib/stores/app.ts';
+  import { formatTimecode } from '#lib/project/time.ts';
+  import { sequenceDuration } from '#lib/project/defaults.ts';
+  import { fitZoom, timelineViewport } from '#lib/editor/timeline-interactions.ts';
+  import { preferences } from '#lib/stores/preferences.ts';
+  import { claude } from '#lib/agent/state.ts';
 
   const claudeColors: Record<string, string> = {
     off: 'var(--text-muted)',

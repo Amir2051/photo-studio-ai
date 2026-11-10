@@ -1,4 +1,4 @@
-import { dragPayload } from '$lib/stores/app';
+import { dragPayload } from '#lib/stores/app.ts';
 
 // what can be picked up and dropped somewhere else in the editor. clip moves
 // inside the timeline are handled by pointer events, not html5 drag and drop,

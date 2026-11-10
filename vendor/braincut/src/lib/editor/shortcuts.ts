@@ -1,8 +1,8 @@
 import { get } from 'svelte/store';
 import { tinykeys, type KeybindingHandler, type KeybindingsMap } from 'tinykeys';
-import { clearSelection, redo, undo } from '$lib/project/store';
-import { program } from '$lib/engine/session';
-import { pickFiles } from '$lib/media/import';
+import { clearSelection, redo, undo } from '#lib/project/store.ts';
+import { program } from '#lib/engine/session.ts';
+import { pickFiles } from '#lib/media/import.ts';
 import { timelineActions } from './timeline-interactions';
 import { insertSource, overwriteSource } from './source-actions';
 import { openProjectFile, saveProject, saveProjectAs } from './project-actions';
@@ -17,7 +17,7 @@ import {
   openSpeedDialog,
   rippleTrimToPlayhead,
   toggleMuteSelection,
-  toggleSnapping
+  toggleSnapping,
 } from './edit-actions';
 import { tools } from './tools';
 import {
@@ -27,10 +27,10 @@ import {
   dialog,
   playhead,
   selectedTransitionId,
-  selection
-} from '$lib/stores/app';
-import { activeSequence } from '$lib/project/store';
-import * as ops from '$lib/project/ops';
+  selection,
+} from '#lib/stores/app.ts';
+import { activeSequence } from '#lib/project/store.ts';
+import * as ops from '#lib/project/ops.ts';
 
 // the premiere-like map from the readme. every handler swallows the key so
 // the page never scrolls or clicks a focused button behind it
@@ -70,7 +70,9 @@ function escape(): void {
 // ctrl+k splits, but with nothing to cut it opens the palette instead
 function splitOrPalette(): void {
   const seq = get(activeSequence);
-  const hasClip = seq ? get(selection).length > 0 || ops.clipsAt(seq, get(playhead)).length > 0 : false;
+  const hasClip = seq
+    ? get(selection).length > 0 || ops.clipsAt(seq, get(playhead)).length > 0
+    : false;
   if (hasClip) timelineActions.splitAtPlayhead(false);
   else commandPaletteOpen.set(true);
 }
@@ -179,7 +181,7 @@ export function installShortcuts(target: Window | HTMLElement = window): () => v
     '$mod+KeyI': bind(() => pickFiles()),
     '$mod+KeyM': bind(() => dialog.set({ kind: 'export' })),
     '$mod+Shift+KeyE': bind(exportCurrentFrame),
-    '$mod+KeyN': bind(() => dialog.set({ kind: 'new-sequence' }))
+    '$mod+KeyN': bind(() => dialog.set({ kind: 'new-sequence' })),
   };
 
   for (const tool of tools) {
@@ -194,6 +196,6 @@ export function installShortcuts(target: Window | HTMLElement = window): () => v
       if (e.key === 'Escape') return false;
       // a dialog or the palette owns the keyboard while it is up
       return get(dialog) !== null || get(commandPaletteOpen);
-    }
+    },
   });
 }

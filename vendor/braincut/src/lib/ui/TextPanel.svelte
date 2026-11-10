@@ -1,10 +1,10 @@
 <script lang="ts">
   import Icon from './Icon.svelte';
-  import { createTitleClip } from '$lib/project/defaults';
-  import { editSequence, activeSequence } from '$lib/project/store';
-  import { overwriteClip } from '$lib/project/ops';
-  import { preferences } from '$lib/stores/preferences';
-  import { addToast, dialog, selection, playhead } from '$lib/stores/app';
+  import { createTitleClip } from '#lib/project/defaults.ts';
+  import { editSequence, activeSequence } from '#lib/project/store.ts';
+  import { overwriteClip } from '#lib/project/ops.ts';
+  import { preferences } from '#lib/stores/preferences.ts';
+  import { addToast, dialog, selection, playhead } from '#lib/stores/app.ts';
 
   const selectedTitle = $derived.by(() => {
     const seq = $activeSequence;

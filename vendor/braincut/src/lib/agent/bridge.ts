@@ -2,10 +2,15 @@
 // server on this machine, calls in, results out. nothing here leaves the
 // machine; the socket only ever points at the loopback address
 
-import { preferences } from '$lib/stores/preferences';
-import { addToast } from '$lib/stores/app';
-import { version } from '$lib/version';
-import { PROTOCOL_VERSION, type CallMessage, type ServerMessage, type TabMessage } from './protocol';
+import { preferences } from '#lib/stores/preferences.ts';
+import { addToast } from '#lib/stores/app.ts';
+import { version } from '#lib/version.ts';
+import {
+  PROTOCOL_VERSION,
+  type CallMessage,
+  type ServerMessage,
+  type TabMessage,
+} from './protocol';
 import { claude } from './state';
 import { runTool } from './tools';
 
@@ -27,12 +32,21 @@ function emit(name: string, data: unknown): void {
 }
 
 function summarize(tool: string, result: unknown): string {
-  const summary = result && typeof result === 'object' && 'summary' in result ? (result as { summary?: unknown }).summary : null;
-  return typeof summary === 'string' && summary ? `${tool.replace(/_/g, ' ')}: ${summary}` : tool.replace(/_/g, ' ');
+  const summary =
+    result && typeof result === 'object' && 'summary' in result
+      ? (result as { summary?: unknown }).summary
+      : null;
+  return typeof summary === 'string' && summary
+    ? `${tool.replace(/_/g, ' ')}: ${summary}`
+    : tool.replace(/_/g, ' ');
 }
 
 async function handleCall(call: CallMessage): Promise<void> {
-  claude.update((c) => ({ ...c, calls: c.calls + 1, lastAction: `${call.tool.replace(/_/g, ' ')}…` }));
+  claude.update((c) => ({
+    ...c,
+    calls: c.calls + 1,
+    lastAction: `${call.tool.replace(/_/g, ' ')}…`,
+  }));
   try {
     const result = await runTool(call.tool, call.args ?? {}, { emit });
     send({ type: 'result', id: call.id, ok: true, result });
@@ -40,7 +54,10 @@ async function handleCall(call: CallMessage): Promise<void> {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     send({ type: 'result', id: call.id, ok: false, error: message });
-    claude.update((c) => ({ ...c, lastAction: `${call.tool.replace(/_/g, ' ')} failed: ${message}` }));
+    claude.update((c) => ({
+      ...c,
+      lastAction: `${call.tool.replace(/_/g, ' ')} failed: ${message}`,
+    }));
   }
 }
 
@@ -99,7 +116,13 @@ function connect(): void {
   }
   socket = ws;
   ws.onopen = () => {
-    send({ type: 'hello', protocol: PROTOCOL_VERSION, app: 'braincut', version, url: location.origin + location.pathname });
+    send({
+      type: 'hello',
+      protocol: PROTOCOL_VERSION,
+      app: 'braincut',
+      version,
+      url: location.origin + location.pathname,
+    });
   };
   ws.onmessage = onMessage;
   ws.onclose = () => {
@@ -141,7 +164,7 @@ export function installClaudeBridge(): () => void {
     preferences.update((p) => ({
       ...p,
       claudeBridge: true,
-      claudePort: Number.isInteger(asked) && asked > 0 && asked < 65536 ? asked : p.claudePort
+      claudePort: Number.isInteger(asked) && asked > 0 && asked < 65536 ? asked : p.claudePort,
     }));
   }
   const unsubscribe = preferences.subscribe((p) => {

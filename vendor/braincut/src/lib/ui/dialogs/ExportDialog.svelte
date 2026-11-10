@@ -7,9 +7,9 @@
   import SelectField from '../SelectField.svelte';
   import ToggleField from '../ToggleField.svelte';
   import Icon from '../Icon.svelte';
-  import { activeSequence, mediaById } from '$lib/project/store';
-  import { addToast, exportJob, renderStatus } from '$lib/stores/app';
-  import { formatDuration } from '$lib/project/time';
+  import { activeSequence, mediaById } from '#lib/project/store.ts';
+  import { addToast, exportJob, renderStatus } from '#lib/stores/app.ts';
+  import { formatDuration } from '#lib/project/time.ts';
   import {
     availablePresets,
     defaultPresetForBrowser,
@@ -25,9 +25,9 @@
     type ExportSettings,
     type ExportVideoCodec,
     type QualityLevel
-  } from '$lib/export/presets';
-  import { exportSequence, type ExportTarget } from '$lib/export/render';
-  import { exportRange } from '$lib/export/scene';
+  } from '#lib/export/presets.ts';
+  import { exportSequence, type ExportTarget } from '#lib/export/render.ts';
+  import { exportRange } from '#lib/export/scene.ts';
 
   let { onclose }: { onclose: () => void } = $props();
 

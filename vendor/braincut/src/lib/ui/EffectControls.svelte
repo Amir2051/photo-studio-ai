@@ -7,11 +7,11 @@
   import ToggleField from './ToggleField.svelte';
   import ParamRow from './ParamRow.svelte';
   import KeyframeLane from './KeyframeLane.svelte';
-  import { activeSequence, commitPreview, editSequence, mediaById, preview } from '$lib/project/store';
-  import { contextMenu, dialog, playhead, selectedTransitionId, selection, type MenuItem } from '$lib/stores/app';
-  import type { Clip, Easing, EffectInstance, Keyframe, ParamValue, Sequence, Transition } from '$lib/project/types';
-  import { formatTimecode, snapToFrame } from '$lib/project/time';
-  import { removeTransition, resizeTransition, setTransitionAlignment, type TransitionAlignment } from '$lib/project/ops';
+  import { activeSequence, commitPreview, editSequence, mediaById, preview } from '#lib/project/store.ts';
+  import { contextMenu, dialog, playhead, selectedTransitionId, selection, type MenuItem } from '#lib/stores/app.ts';
+  import type { Clip, Easing, EffectInstance, Keyframe, ParamValue, Sequence, Transition } from '#lib/project/types.ts';
+  import { formatTimecode, snapToFrame } from '#lib/project/time.ts';
+  import { removeTransition, resizeTransition, setTransitionAlignment, type TransitionAlignment } from '#lib/project/ops.ts';
   import {
     isAnimated,
     keyframeAt,
@@ -21,12 +21,12 @@
     setKeyframeEasing,
     toggleAnimated,
     valueAt
-  } from '$lib/project/keyframes';
-  import { defaultParams, effectDef, type ParamDef } from '$lib/engine/effects/registry';
-  import { transitionDef } from '$lib/engine/transitions/registry';
-  import { fillScale, fitScale } from '$lib/engine/transform';
-  import { sourceTimeAt } from '$lib/engine/clip-time';
-  import { program } from '$lib/engine/session';
+  } from '#lib/project/keyframes.ts';
+  import { defaultParams, effectDef, type ParamDef } from '#lib/engine/effects/registry.ts';
+  import { transitionDef } from '#lib/engine/transitions/registry.ts';
+  import { fillScale, fitScale } from '#lib/engine/transform.ts';
+  import { sourceTimeAt } from '#lib/engine/clip-time.ts';
+  import { program } from '#lib/engine/session.ts';
 
   // the effect controls of a desktop nle: the fixed effects of the selected
   // clip, then the ones added to it, each param with its stopwatch, and a

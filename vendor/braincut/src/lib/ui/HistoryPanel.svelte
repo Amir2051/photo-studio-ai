@@ -1,6 +1,6 @@
 <script lang="ts">
   import Icon from './Icon.svelte';
-  import { history, seekHistory } from '$lib/project/store';
+  import { history, seekHistory } from '#lib/project/store.ts';
 
   // index counts applied entries, so row 0 is the state before the first edit
   const rows = $derived(['Open project', ...$history.entries]);

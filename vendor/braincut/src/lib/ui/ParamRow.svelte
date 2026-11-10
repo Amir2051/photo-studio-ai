@@ -1,6 +1,6 @@
 <script lang="ts">
-  import type { ParamDef } from '$lib/engine/effects/registry';
-  import type { ParamValue } from '$lib/project/types';
+  import type { ParamDef } from '#lib/engine/effects/registry.ts';
+  import type { ParamValue } from '#lib/project/types.ts';
   import Field from './Field.svelte';
   import Icon from './Icon.svelte';
   import NumberField from './NumberField.svelte';

@@ -3,15 +3,26 @@
 // the numbers can be tested without a dom. the actions at the bottom are
 // what the shortcuts and the command palette call
 import { get, writable } from 'svelte/store';
-import type { Clip, Id, Sequence, Track, TrackKind } from '$lib/project/types';
-import { activeSequence, clearSelection, editSequence } from '$lib/project/store';
-import * as ops from '$lib/project/ops';
-import { createMarker, sequenceDuration, clipEnd } from '$lib/project/defaults';
-import { nearlyEqual, snapToFrame } from '$lib/project/time';
-import { copyClips, cutClips, pasteClips } from '$lib/editor/clipboard';
-import { addToast, playhead, selection, selectedTransitionId, timelineScroll, timelineZoom } from '$lib/stores/app';
-import { preferences } from '$lib/stores/preferences';
-import { defaultAudioTransition, defaultVideoTransition, transitionDef } from '$lib/engine/transitions/registry';
+import type { Clip, Id, Sequence, Track, TrackKind } from '#lib/project/types.ts';
+import { activeSequence, clearSelection, editSequence } from '#lib/project/store.ts';
+import * as ops from '#lib/project/ops.ts';
+import { createMarker, sequenceDuration, clipEnd } from '#lib/project/defaults.ts';
+import { nearlyEqual, snapToFrame } from '#lib/project/time.ts';
+import { copyClips, cutClips, pasteClips } from '#lib/editor/clipboard.ts';
+import {
+  addToast,
+  playhead,
+  selection,
+  selectedTransitionId,
+  timelineScroll,
+  timelineZoom,
+} from '#lib/stores/app.ts';
+import { preferences } from '#lib/stores/preferences.ts';
+import {
+  defaultAudioTransition,
+  defaultVideoTransition,
+  transitionDef,
+} from '#lib/engine/transitions/registry.ts';
 
 export const MIN_ZOOM = 5;
 export const MAX_ZOOM = 2000;
@@ -43,7 +54,12 @@ export function snapTolerance(zoom: number): number {
 
 // the time under anchorX stays under anchorX after the zoom, so a wheel zoom
 // grows around the pointer instead of running away to the left
-export function zoomAround(zoom: number, scroll: number, nextZoom: number, anchorX: number): { zoom: number; scroll: number } {
+export function zoomAround(
+  zoom: number,
+  scroll: number,
+  nextZoom: number,
+  anchorX: number,
+): { zoom: number; scroll: number } {
   const z = clampZoom(nextZoom);
   const anchorTime = scroll + anchorX / zoom;
   return { zoom: z, scroll: Math.max(0, anchorTime - anchorX / z) };
@@ -106,7 +122,10 @@ export function firstUnlockedTrack(seq: Sequence, kind: TrackKind): Track | null
 // how many tracks a group of clips can travel together before one of them
 // would run past the first or last track of its kind. without this the ones
 // at the edge pile onto the same track and overwrite each other
-export function trackOffsetRange(seq: Sequence, trackIds: Iterable<Id>): { min: number; max: number } {
+export function trackOffsetRange(
+  seq: Sequence,
+  trackIds: Iterable<Id>,
+): { min: number; max: number } {
   let min = -Infinity;
   let max = Infinity;
   for (const trackId of trackIds) {
@@ -127,8 +146,25 @@ export function trackOffsetRange(seq: Sequence, trackIds: Iterable<Id>): { min: 
 function stepCandidates(fps: number): number[] {
   const frame = 1 / fps;
   return [
-    frame, 2 * frame, 5 * frame, 10 * frame,
-    1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 18000
+    frame,
+    2 * frame,
+    5 * frame,
+    10 * frame,
+    1,
+    2,
+    5,
+    10,
+    15,
+    30,
+    60,
+    120,
+    300,
+    600,
+    900,
+    1800,
+    3600,
+    7200,
+    18000,
   ];
 }
 
@@ -201,7 +237,11 @@ export function cutNear(track: Track, time: number, tolerance: number): Cut | nu
     const prev = track.clips[i - 1];
     const next = track.clips[i + 1];
     if (!prev || !nearlyEqual(clipEnd(prev), clip.start)) consider(clip.start, null, clip.id);
-    consider(clipEnd(clip), clip.id, next && nearlyEqual(next.start, clipEnd(clip)) ? next.id : null);
+    consider(
+      clipEnd(clip),
+      clip.id,
+      next && nearlyEqual(next.start, clipEnd(clip)) ? next.id : null,
+    );
   }
   return best;
 }
@@ -233,7 +273,7 @@ export function bandKey(clip: Clip): BandKey {
 // the rubber band maps opacity 0..100 and volume -60..12 db onto the clip height
 const bandRange: Record<BandKey, { min: number; max: number }> = {
   opacity: { min: 0, max: 100 },
-  volume: { min: -60, max: 12 }
+  volume: { min: -60, max: 12 },
 };
 
 export function bandValueToY(key: BandKey, value: number, height: number): number {
@@ -250,11 +290,15 @@ export function yToBandValue(key: BandKey, y: number, height: number): number {
 }
 
 export function bandParam(key: BandKey): { effectType: string; param: string } {
-  return key === 'opacity' ? { effectType: 'opacity', param: 'opacity' } : { effectType: 'volume', param: 'level' };
+  return key === 'opacity'
+    ? { effectType: 'opacity', param: 'opacity' }
+    : { effectType: 'volume', param: 'level' };
 }
 
 export function formatBandValue(key: BandKey, value: number): string {
-  return key === 'opacity' ? `${Math.round(value)}%` : `${value > 0 ? '+' : ''}${value.toFixed(1)} dB`;
+  return key === 'opacity'
+    ? `${Math.round(value)}%`
+    : `${value > 0 ? '+' : ''}${value.toFixed(1)} dB`;
 }
 
 export function zoomIn(viewportWidth: number): void {
@@ -298,7 +342,12 @@ export const WAVE_HEADROOM = 0.92;
 
 // the loudest sample in a stretch of source, out of the min/max pairs the
 // waveform worker leaves behind
-export function peakOfRange(peaks: Float32Array, from: number, to: number, perSecond: number): number {
+export function peakOfRange(
+  peaks: Float32Array,
+  from: number,
+  to: number,
+  perSecond: number,
+): number {
   const buckets = peaks.length / 2;
   const lo = Math.max(0, Math.floor(Math.min(from, to) * perSecond));
   const hi = Math.min(buckets, Math.ceil(Math.max(from, to) * perSecond));
@@ -331,14 +380,18 @@ function selectedIds(s: Sequence): Id[] {
 // the session is only loaded on demand so this module stays importable in
 // node, where the tests run
 async function seekTo(time: number): Promise<void> {
-  const { program } = await import('$lib/engine/session');
+  const { program } = await import('#lib/engine/session.ts');
   program().player.seek(time);
 }
 
 function defaultTransition(kind: TrackKind): { type: string; duration: number } {
   const prefs = get(preferences);
   const wanted = kind === 'video' ? prefs.defaultVideoTransition : prefs.defaultAudioTransition;
-  const type = transitionDef(wanted) ? wanted : kind === 'video' ? defaultVideoTransition : defaultAudioTransition;
+  const type = transitionDef(wanted)
+    ? wanted
+    : kind === 'video'
+      ? defaultVideoTransition
+      : defaultAudioTransition;
   return { type, duration: Math.max(0.04, prefs.defaultTransitionDuration) };
 }
 
@@ -360,7 +413,7 @@ export function editPointsOfClip(s: Sequence, clipId: Id): EditPoint[] {
   const tail = next && nearlyEqual(next.start, clipEnd(clip)) ? next.id : null;
   return [
     { trackId: track.id, cut: { cut: clip.start, leftClipId: head, rightClipId: clip.id } },
-    { trackId: track.id, cut: { cut: clipEnd(clip), leftClipId: clip.id, rightClipId: tail } }
+    { trackId: track.id, cut: { cut: clipEnd(clip), leftClipId: clip.id, rightClipId: tail } },
   ];
 }
 
@@ -414,7 +467,9 @@ export const timelineActions = {
     if (!s) return;
     const time = get(playhead);
     const ids = allTracks ? [] : selectedIds(s);
-    editSequence('split clips', (d) => ops.splitClipsAt(d, time, ids.length ? ids : 'all-unlocked'));
+    editSequence('split clips', (d) =>
+      ops.splitClipsAt(d, time, ids.length ? ids : 'all-unlocked'),
+    );
   },
 
   addMarkerAtPlayhead(): void {
@@ -469,7 +524,12 @@ export const timelineActions = {
     const moves: ops.ClipMove[] = [];
     for (const cid of ids) {
       const found = ops.findClipById(s, cid);
-      if (found) moves.push({ clipId: cid, trackId: found.track.id, start: Math.max(0, found.clip.start + delta) });
+      if (found)
+        moves.push({
+          clipId: cid,
+          trackId: found.track.id,
+          start: Math.max(0, found.clip.start + delta),
+        });
     }
     editSequence('nudge clips', (d) => ops.moveClips(d, moves, 'overwrite', { keepLinked: false }));
   },
@@ -527,7 +587,9 @@ export const timelineActions = {
     const first = ops.findClipById(s, ids[0])?.clip;
     if (!first) return;
     const enabled = !first.enabled;
-    editSequence(enabled ? 'enable clips' : 'disable clips', (d) => ops.setEnabled(d, ids, enabled));
+    editSequence(enabled ? 'enable clips' : 'disable clips', (d) =>
+      ops.setEnabled(d, ids, enabled),
+    );
   },
 
   closeGapAtPlayhead(): void {
@@ -575,7 +637,7 @@ export const timelineActions = {
 
   zoomToFit(viewportWidth: number): void {
     zoomToFit(viewportWidth);
-  }
+  },
 };
 
 // a frame-aligned time for razor cuts and marker drops

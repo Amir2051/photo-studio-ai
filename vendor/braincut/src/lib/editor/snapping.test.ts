@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { snap, snapPoints, snapRange } from './snapping';
-import { createSequence, createTitleClip } from '$lib/project/defaults';
+import { createSequence, createTitleClip } from '#lib/project/defaults.ts';
 
 function seq() {
   const s = createSequence({ name: 's', width: 1, height: 1, fps: 25 });
@@ -16,13 +16,25 @@ describe('snapping', () => {
   it('collects points', () => {
     const points = snapPoints(seq(), { playhead: 4 });
     expect(points.map((p) => `${p.kind}@${p.time}`)).toEqual([
-      'start@0', 'clip-start@2', 'clip-end@5', 'clip-start@10', 'clip-end@11', 'playhead@4', 'marker@7', 'marker@8', 'in@1', 'out@12'
+      'start@0',
+      'clip-start@2',
+      'clip-end@5',
+      'clip-start@10',
+      'clip-end@11',
+      'playhead@4',
+      'marker@7',
+      'marker@8',
+      'in@1',
+      'out@12',
     ]);
   });
 
   it('can leave out the dragged clips and markers', () => {
     const s = seq();
-    const points = snapPoints(s, { excludeClipIds: [s.tracks[0].clips[0].id], includeMarkers: false });
+    const points = snapPoints(s, {
+      excludeClipIds: [s.tracks[0].clips[0].id],
+      includeMarkers: false,
+    });
     expect(points.map((p) => p.kind)).toEqual(['start', 'clip-start', 'clip-end', 'in', 'out']);
   });
 

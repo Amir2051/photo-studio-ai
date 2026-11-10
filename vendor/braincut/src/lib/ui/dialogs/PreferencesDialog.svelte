@@ -5,13 +5,13 @@
   import NumberField from '../NumberField.svelte';
   import SelectField from '../SelectField.svelte';
   import ToggleField from '../ToggleField.svelte';
-  import { preferences, type Preferences } from '$lib/stores/preferences';
-  import { addToast } from '$lib/stores/app';
-  import { edit, project } from '$lib/project/store';
-  import { transitionDefs } from '$lib/engine/transitions/registry';
-  import { remove, estimateQuota, formatBytes } from '$lib/media/opfs';
-  import { forgetPeaks } from '$lib/media/waveform';
-  import { deleteProjectLocal } from '$lib/project/persistence';
+  import { preferences, type Preferences } from '#lib/stores/preferences.ts';
+  import { addToast } from '#lib/stores/app.ts';
+  import { edit, project } from '#lib/project/store.ts';
+  import { transitionDefs } from '#lib/engine/transitions/registry.ts';
+  import { remove, estimateQuota, formatBytes } from '#lib/media/opfs.ts';
+  import { forgetPeaks } from '#lib/media/waveform.ts';
+  import { deleteProjectLocal } from '#lib/project/persistence.ts';
 
   let { onclose }: { onclose: () => void } = $props();
 

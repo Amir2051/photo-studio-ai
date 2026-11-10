@@ -1,15 +1,15 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { program, resetPreview, sessionEpoch, type Session } from '$lib/engine/session';
-  import { computeSpriteTransform, readTransform } from '$lib/engine/transform';
-  import { isAnimated, paramsAt, setKeyframe } from '$lib/project/keyframes';
-  import { addMarker, clipAt, findClipById, setInOut, sequenceDuration } from '$lib/project/ops';
-  import { createMarker } from '$lib/project/defaults';
-  import { activeSequence, commitPreview, editSequence, mediaById, preview, selectClips } from '$lib/project/store';
-  import type { Clip, ParamValue, Project } from '$lib/project/types';
-  import { addToast, playhead, previewQuality, selection, showSafeMargins } from '$lib/stores/app';
-  import { preferences } from '$lib/stores/preferences';
-  import { openFrameExportMenu } from '$lib/editor/export-actions';
+  import { program, resetPreview, sessionEpoch, type Session } from '#lib/engine/session.ts';
+  import { computeSpriteTransform, readTransform } from '#lib/engine/transform.ts';
+  import { isAnimated, paramsAt, setKeyframe } from '#lib/project/keyframes.ts';
+  import { addMarker, clipAt, findClipById, setInOut, sequenceDuration } from '#lib/project/ops.ts';
+  import { createMarker } from '#lib/project/defaults.ts';
+  import { activeSequence, commitPreview, editSequence, mediaById, preview, selectClips } from '#lib/project/store.ts';
+  import type { Clip, ParamValue, Project } from '#lib/project/types.ts';
+  import { addToast, playhead, previewQuality, selection, showSafeMargins } from '#lib/stores/app.ts';
+  import { preferences } from '#lib/stores/preferences.ts';
+  import { openFrameExportMenu } from '#lib/editor/export-actions.ts';
   import Icon from './Icon.svelte';
   import Monitor from './Monitor.svelte';
   import Transport from './Transport.svelte';

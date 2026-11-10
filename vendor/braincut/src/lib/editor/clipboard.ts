@@ -1,7 +1,7 @@
 import { writable } from 'svelte/store';
-import type { Clip, Id, Sequence, TrackKind } from '$lib/project/types';
-import { id } from '$lib/project/ids';
-import { deleteClips, placeClips, type Placement } from '$lib/project/ops';
+import type { Clip, Id, Sequence, TrackKind } from '#lib/project/types.ts';
+import { id } from '#lib/project/ids.ts';
+import { deleteClips, placeClips, type Placement } from '#lib/project/ops.ts';
 
 interface ClipboardEntry {
   clip: Clip;
@@ -36,7 +36,12 @@ export function copyClips(seq: Sequence, clipIds: Id[]): number {
     const position = trackIndexOfKind(seq, track.id)!;
     for (const clip of track.clips) {
       if (!wanted.has(clip.id)) continue;
-      collected.push({ clip: clone(clip), trackKind: track.kind, trackIndex: position.index, offset: clip.start });
+      collected.push({
+        clip: clone(clip),
+        trackKind: track.kind,
+        trackIndex: position.index,
+        offset: clip.start,
+      });
     }
   }
   if (collected.length === 0) return 0;
@@ -72,7 +77,9 @@ export function pasteClips(seq: Sequence, time: number, opts: PasteOptions = {})
   if (opts.trackHint) {
     const hint = trackIndexOfKind(seq, opts.trackHint);
     if (hint) {
-      const lowest = Math.min(...entries.filter((e) => e.trackKind === hint.kind).map((e) => e.trackIndex));
+      const lowest = Math.min(
+        ...entries.filter((e) => e.trackKind === hint.kind).map((e) => e.trackIndex),
+      );
       if (Number.isFinite(lowest)) shift[hint.kind] = hint.index - lowest;
     }
   }
@@ -82,7 +89,10 @@ export function pasteClips(seq: Sequence, time: number, opts: PasteOptions = {})
   for (const entry of entries) {
     const ofKind = seq.tracks.filter((t) => t.kind === entry.trackKind);
     if (ofKind.length === 0) continue;
-    const index = Math.min(ofKind.length - 1, Math.max(0, entry.trackIndex + shift[entry.trackKind]));
+    const index = Math.min(
+      ofKind.length - 1,
+      Math.max(0, entry.trackIndex + shift[entry.trackKind]),
+    );
     const clip = clone(entry.clip);
     clip.id = id();
     clip.start = time + entry.offset;

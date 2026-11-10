@@ -1,4 +1,4 @@
-import type { Clip } from '$lib/project/types';
+import type { Clip } from '#lib/project/types.ts';
 
 // where a clip reads its media at sequence time t. beyond the media the
 // last frame freezes, the compositor and the audio engine both rely on that
@@ -17,7 +17,8 @@ export function clipSourceRange(clip: Clip): { start: number; end: number } {
 // inverse of sourceTimeAt for the forward direction, used to place decoded
 // audio chunks on the sequence
 export function sequenceTimeOfSource(clip: Clip, source: number): number {
-  if (clip.reverse) return clip.start + (clip.in + clip.duration * clip.speed - source) / clip.speed;
+  if (clip.reverse)
+    return clip.start + (clip.in + clip.duration * clip.speed - source) / clip.speed;
   return clip.start + (source - clip.in) / clip.speed;
 }
 

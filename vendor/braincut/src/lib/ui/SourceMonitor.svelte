@@ -1,12 +1,12 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { sessionEpoch, source, type Session } from '$lib/engine/session';
-  import { endDrag, startDrag } from '$lib/editor/drag';
-  import { insertSource, overwriteSource, sourceRange } from '$lib/editor/source-actions';
-  import { activeSequence, mediaById } from '$lib/project/store';
-  import { snapToFrame } from '$lib/project/time';
-  import { sourceMedia } from '$lib/stores/app';
-  import { preferences } from '$lib/stores/preferences';
+  import { sessionEpoch, source, type Session } from '#lib/engine/session.ts';
+  import { endDrag, startDrag } from '#lib/editor/drag.ts';
+  import { insertSource, overwriteSource, sourceRange } from '#lib/editor/source-actions.ts';
+  import { activeSequence, mediaById } from '#lib/project/store.ts';
+  import { snapToFrame } from '#lib/project/time.ts';
+  import { sourceMedia } from '#lib/stores/app.ts';
+  import { preferences } from '#lib/stores/preferences.ts';
   import Icon from './Icon.svelte';
   import Monitor from './Monitor.svelte';
   import Transport from './Transport.svelte';

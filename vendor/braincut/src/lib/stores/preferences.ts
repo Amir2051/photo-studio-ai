@@ -1,6 +1,11 @@
 import { writable } from 'svelte/store';
-import { browser } from '$app/environment';
-import { defaultAudioTransition, defaultTransitionDuration, defaultVideoTransition } from '$lib/engine/transitions/defaults';
+import { browser } from '$app/env';
+
+import {
+  defaultAudioTransition,
+  defaultTransitionDuration,
+  defaultVideoTransition,
+} from '#lib/engine/transitions/defaults.ts';
 
 export interface Preferences {
   // seconds a still gets when it lands on the timeline
@@ -45,7 +50,7 @@ const defaults: Preferences = {
   timecodeFormat: 'timecode',
   thumbnailSize: 96,
   claudeBridge: false,
-  claudePort: 7331
+  claudePort: 7331,
 };
 
 function createPreferencesStore() {
@@ -75,7 +80,7 @@ function createPreferencesStore() {
         }
         return next;
       });
-    }
+    },
   };
 }
 

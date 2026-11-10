@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { commandPaletteOpen } from '$lib/stores/app';
+  import { commandPaletteOpen } from '#lib/stores/app.ts';
   import { tick } from 'svelte';
 
   interface Command {

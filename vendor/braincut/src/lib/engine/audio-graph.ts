@@ -1,9 +1,16 @@
-import type { Clip, EffectInstance, Track, Transition } from '$lib/project/types';
-import { paramsAt, valueAt } from '$lib/project/keyframes';
-import { createAudioEffect } from '$lib/engine/effects/audio';
-import { transitionCurve, transitionDef } from '$lib/engine/transitions/registry';
+import type { Clip, EffectInstance, Track, Transition } from '#lib/project/types.ts';
+import { paramsAt, valueAt } from '#lib/project/keyframes.ts';
+import { createAudioEffect } from '#lib/engine/effects/audio.ts';
+import { transitionCurve, transitionDef } from '#lib/engine/transitions/registry.ts';
 import type { MediaReader } from './media-reader';
-import { automationTimes, catchUp, chunkPlacement, dbToGain, transitionGainAt, type Curve } from './audio-math';
+import {
+  automationTimes,
+  catchUp,
+  chunkPlacement,
+  dbToGain,
+  transitionGainAt,
+  type Curve,
+} from './audio-math';
 
 // the pieces of the audio graph both the live engine and the offline
 // renderer build, so an export sounds exactly like the preview
@@ -51,7 +58,11 @@ export interface ClipChain {
 }
 
 // source → clip gain → pan → effects → transition gain → destination
-export function buildClipChain(ctx: BaseAudioContext, clip: Clip, destination: AudioNode): ClipChain {
+export function buildClipChain(
+  ctx: BaseAudioContext,
+  clip: Clip,
+  destination: AudioNode,
+): ClipChain {
   const clipGain = ctx.createGain();
   const panner = ctx.createStereoPanner();
   const transitionGain = ctx.createGain();
@@ -88,7 +99,7 @@ export function buildClipChain(ctx: BaseAudioContext, clip: Clip, destination: A
       clipGain.disconnect();
       panner.disconnect();
       transitionGain.disconnect();
-    }
+    },
   };
 }
 
@@ -117,7 +128,7 @@ export function scheduleBuffer(
   track: Track,
   buffer: AudioBuffer,
   chunkStart: number,
-  clock: ClockMap
+  clock: ClockMap,
 ): AudioBufferSourceNode | null {
   const placement = chunkPlacement(clip, chunkStart, buffer.duration);
   if (!placement) return null;
@@ -143,19 +154,27 @@ export function scheduleBuffer(
       isAudioTransition(tr) &&
       (tr.leftClipId === clip.id || tr.rightClipId === clip.id) &&
       tr.start < seqFrom + seqDuration &&
-      tr.start + tr.duration > seqFrom
+      tr.start + tr.duration > seqFrom,
   );
   const animated = isAnimated(volume, 'level') || isAnimated(pan, 'pan') || hasTransition;
   const times = animated ? automationTimes(seqFrom, seqDuration, AUTOMATION_STEP) : [seqFrom];
   times.push(seqFrom + seqDuration);
   const ctxTimes = times.map((t) => Math.max(ctx.currentTime, clock.seqToCtx(t)));
 
-  scheduleParam(chain.clipGain.gain, times.map((t) => volumeAt(clip, t - clip.start)), ctxTimes);
-  scheduleParam(chain.panner.pan, times.map((t) => panAt(clip, t - clip.start)), ctxTimes);
+  scheduleParam(
+    chain.clipGain.gain,
+    times.map((t) => volumeAt(clip, t - clip.start)),
+    ctxTimes,
+  );
+  scheduleParam(
+    chain.panner.pan,
+    times.map((t) => panAt(clip, t - clip.start)),
+    ctxTimes,
+  );
   scheduleParam(
     chain.transitionGain.gain,
     times.map((t) => (hasTransition ? transitionGainAt(track, clip, t, audioCurve) : 1)),
-    ctxTimes
+    ctxTimes,
   );
   // effect params are sampled once per piece, at the moment it starts
   for (const e of chain.effects) {
@@ -196,7 +215,12 @@ export function mergePieces(ctx: BaseAudioContext, pieces: AudioPiece[]): AudioP
   return { buffer: out, timestamp: start };
 }
 
-export function trimPiece(ctx: BaseAudioContext, piece: AudioPiece, from: number, to: number): AudioPiece | null {
+export function trimPiece(
+  ctx: BaseAudioContext,
+  piece: AudioPiece,
+  from: number,
+  to: number,
+): AudioPiece | null {
   const rate = piece.buffer.sampleRate;
   const startFrame = Math.max(0, Math.round((from - piece.timestamp) * rate));
   const endFrame = Math.min(piece.buffer.length, Math.round((to - piece.timestamp) * rate));
@@ -233,7 +257,7 @@ export async function* clipAudio(
   clip: Clip,
   ctx: BaseAudioContext,
   range: { start: number; end: number },
-  pieceSeconds = PIECE_SECONDS
+  pieceSeconds = PIECE_SECONDS,
 ): AsyncGenerator<AudioPiece> {
   if (range.end <= range.start) return;
   if (!clip.reverse) {

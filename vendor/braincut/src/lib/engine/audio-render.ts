@@ -1,4 +1,4 @@
-import type { Id, MediaItem, Sequence, Track } from '$lib/project/types';
+import type { Id, MediaItem, Sequence, Track } from '#lib/project/types.ts';
 import { buildClipChain, clipAudio, scheduleBuffer, type ClockMap } from './audio-graph';
 import { dbToGain, sourceWindow } from './audio-math';
 import { clipEnd } from './clip-time';
@@ -34,7 +34,7 @@ async function fillChunk(
   cache: MediaCache,
   origin: number,
   end: number,
-  signal: AbortSignal | undefined
+  signal: AbortSignal | undefined,
 ): Promise<void> {
   const clock: ClockMap = { seqToCtx: (t) => t - origin, rate: 1 };
   for (const track of audibleTracks(sequence)) {
@@ -71,7 +71,7 @@ export async function renderAudio(
   sampleRate: number,
   onBuffer: (buffer: AudioBuffer) => Promise<void>,
   signal?: AbortSignal,
-  onProgress?: (progress: number) => void
+  onProgress?: (progress: number) => void,
 ): Promise<void> {
   const total = Math.max(0, Math.round((range.end - range.start) * sampleRate));
   const chunkFrames = Math.round(CHUNK * sampleRate);
@@ -88,14 +88,22 @@ export async function renderAudio(
     const from = range.start + done / sampleRate;
     const origin = from - prerollFrames / sampleRate;
     const end = from + frames / sampleRate;
-    const ctx = new OfflineAudioContext({ numberOfChannels: CHANNELS, length: prerollFrames + frames, sampleRate });
+    const ctx = new OfflineAudioContext({
+      numberOfChannels: CHANNELS,
+      length: prerollFrames + frames,
+      sampleRate,
+    });
     await fillChunk(ctx, sequence, getMedia, cache, origin, end, signal);
     const rendered = await ctx.startRendering();
     if (signal?.aborted) throw abortError();
 
     const out = new AudioBuffer({ numberOfChannels: CHANNELS, length: frames, sampleRate });
     for (let c = 0; c < CHANNELS; c++) {
-      out.copyToChannel(rendered.getChannelData(c).subarray(prerollFrames, prerollFrames + frames), c, 0);
+      out.copyToChannel(
+        rendered.getChannelData(c).subarray(prerollFrames, prerollFrames + frames),
+        c,
+        0,
+      );
     }
     await onBuffer(out);
     onProgress?.((done + frames) / total);

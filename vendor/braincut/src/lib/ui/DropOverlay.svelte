@@ -1,9 +1,9 @@
 <script lang="ts">
   import Icon from './Icon.svelte';
-  import { importFiles } from '$lib/media/import';
-  import { openProjectFromFile } from '$lib/editor/project-actions';
-  import { PROJECT_EXTENSION } from '$lib/project/serialize';
-  import { DRAG_MIME } from '$lib/editor/drag';
+  import { importFiles } from '#lib/media/import.ts';
+  import { openProjectFromFile } from '#lib/editor/project-actions.ts';
+  import { PROJECT_EXTENSION } from '#lib/project/serialize.ts';
+  import { DRAG_MIME } from '#lib/editor/drag.ts';
 
   // enter/leave fire for every child the pointer crosses, a counter is the
   // only reliable way to know when the drag has actually left the window

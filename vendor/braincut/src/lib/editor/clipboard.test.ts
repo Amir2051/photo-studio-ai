@@ -1,15 +1,36 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { get } from 'svelte/store';
 import { clearClipboard, copyClips, cutClips, hasClipboard, pasteClips } from './clipboard';
-import { createClipFromMedia, createSequence, createTitleClip } from '$lib/project/defaults';
-import type { MediaItem } from '$lib/project/types';
+import { createClipFromMedia, createSequence, createTitleClip } from '#lib/project/defaults.ts';
+import type { MediaItem } from '#lib/project/types.ts';
 
 function media(): MediaItem {
   return {
-    id: 'm1', name: 'clip.mp4', kind: 'video', binId: null, duration: 10, width: 1920, height: 1080, fps: 25,
-    hasVideo: true, hasAudio: true, channels: 2, sampleRate: 48000, videoCodec: 'avc', audioCodec: 'aac',
-    container: 'mp4', mimeType: 'video/mp4', fileSize: 1, rotation: 0, alpha: false, status: 'ready',
-    proxy: null, converted: null, thumbnail: null, label: 'none', addedAt: 0
+    id: 'm1',
+    name: 'clip.mp4',
+    kind: 'video',
+    binId: null,
+    duration: 10,
+    width: 1920,
+    height: 1080,
+    fps: 25,
+    hasVideo: true,
+    hasAudio: true,
+    channels: 2,
+    sampleRate: 48000,
+    videoCodec: 'avc',
+    audioCodec: 'aac',
+    container: 'mp4',
+    mimeType: 'video/mp4',
+    fileSize: 1,
+    rotation: 0,
+    alpha: false,
+    status: 'ready',
+    proxy: null,
+    converted: null,
+    thumbnail: null,
+    label: 'none',
+    addedAt: 0,
   };
 }
 
@@ -56,7 +77,10 @@ describe('clipboard', () => {
     const s = seq();
     copyClips(s, [s.tracks[2].clips[0].id]);
     pasteClips(s, 4.5);
-    expect(s.tracks[2].clips.map((c) => [c.start, c.duration])).toEqual([[4, 0.5], [4.5, 1]]);
+    expect(s.tracks[2].clips.map((c) => [c.start, c.duration])).toEqual([
+      [4, 0.5],
+      [4.5, 1],
+    ]);
   });
 
   it('cuts', () => {

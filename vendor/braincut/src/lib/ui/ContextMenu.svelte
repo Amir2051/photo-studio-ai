@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { contextMenu } from '$lib/stores/app';
+  import { contextMenu } from '#lib/stores/app.ts';
   import Menu from './Menu.svelte';
 
   function close() {

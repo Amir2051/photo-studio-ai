@@ -1,19 +1,61 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { get, writable } from 'svelte/store';
 
-vi.mock('$lib/stores/app', () => ({ selection: writable<string[]>([]) }));
+vi.mock('#lib/stores/app.ts', () => ({ selection: writable<string[]>([]) }));
 
-import { selection } from '$lib/stores/app';
-import { activeSequence, cancelPreview, clearSelection, closeProject, commitPreview, dirty, edit, editSequence, findClip, history, loadProject, markSaved, mediaById, preview, project, redo, selectClips, selectedClips, setActiveSequence, undo } from './store';
+import { selection } from '#lib/stores/app.ts';
+import {
+  activeSequence,
+  cancelPreview,
+  clearSelection,
+  closeProject,
+  commitPreview,
+  dirty,
+  edit,
+  editSequence,
+  findClip,
+  history,
+  loadProject,
+  markSaved,
+  mediaById,
+  preview,
+  project,
+  redo,
+  selectClips,
+  selectedClips,
+  setActiveSequence,
+  undo,
+} from './store';
 import { createClipFromMedia, createProject, createSequence, createTitleClip } from './defaults';
 import type { MediaItem, Project } from './types';
 
 function media(): MediaItem {
   return {
-    id: 'm1', name: 'clip.mp4', kind: 'video', binId: null, duration: 10, width: 1920, height: 1080, fps: 25,
-    hasVideo: true, hasAudio: true, channels: 2, sampleRate: 48000, videoCodec: 'avc', audioCodec: 'aac',
-    container: 'mp4', mimeType: 'video/mp4', fileSize: 1, rotation: 0, alpha: false, status: 'ready',
-    proxy: null, converted: null, thumbnail: null, label: 'none', addedAt: 0
+    id: 'm1',
+    name: 'clip.mp4',
+    kind: 'video',
+    binId: null,
+    duration: 10,
+    width: 1920,
+    height: 1080,
+    fps: 25,
+    hasVideo: true,
+    hasAudio: true,
+    channels: 2,
+    sampleRate: 48000,
+    videoCodec: 'avc',
+    audioCodec: 'aac',
+    container: 'mp4',
+    mimeType: 'video/mp4',
+    fileSize: 1,
+    rotation: 0,
+    alpha: false,
+    status: 'ready',
+    proxy: null,
+    converted: null,
+    thumbnail: null,
+    label: 'none',
+    addedAt: 0,
   };
 }
 
@@ -43,7 +85,13 @@ describe('project store', () => {
     });
     expect(get(activeSequence)?.tracks[0].clips).toHaveLength(1);
     expect(get(dirty)).toBe(true);
-    expect(get(history)).toMatchObject({ canUndo: true, canRedo: false, undoLabel: 'Add title', entries: ['Add title'], index: 1 });
+    expect(get(history)).toMatchObject({
+      canUndo: true,
+      canRedo: false,
+      undoLabel: 'Add title',
+      entries: ['Add title'],
+      index: 1,
+    });
     undo();
     expect(get(activeSequence)?.tracks[0].clips).toHaveLength(0);
     expect(get(history).redoLabel).toBe('Add title');
@@ -125,7 +173,11 @@ describe('project store', () => {
   });
 
   it('switches sequences without an undo step', () => {
-    edit('Add sequence', (d) => void d.sequences.push(createSequence({ name: 'Second', width: 1, height: 1, fps: 25 })));
+    edit(
+      'Add sequence',
+      (d) =>
+        void d.sequences.push(createSequence({ name: 'Second', width: 1, height: 1, fps: 25 })),
+    );
     const second = get(project)!.sequences[1].id;
     setActiveSequence(second);
     expect(get(activeSequence)?.name).toBe('Second');

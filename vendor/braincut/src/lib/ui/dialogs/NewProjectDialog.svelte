@@ -3,11 +3,11 @@
   import Field from '../Field.svelte';
   import NumberField from '../NumberField.svelte';
   import SelectField from '../SelectField.svelte';
-  import { createProject, createSequence } from '$lib/project/defaults';
-  import { loadProject } from '$lib/project/store';
-  import { setLastOpenedId, touchRecent } from '$lib/project/persistence';
-  import { fpsOptions, presetById, presets } from '$lib/templates/sequences';
-  import { addToast } from '$lib/stores/app';
+  import { createProject, createSequence } from '#lib/project/defaults.ts';
+  import { loadProject } from '#lib/project/store.ts';
+  import { setLastOpenedId, touchRecent } from '#lib/project/persistence.ts';
+  import { fpsOptions, presetById, presets } from '#lib/templates/sequences.ts';
+  import { addToast } from '#lib/stores/app.ts';
 
   let { onclose }: { onclose: () => void } = $props();
 

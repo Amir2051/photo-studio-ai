@@ -1,4 +1,4 @@
-import type { ParamValue } from '$lib/project/types';
+import type { ParamValue } from '#lib/project/types.ts';
 
 // the fixed transform effect of a visual clip, read from its params. media is
 // placed like a desktop nle does it: 100% is the native pixel size, centered
@@ -41,7 +41,8 @@ function bool(v: ParamValue | undefined, fallback: boolean): boolean {
 }
 
 function point(v: ParamValue | undefined): [number, number] {
-  if (Array.isArray(v) && v.length === 2 && Number.isFinite(v[0]) && Number.isFinite(v[1])) return [v[0], v[1]];
+  if (Array.isArray(v) && v.length === 2 && Number.isFinite(v[0]) && Number.isFinite(v[1]))
+    return [v[0], v[1]];
   return [0, 0];
 }
 
@@ -55,7 +56,7 @@ export function readTransform(params: Record<string, ParamValue> | undefined): T
     rotation: num(p.rotation, 0),
     anchor: point(p.anchor),
     flipH: bool(p.flipH, false),
-    flipV: bool(p.flipV, false)
+    flipV: bool(p.flipV, false),
   };
 }
 
@@ -64,7 +65,7 @@ export function computeSpriteTransform(
   mediaW: number,
   mediaH: number,
   seqW: number,
-  seqH: number
+  seqH: number,
 ): SpriteTransform {
   const w = Math.max(1, mediaW);
   const h = Math.max(1, mediaH);
@@ -79,19 +80,25 @@ export function computeSpriteTransform(
     scaleY: params.flipV ? -sy : sy,
     rotation: (params.rotation * Math.PI) / 180,
     anchor: { x: pivotX / w, y: pivotY / h },
-    pivot: { x: pivotX, y: pivotY }
+    pivot: { x: pivotX, y: pivotY },
   };
 }
 
 // scale percent that makes the whole media visible inside the frame, what
 // the set to frame size action writes into the transform
-export function fitScale(media: { width: number; height: number }, seq: { width: number; height: number }): number {
+export function fitScale(
+  media: { width: number; height: number },
+  seq: { width: number; height: number },
+): number {
   if (media.width <= 0 || media.height <= 0) return 100;
   return Math.min(seq.width / media.width, seq.height / media.height) * 100;
 }
 
 // scale percent that fills the frame completely, cropping the longer side
-export function fillScale(media: { width: number; height: number }, seq: { width: number; height: number }): number {
+export function fillScale(
+  media: { width: number; height: number },
+  seq: { width: number; height: number },
+): number {
   if (media.width <= 0 || media.height <= 0) return 100;
   return Math.max(seq.width / media.width, seq.height / media.height) * 100;
 }
@@ -101,7 +108,7 @@ export function fillScale(media: { width: number; height: number }, seq: { width
 export function cropRect(
   params: Record<string, ParamValue> | undefined,
   mediaW: number,
-  mediaH: number
+  mediaH: number,
 ): { x: number; y: number; width: number; height: number } {
   const p = params ?? {};
   const clamp = (v: number) => Math.min(100, Math.max(0, v));

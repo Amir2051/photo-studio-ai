@@ -1,10 +1,10 @@
 import { get } from 'svelte/store';
-import { createClipFromMedia } from '$lib/project/defaults';
-import { placeClips, type Placement } from '$lib/project/ops';
-import { activeSequence, editSequence, mediaById } from '$lib/project/store';
-import type { MediaItem } from '$lib/project/types';
-import { addToast, playhead, sourceMedia } from '$lib/stores/app';
-import { preferences } from '$lib/stores/preferences';
+import { createClipFromMedia } from '#lib/project/defaults.ts';
+import { placeClips, type Placement } from '#lib/project/ops.ts';
+import { activeSequence, editSequence, mediaById } from '#lib/project/store.ts';
+import type { MediaItem } from '#lib/project/types.ts';
+import { addToast, playhead, sourceMedia } from '#lib/stores/app.ts';
+import { preferences } from '#lib/stores/preferences.ts';
 
 // the length of a file as the source monitor sees it: stills have none of
 // their own and show for the preference duration
@@ -31,7 +31,10 @@ function place(mode: 'insert' | 'overwrite'): boolean {
     return false;
   }
   if (media.status !== 'ready') {
-    addToast(`${media.name} is ${media.status === 'missing' ? 'missing' : 'not usable yet'}`, 'warning');
+    addToast(
+      `${media.name} is ${media.status === 'missing' ? 'missing' : 'not usable yet'}`,
+      'warning',
+    );
     return false;
   }
   const { in: inPoint, out } = sourceRange(media);
@@ -39,7 +42,7 @@ function place(mode: 'insert' | 'overwrite'): boolean {
     in: inPoint,
     duration: Math.max(1 / seq.fps, out - inPoint),
     fps: seq.fps,
-    stillDuration: get(preferences).stillImageDuration
+    stillDuration: get(preferences).stillImageDuration,
   });
   const video = seq.tracks.find((t) => t.kind === 'video' && !t.locked);
   const audio = seq.tracks.find((t) => t.kind === 'audio' && !t.locked);

@@ -10,7 +10,7 @@
   import RenameDialog from './dialogs/RenameDialog.svelte';
   import ExportDialog from './dialogs/ExportDialog.svelte';
   import TitleDialog from './dialogs/TitleDialog.svelte';
-  import { dialog } from '$lib/stores/app';
+  import { dialog } from '#lib/stores/app.ts';
 
   // every dialog the editor can open, in one switch, so the page never has
   // to know which one is up. each body owns its own Dialog frame

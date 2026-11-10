@@ -3,7 +3,7 @@ import { freeze, produce, produceWithPatches, type Patch } from 'immer';
 import { History, type HistoryState } from './history';
 import type { Clip, Id, MediaItem, Project, Sequence, Track } from './types';
 import { linkedClips } from './ops';
-import { selection } from '$lib/stores/app';
+import { selection } from '#lib/stores/app.ts';
 
 export const project: Writable<Project | null> = writable(null);
 
@@ -171,9 +171,11 @@ export function setActiveSequence(sequenceId: Id): void {
   const current = get(project);
   if (!current || current.activeSequenceId === sequenceId) return;
   if (!current.sequences.some((s) => s.id === sequenceId)) return;
-  project.set(produce(current, (draft) => {
-    draft.activeSequenceId = sequenceId;
-  }));
+  project.set(
+    produce(current, (draft) => {
+      draft.activeSequenceId = sequenceId;
+    }),
+  );
   selection.set([]);
   bump();
 }
@@ -182,7 +184,10 @@ export function markSaved(): void {
   savedRevision.set(get(revision));
 }
 
-export function findClip(p: Project, clipId: Id): { clip: Clip; track: Track; sequence: Sequence } | null {
+export function findClip(
+  p: Project,
+  clipId: Id,
+): { clip: Clip; track: Track; sequence: Sequence } | null {
   for (const sequence of p.sequences) {
     for (const track of sequence.tracks) {
       const clip = track.clips.find((c) => c.id === clipId);
@@ -221,6 +226,7 @@ export function selectedClips(): Clip[] {
   if (!seq) return [];
   const ids = new Set(get(selection));
   const out: Clip[] = [];
-  for (const track of seq.tracks) for (const clip of track.clips) if (ids.has(clip.id)) out.push(clip);
+  for (const track of seq.tracks)
+    for (const clip of track.clips) if (ids.has(clip.id)) out.push(clip);
   return out;
 }

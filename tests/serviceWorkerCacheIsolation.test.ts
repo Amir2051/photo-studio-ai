@@ -8,7 +8,7 @@ const videoWorker = readFileSync(
   'utf8',
 );
 const videoWorkerSource = readFileSync(
-  new URL('../vendor/braincut/src/service-worker.ts', import.meta.url),
+  new URL('../vendor/braincut/src/service-worker/index.ts', import.meta.url),
   'utf8',
 );
 const currentBraincutCacheVersion = videoWorker.match(/d=\"(\d+)\"/)?.[1];
@@ -44,7 +44,7 @@ async function activatedCacheDeletes(source: string, pathname: string): Promise<
     match: async () => undefined,
   };
 
-  runInNewContext(source, { self, caches, location: { pathname } });
+  runInNewContext(source, { self, caches, location: { pathname }, URL });
   let activation: Promise<unknown> | undefined;
   listeners.get('activate')?.({ waitUntil: (promise) => (activation = promise) });
   await activation;

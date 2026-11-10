@@ -1,10 +1,10 @@
 <script lang="ts">
-  import type { Marker, Sequence } from '$lib/project/types';
-  import { commitPreview, editSequence, preview, cancelPreview } from '$lib/project/store';
-  import * as ops from '$lib/project/ops';
-  import { createMarker } from '$lib/project/defaults';
-  import { formatTimecode } from '$lib/project/time';
-  import { frameTime, rulerTicks, timeToX, xToTime } from '$lib/editor/timeline-interactions';
+  import type { Marker, Sequence } from '#lib/project/types.ts';
+  import { commitPreview, editSequence, preview, cancelPreview } from '#lib/project/store.ts';
+  import * as ops from '#lib/project/ops.ts';
+  import { createMarker } from '#lib/project/defaults.ts';
+  import { formatTimecode } from '#lib/project/time.ts';
+  import { frameTime, rulerTicks, timeToX, xToTime } from '#lib/editor/timeline-interactions.ts';
   import MarkerFlag from './MarkerFlag.svelte';
 
   let {

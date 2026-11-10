@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { formatTime, parseTimecode, type TimeFormat } from '$lib/project/time';
+  import { formatTime, parseTimecode, type TimeFormat } from '#lib/project/time.ts';
 
   // a timecode that turns into an input on focus. typing accepts everything
   // parseTimecode does: full timecodes, packed digits, '+12' / '-12' frames

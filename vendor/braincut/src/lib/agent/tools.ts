@@ -17,8 +17,8 @@ import type {
   Project,
   Sequence,
   Track,
-  TrackKind
-} from '$lib/project/types';
+  TrackKind,
+} from '#lib/project/types.ts';
 import {
   activeSequence,
   clearSelection,
@@ -33,9 +33,9 @@ import {
   redo,
   selectClips,
   setActiveSequence,
-  undo
-} from '$lib/project/store';
-import * as ops from '$lib/project/ops';
+  undo,
+} from '#lib/project/store.ts';
+import * as ops from '#lib/project/ops.ts';
 import {
   clipEnd,
   createClipFromMedia,
@@ -43,26 +43,38 @@ import {
   createProject,
   createSequence,
   createTitleClip,
-  sequenceDuration
-} from '$lib/project/defaults';
-import { formatTimecode, nearlyEqual, snapToFrame } from '$lib/project/time';
-import { setKeyframe, valueAt } from '$lib/project/keyframes';
-import { projectFileName, serializeProject } from '$lib/project/serialize';
-import { setLastOpenedId, touchRecent } from '$lib/project/persistence';
-import { id as newId } from '$lib/project/ids';
+  sequenceDuration,
+} from '#lib/project/defaults.ts';
+import { formatTimecode, nearlyEqual, snapToFrame } from '#lib/project/time.ts';
+import { setKeyframe, valueAt } from '#lib/project/keyframes.ts';
+import { projectFileName, serializeProject } from '#lib/project/serialize.ts';
+import { setLastOpenedId, touchRecent } from '#lib/project/persistence.ts';
+import { id as newId } from '#lib/project/ids.ts';
 import {
   createEffectInstance,
   effectDef,
   effectDefs,
   paramDef,
-  type ParamDef
-} from '$lib/engine/effects/registry';
-import { isAudioTransitionType, transitionDef, transitionDefs } from '$lib/engine/transitions/registry';
-import { presetById, presets as sequencePresets } from '$lib/templates/sequences';
-import { addToast, exportJob, playhead, playing, renderStatus, selectedTransitionId, selection } from '$lib/stores/app';
-import { preferences } from '$lib/stores/preferences';
-import { version } from '$lib/version';
-import type { ImportEntry } from '$lib/media/import';
+  type ParamDef,
+} from '#lib/engine/effects/registry.ts';
+import {
+  isAudioTransitionType,
+  transitionDef,
+  transitionDefs,
+} from '#lib/engine/transitions/registry.ts';
+import { presetById, presets as sequencePresets } from '#lib/templates/sequences.ts';
+import {
+  addToast,
+  exportJob,
+  playhead,
+  playing,
+  renderStatus,
+  selectedTransitionId,
+  selection,
+} from '#lib/stores/app.ts';
+import { preferences } from '#lib/stores/preferences.ts';
+import { version } from '#lib/version.ts';
+import type { ImportEntry } from '#lib/media/import.ts';
 import { claude } from './state';
 import type { ExportProgress } from './protocol';
 
@@ -76,8 +88,23 @@ export interface ToolContext {
 type Handler = (args: ToolArgs, ctx: ToolContext) => Promise<unknown> | unknown;
 
 const labels: Label[] = [
-  'none', 'violet', 'iris', 'caribbean', 'lavender', 'cerulean', 'forest', 'rose', 'mango',
-  'purple', 'blue', 'teal', 'magenta', 'tan', 'green', 'brown', 'yellow'
+  'none',
+  'violet',
+  'iris',
+  'caribbean',
+  'lavender',
+  'cerulean',
+  'forest',
+  'rose',
+  'mango',
+  'purple',
+  'blue',
+  'teal',
+  'magenta',
+  'tan',
+  'green',
+  'brown',
+  'yellow',
 ];
 const easings: Easing[] = ['linear', 'hold', 'ease-in', 'ease-out', 'ease-in-out'];
 
@@ -122,7 +149,11 @@ function sequenceOf(p: Project, sequenceId: unknown): Sequence {
 }
 
 // one undo step inside one sequence, the active one unless an id is given
-function editIn(label: string, sequenceId: unknown, recipe: (s: Sequence, draft: Project) => void): void {
+function editIn(
+  label: string,
+  sequenceId: unknown,
+  recipe: (s: Sequence, draft: Project) => void,
+): void {
   const target = sequenceOf(requireProject(), sequenceId).id;
   edit(label, (draft) => {
     const s = draft.sequences.find((x) => x.id === target);
@@ -131,7 +162,11 @@ function editIn(label: string, sequenceId: unknown, recipe: (s: Sequence, draft:
 }
 
 // one undo step around a clip, wherever it lives
-function editClip(label: string, clipId: string, recipe: (s: Sequence, clip: Clip, track: Track) => void): void {
+function editClip(
+  label: string,
+  clipId: string,
+  recipe: (s: Sequence, clip: Clip, track: Track) => void,
+): void {
   const located = findClip(requireProject(), clipId);
   if (!located) throw new Error(`No clip with id ${clipId}; see get_timeline`);
   editIn(label, located.sequence.id, (s) => {
@@ -148,7 +183,8 @@ function tracksOfKind(s: Sequence, kind: TrackKind): Track[] {
 
 // the nth track of a kind, made on the spot when the sequence has fewer
 function trackAt(s: Sequence, kind: TrackKind, index: number): Track {
-  if (!Number.isInteger(index) || index < 0) throw new Error('trackIndex must be a whole number from 0');
+  if (!Number.isInteger(index) || index < 0)
+    throw new Error('trackIndex must be a whole number from 0');
   while (tracksOfKind(s, kind).length <= index) ops.addTrack(s, kind);
   return tracksOfKind(s, kind)[index];
 }
@@ -173,7 +209,9 @@ function reveal(clipIds: Id[]): void {
   selectClips(clipIds);
   selectedTransitionId.set(null);
   if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('braincut:reveal-clip', { detail: { clipId: clipIds[0] } }));
+    window.dispatchEvent(
+      new CustomEvent('braincut:reveal-clip', { detail: { clipId: clipIds[0] } }),
+    );
   }
 }
 
@@ -210,7 +248,8 @@ function applyParams(effect: EffectInstance, params: unknown, clipTime: number |
     if (!def) throw new Error(`${effect.type} has no parameter "${key}"; see catalog("effects")`);
     const value = coerce(def, raw);
     // an animated parameter takes the value as a keyframe where the playhead is
-    if (clipTime !== null && effect.keyframes[key]?.length) setKeyframe(effect, key, clipTime, value);
+    if (clipTime !== null && effect.keyframes[key]?.length)
+      setKeyframe(effect, key, clipTime, value);
     else effect.params[key] = value;
   }
 }
@@ -223,7 +262,7 @@ function describeEffect(e: EffectInstance): Record<string, unknown> {
     enabled: e.enabled,
     fixed: e.fixed ?? false,
     params: e.params,
-    animated: Object.keys(e.keyframes).filter((k) => e.keyframes[k].length)
+    animated: Object.keys(e.keyframes).filter((k) => e.keyframes[k].length),
   };
 }
 
@@ -245,8 +284,16 @@ function describeClip(clip: Clip, fps: number): Record<string, unknown> {
     enabled: clip.enabled,
     linkId: clip.linkId,
     effects: clip.effects.map(describeEffect),
-    title: clip.title ? { text: clip.title.text, fontFamily: clip.title.fontFamily, fontSize: clip.title.fontSize, color: clip.title.color, box: clip.title.box } : undefined,
-    color: clip.color
+    title: clip.title
+      ? {
+          text: clip.title.text,
+          fontFamily: clip.title.fontFamily,
+          fontSize: clip.title.fontSize,
+          color: clip.title.color,
+          box: clip.title.box,
+        }
+      : undefined,
+    color: clip.color,
   };
 }
 
@@ -259,12 +306,12 @@ function describeSequence(s: Sequence, active: boolean): Record<string, unknown>
     fps: s.fps,
     duration: s3(sequenceDuration(s)),
     tracks: s.tracks.length,
-    active
+    active,
   };
 }
 
 async function player() {
-  const { program } = await import('$lib/engine/session');
+  const { program } = await import('#lib/engine/session.ts');
   return program().player;
 }
 
@@ -287,7 +334,9 @@ function base64(bytes: Uint8Array): string {
 }
 
 function mb(bytes: number): string {
-  return bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.round(bytes / 1024)} KB`;
+  return bytes >= 1024 * 1024
+    ? `${(bytes / 1024 / 1024).toFixed(1)} MB`
+    : `${Math.round(bytes / 1024)} KB`;
 }
 
 // ---- the tools ----------------------------------------------------------------
@@ -306,7 +355,7 @@ const handlers: Record<string, Handler> = {
       playing: get(playing),
       selection: get(selection),
       history: { steps: h.index, canUndo: h.canUndo, lastEdit: h.undoLabel },
-      lastAction: get(claude).lastAction
+      lastAction: get(claude).lastAction,
     };
   },
 
@@ -333,10 +382,10 @@ const handlers: Record<string, Handler> = {
           leftClipId: x.leftClipId,
           rightClipId: x.rightClipId,
           start: s3(x.start),
-          duration: s3(x.duration)
-        }))
+          duration: s3(x.duration),
+        })),
       })),
-      markers: s.markers.map((m) => ({ id: m.id, time: s3(m.time), name: m.name, color: m.color }))
+      markers: s.markers.map((m) => ({ id: m.id, time: s3(m.time), name: m.name, color: m.color })),
     };
   },
 
@@ -357,7 +406,7 @@ const handlers: Record<string, Handler> = {
       audioCodec: m.audioCodec,
       container: m.container,
       fileSize: m.fileSize,
-      proxy: m.proxy !== null
+      proxy: m.proxy !== null,
     }));
   },
 
@@ -380,26 +429,39 @@ const handlers: Record<string, Handler> = {
               max: p.max,
               default: p.default,
               unit: p.unit,
-              options: p.options?.map((o) => o.value)
-            }))
+              options: p.options?.map((o) => o.value),
+            })),
           }));
       case 'transitions':
-        return transitionDefs.map((d) => ({ id: d.id, name: d.name, group: d.group, kind: d.kind, description: d.description }));
+        return transitionDefs.map((d) => ({
+          id: d.id,
+          name: d.name,
+          group: d.group,
+          kind: d.kind,
+          description: d.description,
+        }));
       case 'export_presets': {
-        const { availablePresets } = await import('$lib/export/presets');
+        const { availablePresets } = await import('#lib/export/presets.ts');
         return (await availablePresets()).map((p) => ({
           id: p.id,
           name: p.name,
           description: p.description,
-          container: p.settings.container
+          container: p.settings.container,
         }));
       }
       case 'sequence_templates':
-        return sequencePresets.map((p) => ({ id: p.id, name: p.name, width: p.width, height: p.height, fps: p.fps, description: p.description }));
+        return sequencePresets.map((p) => ({
+          id: p.id,
+          name: p.name,
+          width: p.width,
+          height: p.height,
+          fps: p.fps,
+          description: p.description,
+        }));
       case 'blend_modes':
         return paramDef('opacity', 'blendMode')?.options?.map((o) => o.value) ?? [];
       case 'fonts': {
-        const { fontFamilies } = await import('$lib/engine/text');
+        const { fontFamilies } = await import('#lib/engine/text.ts');
         return [...fontFamilies];
       }
       default:
@@ -410,7 +472,7 @@ const handlers: Record<string, Handler> = {
   async frame({ time, width, sequenceId }) {
     const s = sequenceOf(requireProject(), sequenceId);
     const t = Math.max(0, optNum(time, 'time') ?? get(playhead));
-    const { exportFrame } = await import('$lib/export/frame');
+    const { exportFrame } = await import('#lib/export/frame.ts');
     const blob = await exportFrame(s, t, { format: 'png' }, getMedia);
     const targetWidth = Math.min(optNum(width, 'width') ?? 960, s.width);
     const bitmap = await createImageBitmap(blob);
@@ -426,35 +488,57 @@ const handlers: Record<string, Handler> = {
     bitmap.close();
     const png = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
     if (!png) throw new Error('The browser could not encode the frame');
-    return { png: base64(new Uint8Array(await png.arrayBuffer())), width: w, height: h, time: s3(t), summary: `frame at ${tc(t, s.fps)}` };
+    return {
+      png: base64(new Uint8Array(await png.arrayBuffer())),
+      width: w,
+      height: h,
+      time: s3(t),
+      summary: `frame at ${tc(t, s.fps)}`,
+    };
   },
 
   async import_media({ files }) {
     requireProject();
     if (!Array.isArray(files) || !files.length) throw new Error('files must be a non-empty list');
-    const { importFiles } = await import('$lib/media/import');
+    const { importFiles } = await import('#lib/media/import.ts');
     const results: Record<string, unknown>[] = [];
     const entries: { entry: ImportEntry; path: string }[] = [];
     const root = await opfsRoot();
-    for (const raw of files as { url: string; name: string; path: string; lastModified?: number }[]) {
+    for (const raw of files as {
+      url: string;
+      name: string;
+      path: string;
+      lastModified?: number;
+    }[]) {
       try {
         const response = await fetch(raw.url);
-        if (!response.ok || !response.body) throw new Error(`the server answered ${response.status}`);
+        if (!response.ok || !response.body)
+          throw new Error(`the server answered ${response.status}`);
         let entry: ImportEntry;
         if (root) {
           // streamed straight to disk in the browser's private storage, so a
           // big file never sits in memory and the handle survives a reload
-          const folder = await (await root.getDirectoryHandle('agent-imports', { create: true })).getDirectoryHandle(newId(), { create: true });
+          const folder = await (
+            await root.getDirectoryHandle('agent-imports', { create: true })
+          ).getDirectoryHandle(newId(), { create: true });
           const handle = await folder.getFileHandle(raw.name, { create: true });
           await response.body.pipeTo(await handle.createWritable());
           entry = { file: await handle.getFile(), handle, path: raw.path };
         } else {
           const blob = await response.blob();
-          entry = { file: new File([blob], raw.name, { type: blob.type, lastModified: raw.lastModified }), handle: null, path: raw.path };
+          entry = {
+            file: new File([blob], raw.name, { type: blob.type, lastModified: raw.lastModified }),
+            handle: null,
+            path: raw.path,
+          };
         }
         entries.push({ entry, path: raw.path });
       } catch (error) {
-        results.push({ path: raw.path, ok: false, error: error instanceof Error ? error.message : String(error) });
+        results.push({
+          path: raw.path,
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
     }
     if (entries.length) {
@@ -471,7 +555,7 @@ const handlers: Record<string, Handler> = {
           duration: s3(item.duration),
           width: item.width,
           height: item.height,
-          fps: item.fps
+          fps: item.fps,
         });
       });
     }
@@ -483,12 +567,15 @@ const handlers: Record<string, Handler> = {
     const media = getMedia(str(mediaId, 'mediaId'));
     if (!media) throw new Error(`No media with id ${String(mediaId)}; see list_media`);
     if (media.status !== 'ready') {
-      throw new Error(`${media.name} is ${media.status}${media.statusReason ? `: ${media.statusReason}` : ''}`);
+      throw new Error(
+        `${media.name} is ${media.status}${media.statusReason ? `: ${media.statusReason}` : ''}`,
+      );
     }
     const index = optNum(trackIndex, 'trackIndex') ?? 0;
     const inPoint = optNum(sourceIn, 'sourceIn');
     const outPoint = optNum(sourceOut, 'sourceOut');
-    if (inPoint !== undefined && outPoint !== undefined && outPoint <= inPoint) throw new Error('sourceOut must be after sourceIn');
+    if (inPoint !== undefined && outPoint !== undefined && outPoint <= inPoint)
+      throw new Error('sourceOut must be after sourceIn');
     let placed: Id[] = [];
     let made: { video?: Clip; audio?: Clip } = {};
     let start = 0;
@@ -497,14 +584,15 @@ const handlers: Record<string, Handler> = {
       const kind: TrackKind = media.kind === 'audio' ? 'audio' : 'video';
       const track = trackAt(s, kind, index);
       const audioTrack = kind === 'video' && media.hasAudio ? trackAt(s, 'audio', index) : null;
-      start = at === undefined || at === 'end'
-        ? Math.max(lastEnd(track), audioTrack ? lastEnd(audioTrack) : 0)
-        : snapToFrame(Math.max(0, num(at, 'at')), s.fps);
+      start =
+        at === undefined || at === 'end'
+          ? Math.max(lastEnd(track), audioTrack ? lastEnd(audioTrack) : 0)
+          : snapToFrame(Math.max(0, num(at, 'at')), s.fps);
       made = createClipFromMedia(media, start, {
         fps: s.fps,
         in: inPoint,
         duration: outPoint !== undefined ? outPoint - (inPoint ?? 0) : undefined,
-        stillDuration: get(preferences).stillImageDuration
+        stillDuration: get(preferences).stillImageDuration,
       });
       const placements: ops.Placement[] = [];
       if (made.video) placements.push({ trackId: track.id, clip: made.video });
@@ -523,7 +611,7 @@ const handlers: Record<string, Handler> = {
       start: s3(clip?.start ?? start),
       end: s3(clip ? clipEnd(clip) : start),
       track: trackName,
-      summary: `${media.name} on ${trackName} at ${tc(start, s.fps)}`
+      summary: `${media.name} on ${trackName} at ${tc(start, s.fps)}`,
     };
   },
 
@@ -537,9 +625,13 @@ const handlers: Record<string, Handler> = {
       fps = s.fps;
       const index = optNum(args.trackIndex, 'trackIndex');
       const videoTracks = tracksOfKind(s, 'video');
-      const track = index === undefined ? videoTracks[videoTracks.length - 1] : trackAt(s, 'video', index);
+      const track =
+        index === undefined ? videoTracks[videoTracks.length - 1] : trackAt(s, 'video', index);
       start = snapToFrame(Math.max(0, optNum(args.at, 'at') ?? get(playhead)), s.fps);
-      const duration = Math.max(1 / s.fps, snapToFrame(optNum(args.duration, 'duration') ?? 5, s.fps));
+      const duration = Math.max(
+        1 / s.fps,
+        snapToFrame(optNum(args.duration, 'duration') ?? 5, s.fps),
+      );
       const clip = createTitleClip(start, duration, text);
       const title = clip.title!;
       const font = optStr(args.fontFamily);
@@ -549,28 +641,40 @@ const handlers: Record<string, Handler> = {
       const weight = optNum(args.fontWeight, 'fontWeight');
       if (weight !== undefined) {
         // the title renders at 400, 500, 600 or 700; anything else lands on the nearest, halves go up
-        title.fontWeight = Math.min(700, Math.max(400, Math.round(weight / 100) * 100)) as 400 | 500 | 600 | 700;
+        title.fontWeight = Math.min(700, Math.max(400, Math.round(weight / 100) * 100)) as
+          400 | 500 | 600 | 700;
       }
       const color = optStr(args.color);
       if (color) title.color = color;
-      if (args.align === 'left' || args.align === 'center' || args.align === 'right') title.align = args.align;
+      if (args.align === 'left' || args.align === 'center' || args.align === 'right')
+        title.align = args.align;
       const strokeWidth = optNum(args.strokeWidth, 'strokeWidth');
       const strokeColor = optStr(args.strokeColor);
-      if (strokeWidth || strokeColor) title.stroke = { color: strokeColor ?? '#000000', width: strokeWidth ?? 4 };
+      if (strokeWidth || strokeColor)
+        title.stroke = { color: strokeColor ?? '#000000', width: strokeWidth ?? 4 };
       if (args.shadow) title.shadow = { color: '#000000', blur: 12, x: 0, y: 4 };
       if (args.box) title.background = { color: optStr(args.boxColor) ?? '#000000', padding: 24 };
       const x = optNum(args.x, 'x');
       const y = optNum(args.y, 'y');
       // fractions of the frame, kept to four places so 0.5 - 0.4 is 0.1 and not a float tail
       const fraction = (v: number) => Math.round(Math.min(1, Math.max(0, v)) * 10000) / 10000;
-      if (x !== undefined) title.box = { ...title.box, x: fraction(Math.min(1 - title.box.width, x - title.box.width / 2)) };
+      if (x !== undefined)
+        title.box = {
+          ...title.box,
+          x: fraction(Math.min(1 - title.box.width, x - title.box.width / 2)),
+        };
       if (y !== undefined) title.box = { ...title.box, y: fraction(y) };
       placed = ops.placeClips(s, [{ trackId: track.id, clip }], 'overwrite');
       end = start + duration;
     });
     if (!placed.length) throw new Error('The title could not be placed; is the track locked?');
     reveal(placed);
-    return { clipId: placed[0], start: s3(start), end: s3(end), summary: `title "${text}" at ${tc(start, fps)}` };
+    return {
+      clipId: placed[0],
+      start: s3(start),
+      end: s3(end),
+      summary: `title "${text}" at ${tc(start, fps)}`,
+    };
   },
 
   split({ at, clipId, sequenceId }) {
@@ -579,12 +683,19 @@ const handlers: Record<string, Handler> = {
     const p = requireProject();
     const s = target ? findClip(p, target)?.sequence : sequenceOf(p, sequenceId);
     if (!s) throw new Error(`No clip with id ${target}; see get_timeline`);
-    const before = target ? ops.linkedClips(s, target).map((c) => c.id) : ops.clipsAt(s, time).map((c) => c.id);
+    const before = target
+      ? ops.linkedClips(s, target).map((c) => c.id)
+      : ops.clipsAt(s, time).map((c) => c.id);
     let right: Id[] = [];
     editIn('split', s.id, (draft) => {
-      right = ops.splitClipsAt(draft, snapToFrame(time, draft.fps), target ? before : 'all-unlocked');
+      right = ops.splitClipsAt(
+        draft,
+        snapToFrame(time, draft.fps),
+        target ? before : 'all-unlocked',
+      );
     });
-    if (!right.length) throw new Error(`Nothing to split at ${tc(time, s.fps)}; the time has to fall inside a clip`);
+    if (!right.length)
+      throw new Error(`Nothing to split at ${tc(time, s.fps)}; the time has to fall inside a clip`);
     reveal(right);
     return { left: before, right, summary: `split at ${tc(time, s.fps)}` };
   },
@@ -598,13 +709,30 @@ const handlers: Record<string, Handler> = {
     editClip('trim', id, (s) => {
       const ids = ops.linkedClips(s, id).map((c) => c.id);
       const opts = { ripple: Boolean(ripple), getMedia };
-      if (newStart !== undefined) ops.trimEdges(s, ids.map((c) => ({ clipId: c, edge: 'head' as const })), snapToFrame(newStart, s.fps), opts);
-      if (newEnd !== undefined) ops.trimEdges(s, ids.map((c) => ({ clipId: c, edge: 'tail' as const })), snapToFrame(newEnd, s.fps), opts);
+      if (newStart !== undefined)
+        ops.trimEdges(
+          s,
+          ids.map((c) => ({ clipId: c, edge: 'head' as const })),
+          snapToFrame(newStart, s.fps),
+          opts,
+        );
+      if (newEnd !== undefined)
+        ops.trimEdges(
+          s,
+          ids.map((c) => ({ clipId: c, edge: 'tail' as const })),
+          snapToFrame(newEnd, s.fps),
+          opts,
+        );
       const clip = ops.findClipById(s, id)?.clip;
       if (clip) result = { start: clip.start, end: clipEnd(clip), fps: s.fps };
     });
     reveal([id]);
-    return { clipId: id, start: s3(result.start), end: s3(result.end), summary: `trimmed to ${tc(result.start, result.fps)} - ${tc(result.end, result.fps)}` };
+    return {
+      clipId: id,
+      start: s3(result.start),
+      end: s3(result.end),
+      summary: `trimmed to ${tc(result.start, result.fps)} - ${tc(result.end, result.fps)}`,
+    };
   },
 
   move_clip({ clipId, to, trackIndex }) {
@@ -615,28 +743,58 @@ const handlers: Record<string, Handler> = {
     let result = { start: 0, end: 0, track: '', fps: 25 };
     editClip('move clip', id, (s, _clip, track) => {
       const target = index === undefined ? track : trackAt(s, track.kind, index);
-      ok = ops.moveClips(s, [{ clipId: id, trackId: target.id, start: snapToFrame(time, s.fps) }], 'overwrite', { keepLinked: true });
+      ok = ops.moveClips(
+        s,
+        [{ clipId: id, trackId: target.id, start: snapToFrame(time, s.fps) }],
+        'overwrite',
+        { keepLinked: true },
+      );
       const moved = ops.findClipById(s, id);
-      if (moved) result = { start: moved.clip.start, end: clipEnd(moved.clip), track: moved.track.name, fps: s.fps };
+      if (moved)
+        result = {
+          start: moved.clip.start,
+          end: clipEnd(moved.clip),
+          track: moved.track.name,
+          fps: s.fps,
+        };
     });
-    if (!ok) throw new Error('The clip could not be moved there; the track may be locked or of the wrong kind');
+    if (!ok)
+      throw new Error(
+        'The clip could not be moved there; the track may be locked or of the wrong kind',
+      );
     reveal([id]);
-    return { clipId: id, ...result, start: s3(result.start), end: s3(result.end), summary: `moved to ${result.track} at ${tc(result.start, result.fps)}` };
+    return {
+      clipId: id,
+      ...result,
+      start: s3(result.start),
+      end: s3(result.end),
+      summary: `moved to ${result.track} at ${tc(result.start, result.fps)}`,
+    };
   },
 
   delete_clips({ clipIds, ripple }) {
-    if (!Array.isArray(clipIds) || !clipIds.length) throw new Error('clipIds must be a non-empty list');
+    if (!Array.isArray(clipIds) || !clipIds.length)
+      throw new Error('clipIds must be a non-empty list');
     const first = str(clipIds[0], 'clipIds');
     const located = findClip(requireProject(), first);
     if (!located) throw new Error(`No clip with id ${first}; see get_timeline`);
     let deleted: Id[] = [];
     editIn(ripple ? 'ripple delete' : 'delete', located.sequence.id, (s) => {
-      deleted = [...new Set((clipIds as unknown[]).flatMap((c) => ops.linkedClips(s, str(c, 'clipIds')).map((x) => x.id)))];
+      deleted = [
+        ...new Set(
+          (clipIds as unknown[]).flatMap((c) =>
+            ops.linkedClips(s, str(c, 'clipIds')).map((x) => x.id),
+          ),
+        ),
+      ];
       if (ripple) ops.rippleDelete(s, deleted);
       else ops.deleteClips(s, deleted);
     });
     clearSelection();
-    return { deleted, summary: `${ripple ? 'ripple deleted' : 'deleted'} ${deleted.length} clip${deleted.length === 1 ? '' : 's'}` };
+    return {
+      deleted,
+      summary: `${ripple ? 'ripple deleted' : 'deleted'} ${deleted.length} clip${deleted.length === 1 ? '' : 's'}`,
+    };
   },
 
   set_clip(args) {
@@ -663,7 +821,10 @@ const handlers: Record<string, Handler> = {
       }
       if (args.position && typeof args.position === 'object' && clip.kind !== 'audio') {
         const pos = args.position as { x?: unknown; y?: unknown };
-        fixedEffect(clip, 'transform').params.position = [num(pos.x, 'position.x'), num(pos.y, 'position.y')];
+        fixedEffect(clip, 'transform').params.position = [
+          num(pos.x, 'position.x'),
+          num(pos.y, 'position.y'),
+        ];
         changed.push('position');
       }
       const scale = optNum(args.scale, 'scale');
@@ -685,12 +846,21 @@ const handlers: Record<string, Handler> = {
           if (c.kind !== 'audio') continue;
           const level = c.effects.find((e) => e.type === 'volume');
           if (!level) continue;
-          level.params.level = muted ? -60 : Math.min(12, Math.max(-60, volume ?? (muted === false ? 0 : num(level.params.level, 'level'))));
+          level.params.level = muted
+            ? -60
+            : Math.min(
+                12,
+                Math.max(-60, volume ?? (muted === false ? 0 : num(level.params.level, 'level'))),
+              );
         }
         changed.push(muted !== undefined ? (muted ? 'muted' : 'unmuted') : `volume ${volume} dB`);
       }
       if (typeof args.enabled === 'boolean') {
-        ops.setEnabled(s, linked.map((c) => c.id), args.enabled);
+        ops.setEnabled(
+          s,
+          linked.map((c) => c.id),
+          args.enabled,
+        );
         changed.push(args.enabled ? 'enabled' : 'disabled');
       }
       const name = optStr(args.name);
@@ -702,55 +872,76 @@ const handlers: Record<string, Handler> = {
     if (!changed.length) throw new Error('Nothing to change; give at least one field');
     reveal([id]);
     const clip = findClip(requireProject(), id);
-    return { clipId: id, changed, clip: clip ? describeClip(clip.clip, clip.sequence.fps) : undefined, summary: changed.join(', ') };
+    return {
+      clipId: id,
+      changed,
+      clip: clip ? describeClip(clip.clip, clip.sequence.fps) : undefined,
+      summary: changed.join(', '),
+    };
   },
 
   add_transition({ clipId, type, duration, edge }) {
     const id = str(clipId, 'clipId');
     const requested = optStr(type);
-    if (requested && !transitionDef(requested)) throw new Error(`Unknown transition "${requested}"; see catalog("transitions")`);
+    if (requested && !transitionDef(requested))
+      throw new Error(`Unknown transition "${requested}"; see catalog("transitions")`);
     const side = edge === 'in' ? 'in' : 'out';
     const prefs = get(preferences);
     const length = Math.max(0.04, optNum(duration, 'duration') ?? prefs.defaultTransitionDuration);
     const created: Record<string, unknown> = {};
     editClip('add transition', id, (s) => {
-      const videoType = requested && !isAudioTransitionType(requested) ? requested : prefs.defaultVideoTransition;
-      const audioType = requested && isAudioTransitionType(requested) ? requested : prefs.defaultAudioTransition;
+      const videoType =
+        requested && !isAudioTransitionType(requested) ? requested : prefs.defaultVideoTransition;
+      const audioType =
+        requested && isAudioTransitionType(requested) ? requested : prefs.defaultAudioTransition;
       for (const clip of ops.linkedClips(s, id)) {
         const track = ops.trackOf(s, clip.id);
         if (!track) continue;
         const at = track.clips.findIndex((c) => c.id === clip.id);
         const neighbour = side === 'in' ? track.clips[at - 1] : track.clips[at + 1];
-        const adjacent = neighbour !== undefined && (side === 'in' ? nearlyEqual(clipEnd(neighbour), clip.start) : nearlyEqual(clipEnd(clip), neighbour.start));
+        const adjacent =
+          neighbour !== undefined &&
+          (side === 'in'
+            ? nearlyEqual(clipEnd(neighbour), clip.start)
+            : nearlyEqual(clipEnd(clip), neighbour.start));
         const made = ops.addTransition(s, track.id, {
           type: track.kind === 'audio' ? audioType : videoType,
           leftClipId: side === 'in' ? (adjacent ? neighbour.id : null) : clip.id,
           rightClipId: side === 'in' ? clip.id : adjacent ? neighbour.id : null,
-          duration: length
+          duration: length,
         });
         if (made) created[track.kind === 'audio' ? 'audioTransitionId' : 'transitionId'] = made;
       }
     });
     if (!Object.keys(created).length) throw new Error('No cut to put a transition on');
     reveal([id]);
-    return { ...created, duration: s3(length), summary: `${requested ?? 'default transition'} ${side === 'in' ? 'into' : 'out of'} the clip` };
+    return {
+      ...created,
+      duration: s3(length),
+      summary: `${requested ?? 'default transition'} ${side === 'in' ? 'into' : 'out of'} the clip`,
+    };
   },
 
   add_effect({ clipId, type, params }) {
     const id = str(clipId, 'clipId');
     const kind = str(type, 'type');
     const def = effectDef(kind);
-    if (!def || def.kind === 'fixed') throw new Error(`Unknown effect "${kind}"; see catalog("effects")`);
+    if (!def || def.kind === 'fixed')
+      throw new Error(`Unknown effect "${kind}"; see catalog("effects")`);
     let effectId = '';
     let targetName = '';
     editClip(`add ${def.name.toLowerCase()}`, id, (s, clip) => {
       // an audio effect asked of a video clip lands on its linked audio
-      const target = def.kind === 'audio' && clip.kind !== 'audio'
-        ? ops.linkedClips(s, id).find((c) => c.kind === 'audio')
-        : def.kind === 'video' && clip.kind === 'audio'
-          ? ops.linkedClips(s, id).find((c) => c.kind !== 'audio')
-          : clip;
-      if (!target) throw new Error(`${def.name} is a${def.kind === 'audio' ? 'n audio' : ' video'} effect and ${clip.name} has no ${def.kind} side`);
+      const target =
+        def.kind === 'audio' && clip.kind !== 'audio'
+          ? ops.linkedClips(s, id).find((c) => c.kind === 'audio')
+          : def.kind === 'video' && clip.kind === 'audio'
+            ? ops.linkedClips(s, id).find((c) => c.kind !== 'audio')
+            : clip;
+      if (!target)
+        throw new Error(
+          `${def.name} is a${def.kind === 'audio' ? 'n audio' : ' video'} effect and ${clip.name} has no ${def.kind} side`,
+        );
       const instance = createEffectInstance(kind);
       applyParams(instance, params, null);
       target.effects.push(instance);
@@ -758,7 +949,13 @@ const handlers: Record<string, Handler> = {
       targetName = target.name;
     });
     reveal([id]);
-    return { effectId, type: kind, name: def.name, clip: targetName, summary: `${def.name} on ${targetName}` };
+    return {
+      effectId,
+      type: kind,
+      name: def.name,
+      clip: targetName,
+      summary: `${def.name} on ${targetName}`,
+    };
   },
 
   set_effect({ clipId, effectId, params, enabled }) {
@@ -788,7 +985,10 @@ const handlers: Record<string, Handler> = {
       for (const c of ops.linkedClips(s, id)) {
         const effect = c.effects.find((e) => e.id === eid);
         if (!effect) continue;
-        if (effect.fixed) throw new Error(`${effectDef(effect.type)?.name ?? effect.type} is built into every clip and cannot be removed`);
+        if (effect.fixed)
+          throw new Error(
+            `${effectDef(effect.type)?.name ?? effect.type} is built into every clip and cannot be removed`,
+          );
         c.effects = c.effects.filter((e) => e.id !== eid);
         removed = effectDef(effect.type)?.name ?? effect.type;
         return;
@@ -816,11 +1016,19 @@ const handlers: Record<string, Handler> = {
       const clipTimeOf = (c: Clip) => {
         const t = snapToFrame(at, s.fps) - c.start;
         if (t < -1e-6 || t > c.duration + 1e-6) {
-          throw new Error(`${tc(at, s.fps)} is outside ${c.name} (${tc(c.start, s.fps)} - ${tc(clipEnd(c), s.fps)})`);
+          throw new Error(
+            `${tc(at, s.fps)} is outside ${c.name} (${tc(c.start, s.fps)} - ${tc(clipEnd(c), s.fps)})`,
+          );
         }
         return Math.max(0, t);
       };
-      if (path === 'opacity' || path === 'scale' || path === 'rotation' || path === 'position.x' || path === 'position.y') {
+      if (
+        path === 'opacity' ||
+        path === 'scale' ||
+        path === 'rotation' ||
+        path === 'position.x' ||
+        path === 'position.y'
+      ) {
         target = visual;
         if (!target) throw new Error(`${clip.name} has no picture to animate`);
         const clipTime = clipTimeOf(target);
@@ -840,7 +1048,10 @@ const handlers: Record<string, Handler> = {
           } else {
             key = 'position';
             const current = valueAt(effect, 'position', clipTime, [0, 0]) as [number, number];
-            stored = path === 'position.x' ? [num(value, 'value'), current[1]] : [current[0], num(value, 'value')];
+            stored =
+              path === 'position.x'
+                ? [num(value, 'value'), current[1]]
+                : [current[0], num(value, 'value')];
           }
         }
         setKeyframe(effect, key, clipTime, stored, ease);
@@ -853,7 +1064,8 @@ const handlers: Record<string, Handler> = {
         setKeyframe(effect, key, clipTimeOf(target), stored, ease);
       } else if (path.startsWith('effect:')) {
         const [, effectId, paramKey] = path.split(':');
-        if (!effectId || !paramKey) throw new Error('param must look like effect:<effectId>:<paramName>');
+        if (!effectId || !paramKey)
+          throw new Error('param must look like effect:<effectId>:<paramName>');
         for (const c of linked) {
           const found = c.effects.find((e) => e.id === effectId);
           if (found) {
@@ -869,9 +1081,18 @@ const handlers: Record<string, Handler> = {
         stored = coerce(def, value);
         setKeyframe(effect, key, clipTimeOf(target), stored, ease);
       } else {
-        throw new Error('param must be opacity, position.x, position.y, scale, rotation, volume or effect:<effectId>:<paramName>');
+        throw new Error(
+          'param must be opacity, position.x, position.y, scale, rotation, volume or effect:<effectId>:<paramName>',
+        );
       }
-      result = { effectId: effect.id, key, time: s3(at), value: stored, keyframes: effect.keyframes[key]?.length ?? 0, fps: s.fps };
+      result = {
+        effectId: effect.id,
+        key,
+        time: s3(at),
+        value: stored,
+        keyframes: effect.keyframes[key]?.length ?? 0,
+        fps: s.fps,
+      };
     });
     reveal([id]);
     return { ...result, summary: `${path} keyframe at ${tc(at, result.fps as number)}` };
@@ -879,14 +1100,21 @@ const handlers: Record<string, Handler> = {
 
   add_marker({ time, name, color, sequenceId }) {
     const label = optStr(color);
-    if (label && !labels.includes(label as Label)) throw new Error(`color must be one of ${labels.join(', ')}`);
+    if (label && !labels.includes(label as Label))
+      throw new Error(`color must be one of ${labels.join(', ')}`);
     let markerId = '';
     let at = 0;
     let fps = 25;
     editIn('add marker', sequenceId, (s) => {
       fps = s.fps;
       at = snapToFrame(Math.max(0, optNum(time, 'time') ?? get(playhead)), s.fps);
-      markerId = ops.addMarker(s, createMarker(at, { name: optStr(name) ?? '', color: (label as Label | undefined) ?? 'green' }));
+      markerId = ops.addMarker(
+        s,
+        createMarker(at, {
+          name: optStr(name) ?? '',
+          color: (label as Label | undefined) ?? 'green',
+        }),
+      );
     });
     return { markerId, time: s3(at), summary: `marker at ${tc(at, fps)}` };
   },
@@ -894,18 +1122,22 @@ const handlers: Record<string, Handler> = {
   new_sequence({ name, template, width, height, fps }) {
     const p = requireProject();
     const tpl = template === undefined ? undefined : presetById(str(template, 'template'));
-    if (template !== undefined && !tpl) throw new Error(`Unknown template "${String(template)}"; see catalog("sequence_templates")`);
+    if (template !== undefined && !tpl)
+      throw new Error(`Unknown template "${String(template)}"; see catalog("sequence_templates")`);
     const seq = createSequence({
       name: optStr(name) ?? `Sequence ${p.sequences.length + 1}`,
       width: Math.round(optNum(width, 'width') ?? tpl?.width ?? 1920),
       height: Math.round(optNum(height, 'height') ?? tpl?.height ?? 1080),
-      fps: optNum(fps, 'fps') ?? tpl?.fps ?? 30
+      fps: optNum(fps, 'fps') ?? tpl?.fps ?? 30,
     });
     edit('new sequence', (draft) => {
       draft.sequences.push(seq);
     });
     setActiveSequence(seq.id);
-    return { ...describeSequence(seq, true), summary: `${seq.name} ${seq.width}x${seq.height} ${seq.fps} fps` };
+    return {
+      ...describeSequence(seq, true),
+      summary: `${seq.name} ${seq.width}x${seq.height} ${seq.fps} fps`,
+    };
   },
 
   set_active_sequence({ sequenceId }) {
@@ -962,7 +1194,9 @@ const handlers: Record<string, Handler> = {
 
   new_project({ name, force }) {
     if (get(project) && get(dirty) && !force) {
-      throw new Error('The open project has unsaved changes. Call save_project first, or pass force: true to discard them.');
+      throw new Error(
+        'The open project has unsaved changes. Call save_project first, or pass force: true to discard them.',
+      );
     }
     const title = optStr(name) ?? 'Untitled project';
     const p = createProject(title);
@@ -1003,13 +1237,20 @@ const handlers: Record<string, Handler> = {
     const url = str(uploadUrl, 'uploadUrl');
     const seq = sequenceOf(requireProject(), sequenceId);
     if (get(exportJob)) throw new Error('An export is already running');
-    const presetsModule = await import('$lib/export/presets');
-    const { exportSequence } = await import('$lib/export/render');
+    const presetsModule = await import('#lib/export/presets.ts');
+    const { exportSequence } = await import('#lib/export/render.ts');
     const def = presetsModule.findPreset(optStr(preset) ?? 'youtube-1080');
     if (!def) throw new Error(`Unknown preset "${String(preset)}"; see catalog("export_presets")`);
-    const resolved = await presetsModule.resolveCodecs(presetsModule.settingsFromPreset(def, seq), undefined, seq.sampleRate);
+    const resolved = await presetsModule.resolveCodecs(
+      presetsModule.settingsFromPreset(def, seq),
+      undefined,
+      seq.sampleRate,
+    );
     const root = await opfsRoot();
-    if (!root) throw new Error('This browser cannot stream an export to a file; use Chrome, Edge or another Chromium browser');
+    if (!root)
+      throw new Error(
+        'This browser cannot stream an export to a file; use Chrome, Edge or another Chromium browser',
+      );
     const folder = await root.getDirectoryHandle('agent-exports', { create: true });
     const fileName = `${job}.${resolved.settings.container}`;
     const handle = await folder.getFileHandle(fileName, { create: true });
@@ -1036,18 +1277,32 @@ const handlers: Record<string, Handler> = {
             },
             onNote(note) {
               addToast(note, 'warning', 6000);
-            }
+            },
           },
-          (mediaId) => media.get(mediaId)
+          (mediaId) => media.get(mediaId),
         );
         exportJob.set({ progress: 0.95, stage: 'Handing over', eta: null, cancel });
-        report({ jobId: job, state: 'uploading', progress: 0.95, message: 'Handing the file to braincut-mcp' });
-        const response = await fetch(url, { method: 'PUT', body: await handle.getFile(), signal: controller.signal });
-        if (!response.ok) throw new Error(`braincut-mcp could not write the file (${response.status})`);
+        report({
+          jobId: job,
+          state: 'uploading',
+          progress: 0.95,
+          message: 'Handing the file to braincut-mcp',
+        });
+        const response = await fetch(url, {
+          method: 'PUT',
+          body: await handle.getFile(),
+          signal: controller.signal,
+        });
+        if (!response.ok)
+          throw new Error(`braincut-mcp could not write the file (${response.status})`);
         addToast(`Exported ${optStr(path) ?? fileName} (${mb(bytes)})`, 'success', 5000);
       } catch (error) {
         const aborted = error instanceof Error && error.name === 'AbortError';
-        const message = aborted ? 'Export cancelled' : error instanceof Error ? error.message : String(error);
+        const message = aborted
+          ? 'Export cancelled'
+          : error instanceof Error
+            ? error.message
+            : String(error);
         report({ jobId: job, state: 'error', progress: 0, message });
         addToast(aborted ? message : `Export failed: ${message}`, aborted ? 'info' : 'error', 6000);
       } finally {
@@ -1066,9 +1321,9 @@ const handlers: Record<string, Handler> = {
       height: resolved.settings.height,
       fps: resolved.settings.fps,
       notes: resolved.notes,
-      summary: `exporting ${def.name}`
+      summary: `exporting ${def.name}`,
     };
-  }
+  },
 };
 
 export const toolNames = Object.keys(handlers);

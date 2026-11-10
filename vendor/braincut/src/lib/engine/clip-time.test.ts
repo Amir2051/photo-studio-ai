@@ -1,11 +1,23 @@
 import { describe, it, expect } from 'vitest';
-import type { Clip } from '$lib/project/types';
+import type { Clip } from '#lib/project/types.ts';
 import { clipEnd, clipSourceRange, sequenceTimeOfSource, sourceTimeAt } from './clip-time';
 
 function clip(over: Partial<Clip> = {}): Clip {
   return {
-    id: 'c', kind: 'video', name: 'c', mediaId: 'm', start: 10, duration: 4, in: 2,
-    speed: 1, reverse: false, linkId: null, enabled: true, label: 'none', effects: [], ...over
+    id: 'c',
+    kind: 'video',
+    name: 'c',
+    mediaId: 'm',
+    start: 10,
+    duration: 4,
+    in: 2,
+    speed: 1,
+    reverse: false,
+    linkId: null,
+    enabled: true,
+    label: 'none',
+    effects: [],
+    ...over,
   };
 }
 

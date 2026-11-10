@@ -8,9 +8,9 @@ import {
   WebMOutputFormat,
   type AudioCodec,
   type OutputFormat,
-  type VideoCodec
+  type VideoCodec,
 } from 'mediabunny';
-import type { Sequence } from '$lib/project/types';
+import type { Sequence } from '#lib/project/types.ts';
 
 export type Container = 'mp4' | 'webm' | 'mov' | 'mkv' | 'gif' | 'wav' | 'png';
 export type ExportVideoCodec = 'avc' | 'hevc' | 'vp9' | 'av1' | 'vp8';
@@ -48,7 +48,11 @@ export interface ExportPreset {
   // the frame of this preset is the point of it: keep it as it is and let
   // the export letterbox the sequence into it
   exactFrame?: boolean;
-  settings: Omit<ExportSettings, 'width' | 'height' | 'fps'> & { width: Match; height: Match; fps: Match };
+  settings: Omit<ExportSettings, 'width' | 'height' | 'fps'> & {
+    width: Match;
+    height: Match;
+    fps: Match;
+  };
 }
 
 const base: ExportPreset['settings'] = {
@@ -66,7 +70,7 @@ const base: ExportPreset['settings'] = {
   includeAudio: true,
   hardwareAcceleration: 'no-preference',
   keyFrameInterval: 2,
-  gif: { fps: 15, width: 480, dither: true, loop: true }
+  gif: { fps: 15, width: 480, dither: true, loop: true },
 };
 
 export const presets: ExportPreset[] = [
@@ -74,71 +78,96 @@ export const presets: ExportPreset[] = [
     id: 'match',
     name: 'Match sequence',
     description: 'H.264 MP4 at the size and frame rate of the sequence',
-    settings: { ...base }
+    settings: { ...base },
   },
   {
     id: 'youtube-1080',
     name: 'YouTube 1080p',
     description: 'H.264 MP4, 1920x1080, AAC 192 kbps',
-    settings: { ...base, width: 1920, height: 1080 }
+    settings: { ...base, width: 1920, height: 1080 },
   },
   {
     id: 'youtube-2160',
     name: 'YouTube 4K',
     description: 'H.264 MP4, 3840x2160, AAC 192 kbps',
-    settings: { ...base, width: 3840, height: 2160, quality: 'very-high' }
+    settings: { ...base, width: 3840, height: 2160, quality: 'very-high' },
   },
   {
     id: 'vertical-1080',
     name: 'Vertical 1080x1920',
     description: 'H.264 MP4 for shorts, reels and stories',
     exactFrame: true,
-    settings: { ...base, width: 1080, height: 1920 }
+    settings: { ...base, width: 1080, height: 1920 },
   },
   {
     id: 'web-720',
     name: 'Web small 720p',
     description: 'H.264 MP4, 1280x720, medium quality, AAC 128 kbps',
-    settings: { ...base, width: 1280, height: 720, quality: 'medium', audioBitrate: 128_000 }
+    settings: { ...base, width: 1280, height: 720, quality: 'medium', audioBitrate: 128_000 },
   },
   {
     id: 'webm-vp9',
     name: 'WebM VP9 + Opus',
     description: 'VP9 video and Opus audio, broadly supported across modern browsers',
-    settings: { ...base, container: 'webm', videoCodec: 'vp9', audioCodec: 'opus', audioBitrate: 128_000 }
+    settings: {
+      ...base,
+      container: 'webm',
+      videoCodec: 'vp9',
+      audioCodec: 'opus',
+      audioBitrate: 128_000,
+    },
   },
   {
     id: 'webm-av1',
     name: 'AV1 WebM',
     description: 'AV1 video and Opus audio, smallest files, slow to encode',
     requires: 'av1',
-    settings: { ...base, container: 'webm', videoCodec: 'av1', audioCodec: 'opus', audioBitrate: 128_000 }
+    settings: {
+      ...base,
+      container: 'webm',
+      videoCodec: 'av1',
+      audioCodec: 'opus',
+      audioBitrate: 128_000,
+    },
   },
   {
     id: 'hevc-mp4',
     name: 'HEVC MP4',
     description: 'H.265 video and AAC audio, about half the size of H.264',
     requires: 'hevc',
-    settings: { ...base, videoCodec: 'hevc' }
+    settings: { ...base, videoCodec: 'hevc' },
   },
   {
     id: 'lossless-ish',
     name: 'Near lossless',
     description: 'H.264 MP4 at the highest quality with PCM audio',
-    settings: { ...base, quality: 'very-high', audioCodec: 'pcm-s16' }
+    settings: { ...base, quality: 'very-high', audioCodec: 'pcm-s16' },
   },
   {
     id: 'gif',
     name: 'Animated GIF',
     description: '480px wide, 15 frames per second, no audio',
-    settings: { ...base, container: 'gif', videoCodec: null, audioCodec: null, includeAudio: false, quality: 'medium' }
+    settings: {
+      ...base,
+      container: 'gif',
+      videoCodec: null,
+      audioCodec: null,
+      includeAudio: false,
+      quality: 'medium',
+    },
   },
   {
     id: 'wav',
     name: 'Audio only WAV',
     description: '16 bit PCM at the sample rate of the sequence',
-    settings: { ...base, container: 'wav', videoCodec: null, audioCodec: 'pcm-s16', includeVideo: false }
-  }
+    settings: {
+      ...base,
+      container: 'wav',
+      videoCodec: null,
+      audioCodec: 'pcm-s16',
+      includeVideo: false,
+    },
+  },
 ];
 
 export function findPreset(id: string): ExportPreset | undefined {
@@ -174,13 +203,15 @@ export function settingsFromPreset(preset: ExportPreset, sequence: Sequence): Ex
     width: roundEven(width),
     height: roundEven(height),
     fps: s.fps === 'match' ? sequence.fps : s.fps,
-    gif: { ...s.gif }
+    gif: { ...s.gif },
   };
 }
 
 // codecs the browser can't encode should not offer their presets at all
 export async function availablePresets(): Promise<ExportPreset[]> {
-  const checks = await Promise.all(presets.map((p) => (p.requires ? canEncodeVideo(p.requires) : Promise.resolve(true))));
+  const checks = await Promise.all(
+    presets.map((p) => (p.requires ? canEncodeVideo(p.requires) : Promise.resolve(true))),
+  );
   return presets.filter((_, i) => checks[i]);
 }
 
@@ -191,9 +222,15 @@ const bitsPerPixel: Record<Exclude<QualityLevel, 'custom'>, number> = {
   low: 0.04,
   medium: 0.07,
   high: 0.12,
-  'very-high': 0.2
+  'very-high': 0.2,
 };
-const codecFactor: Record<ExportVideoCodec, number> = { avc: 1, hevc: 0.7, vp9: 0.7, av1: 0.55, vp8: 1.2 };
+const codecFactor: Record<ExportVideoCodec, number> = {
+  avc: 1,
+  hevc: 0.7,
+  vp9: 0.7,
+  av1: 0.55,
+  vp8: 1.2,
+};
 
 export function videoBitrateFor(settings: ExportSettings): number {
   if (settings.quality === 'custom') return settings.videoBitrate;
@@ -201,7 +238,11 @@ export function videoBitrateFor(settings: ExportSettings): number {
   return settings.width * settings.height * settings.fps * bitsPerPixel[settings.quality] * factor;
 }
 
-export function estimateSize(settings: ExportSettings, durationSeconds: number, sampleRate = 48000): number {
+export function estimateSize(
+  settings: ExportSettings,
+  durationSeconds: number,
+  sampleRate = 48000,
+): number {
   if (settings.container === 'png') return settings.width * settings.height * 2;
   if (settings.container === 'gif') {
     const h = (settings.gif.width * settings.height) / settings.width;
@@ -228,10 +269,13 @@ const containerFormats: Record<FileContainer, () => OutputFormat> = {
   webm: () => new WebMOutputFormat(),
   mov: () => new MovOutputFormat(),
   mkv: () => new MkvOutputFormat(),
-  wav: () => new WavOutputFormat()
+  wav: () => new WavOutputFormat(),
 };
 
-export function formatFor(container: FileContainer, options?: { fastStart: false | 'in-memory' }): OutputFormat {
+export function formatFor(
+  container: FileContainer,
+  options?: { fastStart: false | 'in-memory' },
+): OutputFormat {
   if (container === 'mp4') return new Mp4OutputFormat(options);
   if (container === 'mov') return new MovOutputFormat(options);
   return containerFormats[container]();
@@ -262,7 +306,7 @@ const codecNames: Record<ExportVideoCodec | ExportAudioCodec, string> = {
   aac: 'AAC',
   opus: 'Opus',
   'pcm-s16': 'PCM',
-  flac: 'FLAC'
+  flac: 'FLAC',
 };
 const containerNames: Record<Container, string> = {
   mp4: 'MP4',
@@ -271,20 +315,28 @@ const containerNames: Record<Container, string> = {
   mkv: 'MKV',
   gif: 'GIF',
   wav: 'WAV',
-  png: 'PNG'
+  png: 'PNG',
 };
 
 export interface CodecProbe {
   video: (codec: VideoCodec, options: { width: number; height: number }) => Promise<boolean>;
-  audio: (codec: AudioCodec, options: { numberOfChannels: number; sampleRate: number }) => Promise<boolean>;
+  audio: (
+    codec: AudioCodec,
+    options: { numberOfChannels: number; sampleRate: number },
+  ) => Promise<boolean>;
 }
 
 const defaultProbe: CodecProbe = { video: canEncodeVideo, audio: canEncodeAudio };
 
-function holds(container: Container, codec: ExportVideoCodec | ExportAudioCodec, kind: 'video' | 'audio'): boolean {
+function holds(
+  container: Container,
+  codec: ExportVideoCodec | ExportAudioCodec,
+  kind: 'video' | 'audio',
+): boolean {
   if (container === 'gif' || container === 'png') return false;
   const format = containerFormats[container]();
-  const list: string[] = kind === 'video' ? format.getSupportedVideoCodecs() : format.getSupportedAudioCodecs();
+  const list: string[] =
+    kind === 'video' ? format.getSupportedVideoCodecs() : format.getSupportedAudioCodecs();
   return list.includes(codec);
 }
 
@@ -293,7 +345,7 @@ function holds(container: Container, codec: ExportVideoCodec | ExportAudioCodec,
 export async function resolveCodecs(
   input: ExportSettings,
   probe: CodecProbe = defaultProbe,
-  sampleRate = 48000
+  sampleRate = 48000,
 ): Promise<{ settings: ExportSettings; notes: string[] }> {
   const settings: ExportSettings = { ...input, gif: { ...input.gif } };
   const notes: string[] = [];
@@ -310,28 +362,37 @@ export async function resolveCodecs(
       }
     }
     if (!chosen) {
-      throw new Error("This browser can't encode video. Chrome and Edge can, Firefox and Safari are still catching up.");
+      throw new Error(
+        "This browser can't encode video. Chrome and Edge can, Firefox and Safari are still catching up.",
+      );
     }
     if (!holds(settings.container, chosen, 'video')) {
       const container = containerFallbacks.find((c) => holds(c, chosen, 'video'));
-      if (!container) throw new Error(`${codecNames[chosen]} doesn't fit any file type this editor writes.`);
+      if (!container)
+        throw new Error(`${codecNames[chosen]} doesn't fit any file type this editor writes.`);
       if (chosen !== wanted) {
         notes.push(
-          `${codecNames[wanted]} isn't available in this browser, using ${codecNames[chosen]} in ${containerNames[container]} instead.`
+          `${codecNames[wanted]} isn't available in this browser, using ${codecNames[chosen]} in ${containerNames[container]} instead.`,
         );
       } else {
-        notes.push(`${containerNames[settings.container]} can't hold ${codecNames[chosen]}, writing ${containerNames[container]} instead.`);
+        notes.push(
+          `${containerNames[settings.container]} can't hold ${codecNames[chosen]}, writing ${containerNames[container]} instead.`,
+        );
       }
       settings.container = container;
     } else if (chosen !== wanted) {
-      notes.push(`${codecNames[wanted]} isn't available in this browser, using ${codecNames[chosen]} instead.`);
+      notes.push(
+        `${codecNames[wanted]} isn't available in this browser, using ${codecNames[chosen]} instead.`,
+      );
     }
     settings.videoCodec = chosen;
   }
 
   if (settings.includeAudio && settings.audioCodec) {
     const wanted = settings.audioCodec;
-    const candidates = [wanted, ...audioFallbacks.filter((c) => c !== wanted)].filter((c) => holds(settings.container, c, 'audio'));
+    const candidates = [wanted, ...audioFallbacks.filter((c) => c !== wanted)].filter((c) =>
+      holds(settings.container, c, 'audio'),
+    );
     let chosen: ExportAudioCodec | null = null;
     for (const codec of candidates) {
       if (await probe.audio(codec, { numberOfChannels: 2, sampleRate })) {
@@ -340,7 +401,9 @@ export async function resolveCodecs(
       }
     }
     if (!chosen) {
-      notes.push(`No audio codec for ${containerNames[settings.container]} works in this browser, exporting without audio.`);
+      notes.push(
+        `No audio codec for ${containerNames[settings.container]} works in this browser, exporting without audio.`,
+      );
       settings.includeAudio = false;
       settings.audioCodec = null;
     } else {
@@ -351,7 +414,9 @@ export async function resolveCodecs(
         notes.push(`${codecNames[wanted]} ${reason}, using ${codecNames[chosen]} instead.`);
       }
       if (chosen === 'opus' && (settings.container === 'mp4' || settings.container === 'mov')) {
-        notes.push('AAC encoding is unavailable in Firefox and desktop Linux browsers. Opus in MP4 is uncommon; for a more compatible export here, switch to the WebM VP9 + Opus preset.');
+        notes.push(
+          'AAC encoding is unavailable in Firefox and desktop Linux browsers. Opus in MP4 is uncommon; for a more compatible export here, switch to the WebM VP9 + Opus preset.',
+        );
       }
       settings.audioCodec = chosen;
     }
@@ -359,7 +424,6 @@ export async function resolveCodecs(
 
   return { settings, notes };
 }
-
 
 /**
  * Pick a sensible first-run preset for the codecs this browser can encode.
@@ -370,7 +434,7 @@ export async function resolveCodecs(
 export async function defaultPresetForBrowser(
   sequence: Sequence,
   available: ExportPreset[] = presets,
-  probe: CodecProbe = defaultProbe
+  probe: CodecProbe = defaultProbe,
 ): Promise<ExportPreset | undefined> {
   const match = available.find((p) => p.id === 'match') ?? available[0];
   if (!match) return undefined;
@@ -386,7 +450,11 @@ export async function defaultPresetForBrowser(
 
   const webm = available.find((p) => p.id === 'webm-vp9');
   if (!webm) return match;
-  const candidate = await resolveCodecs(settingsFromPreset(webm, sequence), probe, sequence.sampleRate);
+  const candidate = await resolveCodecs(
+    settingsFromPreset(webm, sequence),
+    probe,
+    sequence.sampleRate,
+  );
   if (
     candidate.settings.container === 'webm' &&
     candidate.settings.videoCodec === 'vp9' &&

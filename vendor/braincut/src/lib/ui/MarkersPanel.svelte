@@ -1,13 +1,13 @@
 <script lang="ts">
   import Icon from './Icon.svelte';
   import { labels, labelName, labelColor } from './MediaTile.svelte';
-  import type { Id, Marker } from '$lib/project/types';
-  import { activeSequence, editSequence } from '$lib/project/store';
-  import { addMarker, removeMarker, updateMarker } from '$lib/project/ops';
-  import { createMarker } from '$lib/project/defaults';
-  import { formatDuration, formatTimecode } from '$lib/project/time';
-  import { contextMenu, playhead, type MenuItem } from '$lib/stores/app';
-  import { program } from '$lib/engine/session';
+  import type { Id, Marker } from '#lib/project/types.ts';
+  import { activeSequence, editSequence } from '#lib/project/store.ts';
+  import { addMarker, removeMarker, updateMarker } from '#lib/project/ops.ts';
+  import { createMarker } from '#lib/project/defaults.ts';
+  import { formatDuration, formatTimecode } from '#lib/project/time.ts';
+  import { contextMenu, playhead, type MenuItem } from '#lib/stores/app.ts';
+  import { program } from '#lib/engine/session.ts';
 
   let selected = $state<Id | null>(null);
 

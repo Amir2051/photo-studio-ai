@@ -1,11 +1,20 @@
-import { browser } from '$app/environment';
+import { browser } from '$app/env';
 import { get, writable } from 'svelte/store';
-import { getBlobForMedia } from '$lib/media/sources';
-import { createClipFromMedia, createSequence } from '$lib/project/defaults';
-import { activeSequence, mediaById } from '$lib/project/store';
-import type { Id, MediaItem, Sequence } from '$lib/project/types';
-import { addToast, loopPlayback, playhead, playing, previewQuality, renderStatus, showSafeMargins, sourceMedia } from '$lib/stores/app';
-import { preferences } from '$lib/stores/preferences';
+import { getBlobForMedia } from '#lib/media/sources.ts';
+import { createClipFromMedia, createSequence } from '#lib/project/defaults.ts';
+import { activeSequence, mediaById } from '#lib/project/store.ts';
+import type { Id, MediaItem, Sequence } from '#lib/project/types.ts';
+import {
+  addToast,
+  loopPlayback,
+  playhead,
+  playing,
+  previewQuality,
+  renderStatus,
+  showSafeMargins,
+  sourceMedia,
+} from '#lib/stores/app.ts';
+import { preferences } from '#lib/stores/preferences.ts';
 import { AudioEngine } from './audio-engine';
 import { Compositor } from './compositor';
 import { MediaCache } from './media-cache';
@@ -75,7 +84,7 @@ function sharedCache(): MediaCache {
       addToast(`${name} can't be decoded here — convert it or relink it`, 'error', 6000);
       programSession?.player.invalidate();
       sourceSession?.player.invalidate();
-    }
+    },
   });
   cache = created;
 
@@ -84,8 +93,12 @@ function sharedCache(): MediaCache {
   cacheSubs = [
     preferences.subscribe((prefs) => {
       // open readers hold the old file or decoder, they are reopened on demand
-      if (prefs.hardwareAcceleration !== lastPrefs.hardwareAcceleration) setDecoderPreference(prefs.hardwareAcceleration);
-      if (prefs.hardwareAcceleration !== lastPrefs.hardwareAcceleration || prefs.useProxies !== lastPrefs.useProxies) {
+      if (prefs.hardwareAcceleration !== lastPrefs.hardwareAcceleration)
+        setDecoderPreference(prefs.hardwareAcceleration);
+      if (
+        prefs.hardwareAcceleration !== lastPrefs.hardwareAcceleration ||
+        prefs.useProxies !== lastPrefs.useProxies
+      ) {
         created.release();
         programSession?.player.invalidate();
         sourceSession?.player.invalidate();
@@ -110,7 +123,7 @@ function sharedCache(): MediaCache {
         programSession?.player.invalidate();
         sourceSession?.player.invalidate();
       }
-    })
+    }),
   ];
   return created;
 }
@@ -129,7 +142,7 @@ export function program(): Session {
     width: current?.width ?? 1920,
     height: current?.height ?? 1080,
     scale: get(previewQuality),
-    onRecovered: () => recovered()
+    onRecovered: () => recovered(),
   });
   const audio = new AudioEngine();
   let isPlaying = false;
@@ -149,8 +162,10 @@ export function program(): Session {
       isPlaying = p;
       playing.set(p);
       // other work owns the other states, only the idle/playing pair is ours
-      renderStatus.update((s) => (p ? (s === 'idle' ? 'playing' : s) : s === 'playing' ? 'idle' : s));
-    }
+      renderStatus.update((s) =>
+        p ? (s === 'idle' ? 'playing' : s) : s === 'playing' ? 'idle' : s,
+      );
+    },
   });
 
   recovered = () => player.invalidate();
@@ -174,7 +189,7 @@ export function program(): Session {
     // the player writes the playhead, but a write from elsewhere still lands
     playhead.subscribe((t) => {
       if (!isPlaying && t !== published) player.seek(t);
-    })
+    }),
   ];
 
   const session: Session = {
@@ -190,7 +205,7 @@ export function program(): Session {
       player.destroy();
       audio.destroy();
       compositor.destroy();
-    }
+    },
   };
   programSession = session;
   player.seek(published);
@@ -207,7 +222,7 @@ function sourceSequence(media: MediaItem, fps: number, stillDuration: number): S
     fps,
     sampleRate: media.sampleRate > 0 ? media.sampleRate : 48000,
     videoTracks: 1,
-    audioTracks: 1
+    audioTracks: 1,
   });
   const clips = createClipFromMedia(media, 0, { fps, stillDuration });
   if (clips.video) seq.tracks[0].clips.push(clips.video);
@@ -220,7 +235,12 @@ export function source(): Session {
   if (sourceSession) return sourceSession;
   const shared = sharedCache();
   let recovered = () => {};
-  const compositor = new Compositor({ width: 1280, height: 720, scale: get(previewQuality), onRecovered: () => recovered() });
+  const compositor = new Compositor({
+    width: 1280,
+    height: 720,
+    scale: get(previewQuality),
+    onRecovered: () => recovered(),
+  });
   const audio = new AudioEngine();
   let current: Sequence | null = null;
   const player = new Player({
@@ -229,7 +249,7 @@ export function source(): Session {
     cache: shared,
     getSequence: () => current,
     getMedia,
-    audioScrubbing: () => get(preferences).audioScrubbing
+    audioScrubbing: () => get(preferences).audioScrubbing,
   });
 
   recovered = () => player.invalidate();
@@ -253,15 +273,22 @@ export function source(): Session {
       lastTime = null;
       return;
     }
-    const fps = media.fps && media.fps > 0 ? media.fps : get(activeSequence)?.fps ?? 30;
+    const fps = media.fps && media.fps > 0 ? media.fps : (get(activeSequence)?.fps ?? 30);
     const still = get(preferences).stillImageDuration;
-    const fresh = base !== null && base.media === media && base.fps === fps && base.still === still ? base : null;
+    const fresh =
+      base !== null && base.media === media && base.fps === fps && base.still === still
+        ? base
+        : null;
     if (fresh && value === lastValue) return;
     const previousId = base?.media.id ?? null;
     const built = fresh ?? { media, fps, still, seq: sourceSequence(media, fps, still) };
     base = built;
     lastValue = value;
-    current = { ...built.seq, inPoint: value.in, outPoint: value.out > value.in ? value.out : null };
+    current = {
+      ...built.seq,
+      inPoint: value.in,
+      outPoint: value.out > value.in ? value.out : null,
+    };
     if (previousId !== media.id) player.pause();
     if (value.time !== lastTime) {
       lastTime = value.time;
@@ -276,7 +303,7 @@ export function source(): Session {
     preferences.subscribe(refresh),
     activeSequence.subscribe(refresh),
     previewQuality.subscribe((q) => player.setQuality(q)),
-    loopPlayback.subscribe((on) => player.setLoop(on))
+    loopPlayback.subscribe((on) => player.setLoop(on)),
   ];
 
   const session: Session = {
@@ -292,7 +319,7 @@ export function source(): Session {
       player.destroy();
       audio.destroy();
       compositor.destroy();
-    }
+    },
   };
   sourceSession = session;
   return session;

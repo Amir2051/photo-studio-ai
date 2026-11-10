@@ -1,13 +1,32 @@
 import { describe, it, expect } from 'vitest';
-import { createSequence } from '$lib/project/defaults';
-import type { Sequence } from '$lib/project/types';
+import { createSequence } from '#lib/project/defaults.ts';
+import type { Sequence } from '#lib/project/types.ts';
 import { MAX_SHUTTLE, nextShuttleRate, playRange } from './player';
 
 function sequence(over: Partial<Sequence> = {}): Sequence {
-  const seq = createSequence({ name: 's', width: 1920, height: 1080, fps: 25, videoTracks: 1, audioTracks: 0 });
+  const seq = createSequence({
+    name: 's',
+    width: 1920,
+    height: 1080,
+    fps: 25,
+    videoTracks: 1,
+    audioTracks: 0,
+  });
   seq.tracks[0].clips.push({
-    id: 'c', kind: 'color', name: 'c', mediaId: null, start: 2, duration: 8, in: 0,
-    speed: 1, reverse: false, linkId: null, enabled: true, label: 'none', effects: [], color: '#000000'
+    id: 'c',
+    kind: 'color',
+    name: 'c',
+    mediaId: null,
+    start: 2,
+    duration: 8,
+    in: 0,
+    speed: 1,
+    reverse: false,
+    linkId: null,
+    enabled: true,
+    label: 'none',
+    effects: [],
+    color: '#000000',
   });
   return { ...seq, ...over };
 }
@@ -54,7 +73,10 @@ describe('playRange', () => {
   it('ignores an empty or backwards range', () => {
     expect(playRange(sequence({ inPoint: 6, outPoint: 6 }), true)).toEqual({ start: 0, end: 10 });
     expect(playRange(sequence({ inPoint: 6, outPoint: 3 }), true)).toEqual({ start: 0, end: 10 });
-    expect(playRange(sequence({ inPoint: 3, outPoint: null }), true)).toEqual({ start: 0, end: 10 });
+    expect(playRange(sequence({ inPoint: 3, outPoint: null }), true)).toEqual({
+      start: 0,
+      end: 10,
+    });
   });
 
   it('never runs past the sequence end', () => {

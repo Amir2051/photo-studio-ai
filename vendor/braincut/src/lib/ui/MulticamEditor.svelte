@@ -1,15 +1,15 @@
 <script lang="ts">
   import { onDestroy, onMount, tick } from 'svelte';
   import { get } from 'svelte/store';
-  import { importFiles } from '$lib/media/import';
-  import { recordingFile, supportedRecordingMimeType } from '$lib/media/recording';
-  import { getBlobForMedia } from '$lib/media/sources';
-  import { createClipFromMedia } from '$lib/project/defaults';
-  import { readDrag, endDrag } from '$lib/editor/drag';
-  import { addTrack, canPlace, placeClips } from '$lib/project/ops';
-  import { activeSequence, editSequence, mediaById, project } from '$lib/project/store';
-  import { addToast, playhead, playing, selection } from '$lib/stores/app';
-  import type { Clip, MediaItem, Sequence, Track } from '$lib/project/types';
+  import { importFiles } from '#lib/media/import.ts';
+  import { recordingFile, supportedRecordingMimeType } from '#lib/media/recording.ts';
+  import { getBlobForMedia } from '#lib/media/sources.ts';
+  import { createClipFromMedia } from '#lib/project/defaults.ts';
+  import { readDrag, endDrag } from '#lib/editor/drag.ts';
+  import { addTrack, canPlace, placeClips } from '#lib/project/ops.ts';
+  import { activeSequence, editSequence, mediaById, project } from '#lib/project/store.ts';
+  import { addToast, playhead, playing, selection } from '#lib/stores/app.ts';
+  import type { Clip, MediaItem, Sequence, Track } from '#lib/project/types.ts';
 
   type Angle = {
     index: number;

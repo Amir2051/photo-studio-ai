@@ -1,37 +1,37 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import TopBar from '$lib/ui/TopBar.svelte';
-  import StatusBar from '$lib/ui/StatusBar.svelte';
-  import PanelTabs from '$lib/ui/PanelTabs.svelte';
-  import Resizer from '$lib/ui/Resizer.svelte';
-  import ToolStrip from '$lib/ui/ToolStrip.svelte';
-  import CommandPalette from '$lib/ui/CommandPalette.svelte';
-  import ContextMenu from '$lib/ui/ContextMenu.svelte';
-  import Dialogs from '$lib/ui/Dialogs.svelte';
-  import DropOverlay from '$lib/ui/DropOverlay.svelte';
-  import Welcome from '$lib/ui/Welcome.svelte';
+  import TopBar from '#lib/ui/TopBar.svelte';
+  import StatusBar from '#lib/ui/StatusBar.svelte';
+  import PanelTabs from '#lib/ui/PanelTabs.svelte';
+  import Resizer from '#lib/ui/Resizer.svelte';
+  import ToolStrip from '#lib/ui/ToolStrip.svelte';
+  import CommandPalette from '#lib/ui/CommandPalette.svelte';
+  import ContextMenu from '#lib/ui/ContextMenu.svelte';
+  import Dialogs from '#lib/ui/Dialogs.svelte';
+  import DropOverlay from '#lib/ui/DropOverlay.svelte';
+  import Welcome from '#lib/ui/Welcome.svelte';
 
-  import SourceMonitor from '$lib/ui/SourceMonitor.svelte';
-  import EffectControls from '$lib/ui/EffectControls.svelte';
-  import AudioMixer from '$lib/ui/AudioMixer.svelte';
-  import ColorPanel from '$lib/ui/ColorPanel.svelte';
-  import MulticamEditor from '$lib/ui/MulticamEditor.svelte';
-  import ProgramMonitor from '$lib/ui/ProgramMonitor.svelte';
-  import ProjectPanel from '$lib/ui/ProjectPanel.svelte';
-  import EffectsPanel from '$lib/ui/EffectsPanel.svelte';
-  import MarkersPanel from '$lib/ui/MarkersPanel.svelte';
-  import HistoryPanel from '$lib/ui/HistoryPanel.svelte';
-  import TextPanel from '$lib/ui/TextPanel.svelte';
-  import Timeline from '$lib/ui/timeline/Timeline.svelte';
+  import SourceMonitor from '#lib/ui/SourceMonitor.svelte';
+  import EffectControls from '#lib/ui/EffectControls.svelte';
+  import AudioMixer from '#lib/ui/AudioMixer.svelte';
+  import ColorPanel from '#lib/ui/ColorPanel.svelte';
+  import MulticamEditor from '#lib/ui/MulticamEditor.svelte';
+  import ProgramMonitor from '#lib/ui/ProgramMonitor.svelte';
+  import ProjectPanel from '#lib/ui/ProjectPanel.svelte';
+  import EffectsPanel from '#lib/ui/EffectsPanel.svelte';
+  import MarkersPanel from '#lib/ui/MarkersPanel.svelte';
+  import HistoryPanel from '#lib/ui/HistoryPanel.svelte';
+  import TextPanel from '#lib/ui/TextPanel.svelte';
+  import Timeline from '#lib/ui/timeline/Timeline.svelte';
 
-  import { activeSequence, project } from '$lib/project/store';
-  import type { RecentProject } from '$lib/project/persistence';
-  import { destroySessions, program } from '$lib/engine/session';
-  import { pickFiles } from '$lib/media/import';
-  import { installShortcuts } from '$lib/editor/shortcuts';
-  import { installClaudeBridge } from '$lib/agent/bridge';
-  import { buildCommands } from '$lib/editor/commands';
-  import { exportCurrentFrame } from '$lib/editor/export-actions';
+  import { activeSequence, project } from '#lib/project/store.ts';
+  import type { RecentProject } from '#lib/project/persistence.ts';
+  import { destroySessions, program } from '#lib/engine/session.ts';
+  import { pickFiles } from '#lib/media/import.ts';
+  import { installShortcuts } from '#lib/editor/shortcuts.ts';
+  import { installClaudeBridge } from '#lib/agent/bridge.ts';
+  import { buildCommands } from '#lib/editor/commands.ts';
+  import { exportCurrentFrame } from '#lib/editor/export-actions.ts';
   import {
     ensureProjectForImport,
     installProjectLifecycle,
@@ -39,7 +39,7 @@
     openRecent,
     recentProjects,
     saveProject
-  } from '$lib/editor/project-actions';
+  } from '#lib/editor/project-actions.ts';
   import {
     leftPanelTab,
     bottomPanelTab,
@@ -49,7 +49,7 @@
     workspace,
     type LeftPanelTab,
     type BottomPanelTab
-  } from '$lib/stores/app';
+  } from '#lib/stores/app.ts';
 
   const MIN_LEFT = 280;
   const MIN_ROW = 180;

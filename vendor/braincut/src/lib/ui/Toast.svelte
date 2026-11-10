@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { toasts } from '$lib/stores/app';
+  import { toasts } from '#lib/stores/app.ts';
 
   const typeColors: Record<string, string> = {
     info: 'var(--accent)',

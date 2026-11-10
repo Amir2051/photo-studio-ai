@@ -1,7 +1,7 @@
 // audio effect type to a small web audio graph. everything here is built
 // from plain nodes so the same chain renders in an offline context for the
 // export, where worklets are not an option
-import type { ParamValue } from '$lib/project/types';
+import type { ParamValue } from '#lib/project/types.ts';
 
 export interface AudioEffectRuntime {
   input: AudioNode;
@@ -27,7 +27,13 @@ export function dbToGain(db: number): number {
 
 // setting a-rate params through setTargetAtTime avoids the zipper noise a
 // direct assignment makes while a fader is dragged, and is harmless offline
-function ramp(param: AudioParam, value: number, ctx: BaseAudioContext, time: number, seconds = 0.02): void {
+function ramp(
+  param: AudioParam,
+  value: number,
+  ctx: BaseAudioContext,
+  time: number,
+  seconds = 0.02,
+): void {
   const at = Math.max(ctx.currentTime, time);
   param.setTargetAtTime(value, at, seconds);
 }
@@ -40,7 +46,13 @@ function disconnectAll(nodes: AudioNode[]): void {
   for (const n of nodes) n.disconnect();
 }
 
-function biquad(ctx: BaseAudioContext, type: BiquadFilterType, frequency: number, q = 1, gain = 0): BiquadFilterNode {
+function biquad(
+  ctx: BaseAudioContext,
+  type: BiquadFilterType,
+  frequency: number,
+  q = 1,
+  gain = 0,
+): BiquadFilterNode {
   const node = ctx.createBiquadFilter();
   node.type = type;
   node.frequency.value = frequency;
@@ -72,7 +84,11 @@ export function makeImpulse(ctx: BaseAudioContext, duration: number, decay: numb
   return buffer;
 }
 
-function wetDry(ctx: BaseAudioContext, wet: AudioNode, wetInput: AudioNode = wet): AudioEffectRuntime & { dry: GainNode; wetGain: GainNode } {
+function wetDry(
+  ctx: BaseAudioContext,
+  wet: AudioNode,
+  wetInput: AudioNode = wet,
+): AudioEffectRuntime & { dry: GainNode; wetGain: GainNode } {
   const input = ctx.createGain();
   const output = ctx.createGain();
   const dry = ctx.createGain();
@@ -83,9 +99,12 @@ function wetDry(ctx: BaseAudioContext, wet: AudioNode, wetInput: AudioNode = wet
   wet.connect(wetGain);
   wetGain.connect(output);
   return {
-    input, output, dry, wetGain,
+    input,
+    output,
+    dry,
+    wetGain,
     update: () => {},
-    destroy: () => disconnectAll([input, output, dry, wetGain, wet, wetInput])
+    destroy: () => disconnectAll([input, output, dry, wetGain, wet, wetInput]),
   };
 }
 
@@ -93,9 +112,10 @@ const factories: Record<string, (ctx: BaseAudioContext) => AudioEffectRuntime> =
   gain: (ctx) => {
     const node = ctx.createGain();
     return {
-      input: node, output: node,
+      input: node,
+      output: node,
       update: (p, t) => ramp(node.gain, dbToGain(num(p, 'gain', 0)), ctx, t),
-      destroy: () => node.disconnect()
+      destroy: () => node.disconnect(),
     };
   },
 
@@ -105,7 +125,8 @@ const factories: Record<string, (ctx: BaseAudioContext) => AudioEffectRuntime> =
     const high = biquad(ctx, 'highshelf', 8000);
     chain(low, mid, high);
     return {
-      input: low, output: high,
+      input: low,
+      output: high,
       update: (p, t) => {
         ramp(low.gain, num(p, 'low', 0), ctx, t);
         ramp(mid.gain, num(p, 'mid', 0), ctx, t);
@@ -113,7 +134,7 @@ const factories: Record<string, (ctx: BaseAudioContext) => AudioEffectRuntime> =
         ramp(mid.Q, num(p, 'midQ', 1), ctx, t);
         ramp(high.gain, num(p, 'high', 0), ctx, t);
       },
-      destroy: () => disconnectAll([low, mid, high])
+      destroy: () => disconnectAll([low, mid, high]),
     };
   },
 
@@ -126,7 +147,8 @@ const factories: Record<string, (ctx: BaseAudioContext) => AudioEffectRuntime> =
     const makeup = ctx.createGain();
     comp.connect(makeup);
     return {
-      input: comp, output: makeup,
+      input: comp,
+      output: makeup,
       update: (p, t) => {
         ramp(comp.threshold, num(p, 'threshold', -24), ctx, t);
         ramp(comp.knee, num(p, 'knee', 30), ctx, t);
@@ -135,7 +157,7 @@ const factories: Record<string, (ctx: BaseAudioContext) => AudioEffectRuntime> =
         ramp(comp.release, num(p, 'release', 250) / 1000, ctx, t);
         ramp(makeup.gain, dbToGain(num(p, 'makeup', 0)), ctx, t);
       },
-      destroy: () => disconnectAll([comp, makeup])
+      destroy: () => disconnectAll([comp, makeup]),
     };
   },
 
@@ -156,7 +178,7 @@ const factories: Record<string, (ctx: BaseAudioContext) => AudioEffectRuntime> =
         const mix = num(p, 'mix', 30) / 100;
         ramp(rt.dry.gain, 1 - mix, ctx, t);
         ramp(rt.wetGain.gain, mix, ctx, t);
-      }
+      },
     };
   },
 
@@ -178,7 +200,7 @@ const factories: Record<string, (ctx: BaseAudioContext) => AudioEffectRuntime> =
       destroy: () => {
         rt.destroy();
         feedback.disconnect();
-      }
+      },
     };
   },
 
@@ -207,7 +229,8 @@ const factories: Record<string, (ctx: BaseAudioContext) => AudioEffectRuntime> =
     rr.connect(merger, 0, 1);
     merger.connect(output);
     return {
-      input, output,
+      input,
+      output,
       update: (p, t) => {
         const w = Math.max(0, num(p, 'width', 100) / 100);
         const same = (1 + w) / 2;
@@ -217,7 +240,7 @@ const factories: Record<string, (ctx: BaseAudioContext) => AudioEffectRuntime> =
         ramp(lr.gain, cross, ctx, t);
         ramp(rl.gain, cross, ctx, t);
       },
-      destroy: () => disconnectAll([input, splitter, merger, output, ll, lr, rl, rr])
+      destroy: () => disconnectAll([input, splitter, merger, output, ll, lr, rl, rr]),
     };
   },
 
@@ -237,26 +260,32 @@ const factories: Record<string, (ctx: BaseAudioContext) => AudioEffectRuntime> =
     right.connect(merger, 0, 1);
     merger.connect(output);
     return {
-      input, output,
+      input,
+      output,
       update: (p, t) => {
         const channel = str(p, 'channel', 'left');
         ramp(left.gain, channel === 'left' ? 0 : 1, ctx, t);
         ramp(right.gain, channel === 'right' ? 0 : 1, ctx, t);
       },
-      destroy: () => disconnectAll([input, splitter, merger, output, left, right])
+      destroy: () => disconnectAll([input, splitter, merger, output, left, right]),
     };
-  }
+  },
 };
 
-function simpleFilter(ctx: BaseAudioContext, type: BiquadFilterType, frequency: number): AudioEffectRuntime {
+function simpleFilter(
+  ctx: BaseAudioContext,
+  type: BiquadFilterType,
+  frequency: number,
+): AudioEffectRuntime {
   const node = biquad(ctx, type, frequency);
   return {
-    input: node, output: node,
+    input: node,
+    output: node,
     update: (p, t) => {
       ramp(node.frequency, num(p, 'frequency', frequency), ctx, t);
       ramp(node.Q, num(p, 'q', 1), ctx, t);
     },
-    destroy: () => node.disconnect()
+    destroy: () => node.disconnect(),
   };
 }
 

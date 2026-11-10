@@ -1,15 +1,15 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
-  import { base } from '$app/paths';
+  import { resolve } from '$app/paths';
   import { get } from 'svelte/store';
-  import { recordingFile } from '$lib/media/recording';
-  import { importFiles } from '$lib/media/import';
-  import { createClipFromMedia } from '$lib/project/defaults';
-  import { addTrack, canPlace, placeClips } from '$lib/project/ops';
-  import { activeSequence, editSequence } from '$lib/project/store';
-  import { addToast, playhead, selection } from '$lib/stores/app';
-  import { wakeGuestSignal } from '$lib/guestSignal';
-  import type { Sequence, Track, TrackKind } from '$lib/project/types';
+  import { recordingFile } from '#lib/media/recording.ts';
+  import { importFiles } from '#lib/media/import.ts';
+  import { createClipFromMedia } from '#lib/project/defaults.ts';
+  import { addTrack, canPlace, placeClips } from '#lib/project/ops.ts';
+  import { activeSequence, editSequence } from '#lib/project/store.ts';
+  import { addToast, playhead, selection } from '#lib/stores/app.ts';
+  import { wakeGuestSignal } from '#lib/guestSignal.ts';
+  import type { Sequence, Track, TrackKind } from '#lib/project/types.ts';
 
   type Source = { id: string; name: string; deviceId: string; stream: MediaStream; video: HTMLVideoElement; audioEnabled: boolean };
   let cameras = $state<MediaDeviceInfo[]>([]);
@@ -22,10 +22,15 @@
   let canvas: HTMLCanvasElement;
   let connected = $state(false);
   let recording = $state(false);
+  let recordingStarting = false;
+  let recordingSession = 0;
+  type RecordingAnchor = { sequenceId: string; start: number; fps: number; capturedAt: number };
+  let recordingAnchor: RecordingAnchor | null = null;
   let seconds = $state(0);
   let status = $state('Connect up to four cameras, then choose a program view.');
   let frame = 0;
   let recorder: MediaRecorder | null = null;
+  let recordingOutput: MediaStream | null = null;
   let chunks: Blob[] = [];
   let timer: ReturnType<typeof setInterval> | null = null;
   let startedAt = 0;
@@ -76,8 +81,15 @@
   }
   onDestroy(() => {
     disposed = true; if (timer) clearInterval(timer);
-    stopBroadcast(false); closeRoom();
+    stopBroadcast(); closeRoom();
     if (recorder && recorder.state !== 'inactive') { recorder.onstop = null; recorder.stop(); }
+    recordingOutput?.getTracks().forEach((track) => track.stop()); recordingOutput = null;
+    for (const stem of guestStems.values()) {
+      stem.recorder.onstop = null;
+      if (stem.recorder.state !== 'inactive') { try { stem.recorder.stop(); } catch {} }
+      stem.output.getTracks().forEach((track) => track.stop()); releaseAudio(stem.mix);
+    }
+    guestStems.clear();
     teardown(); navigator.mediaDevices?.removeEventListener?.('devicechange', refresh);
   });
 
@@ -102,9 +114,32 @@
       connected = true; status = 'Screen share connected.'; startPreview();
     } catch (e) { status = e instanceof Error ? e.message : 'Screen sharing was cancelled.'; }
   }
-  function allSources() { return [...slots, ...(screen ? [screen] : [])]; }
-  function startPreview() { if (!canvas) return; cancelAnimationFrame(frame); const draw = () => { renderFrame(); frame = requestAnimationFrame(draw); }; draw(); }
-  function drawFit(ctx: CanvasRenderingContext2D, video: HTMLVideoElement, x: number, y: number, w: number, h: number) {
+
+  function allSources() {
+    return [...slots, ...screen ? [screen] : []];
+  }
+
+  function startPreview() {
+    if (!canvas) return;
+
+    cancelAnimationFrame(frame);
+
+    const draw = () => {
+      renderFrame();
+      frame = requestAnimationFrame(draw);
+    };
+
+    draw();
+  }
+
+  function drawFit(
+    ctx: CanvasRenderingContext2D,
+    video: HTMLVideoElement,
+    x: number,
+    y: number,
+    w: number,
+    h: number
+  ) {
     if (video.readyState < 2 || !video.videoWidth) return;
     const scale = Math.max(w / video.videoWidth, h / video.videoHeight); const sw = w / scale, sh = h / scale;
     ctx.drawImage(video, (video.videoWidth-sw)/2, (video.videoHeight-sh)/2, sw, sh, x, y, w, h);
@@ -119,7 +154,15 @@
       if (secondary) drawFit(ctx,secondary.video,w/2,0,w/2,h);
       ctx.strokeStyle='#fff';ctx.lineWidth=4;ctx.beginPath();ctx.moveTo(w/2,0);ctx.lineTo(w/2,h);ctx.stroke();
     } else if (layout === 'quad') {
-      sources.slice(0,4).forEach((s,i)=>{const x=(i%2)*w/2,y=Math.floor(i/2)*h/2;drawFit(ctx,s.video,x,y,w/2,h/2);ctx.strokeStyle='#111827';ctx.lineWidth=3;ctx.strokeRect(x,y,w/2,h/2);});
+      sources.slice(0, 4).forEach((s, i) => {
+        const x = i % 2 * w / 2,
+          y = Math.floor(i / 2) * h / 2;
+
+        drawFit(ctx, s.video, x, y, w / 2, h / 2);
+        ctx.strokeStyle = '#111827';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(x, y, w / 2, h / 2);
+      });
     } else {
       if (primary) drawFit(ctx, primary.video, 0,0,w,h);
       if (layout === 'pip' && sources.length > 1) {
@@ -143,27 +186,87 @@
     for (const source of streams) { const node=context.createMediaStreamSource(source.stream);const gain=context.createGain();gain.gain.value=1;node.connect(gain);gain.connect(destination);mix.nodes.push(node);mix.gains.set(source.id,gain); }
     await context.resume(); return mix;
   }
-  function freeTrack(seq: Sequence, kind: TrackKind, start: number, duration: number): Track | undefined {
-    const available=seq.tracks.filter(t=>t.kind===kind&&!t.locked);const found=available.find(t=>canPlace(seq,t.id,start,duration));if(found)return found;
-    const id=addTrack(seq,kind);return seq.tracks.find(t=>t.id===id);
+
+  function freeTrack(
+    seq: Sequence,
+    kind: TrackKind,
+    start: number,
+    duration: number
+  ): Track | undefined {
+    const available = seq.tracks.filter((t) => t.kind === kind && !t.locked);
+    const found = available.find((t) => canPlace(seq, t.id, start, duration));
+
+    if (found) return found;
+
+    const id = addTrack(seq, kind);
+
+    return seq.tracks.find((t) => t.id === id);
   }
-  async function importGuestStem(file: File) {
-    const imported = await importFiles([file]); const media = imported.find(m => m.kind === 'audio' && m.status === 'ready');
+  async function importGuestStem(file: File, anchor: RecordingAnchor) {
+    const imported = await importFiles([file]);
+    const media = imported.find((m) => m.kind === 'audio' && m.status === 'ready');
+
     if (!media) throw new Error(`Guest audio stem ${file.name} could not be decoded.`);
-    const seq = get(activeSequence); if (!seq) throw new Error('Open a sequence before recording.');
-    const start = get(playhead); const pair = createClipFromMedia(media, start, { fps: seq.fps }); if (!pair.audio) throw new Error('No audio stream found in guest stem.');
+    const seq = get(activeSequence); if (!seq || seq.id !== anchor.sequenceId) throw new Error('The active sequence changed before the recording could be imported.');
+    const start = anchor.start; const pair = createClipFromMedia(media, start, { fps: anchor.fps }); if (!pair.audio) throw new Error('No audio stream found in guest stem.');
     let audioTrackId: string | null = null;
-    editSequence('record guest audio stem', draft => { const track = freeTrack(draft, 'audio', start, pair.audio!.duration); if (!track) return; const placed = placeClips(draft, [{ trackId: track.id, clip: pair.audio! }], 'overwrite'); if (placed.includes(pair.audio!.id)) audioTrackId = track.id; });
+
+    editSequence('record guest audio stem', (draft) => {
+      const track = freeTrack(draft, 'audio', start, (pair.audio!).duration);
+
+      if (!track) return;
+
+      const placed = placeClips(draft, [{ trackId: track.id, clip: pair.audio! }], 'overwrite');
+
+      if (placed.includes((pair.audio!).id)) audioTrackId = track.id;
+    });
+
     if (!audioTrackId) throw new Error(`No unlocked audio track available for ${file.name}.`);
     selection.set([pair.audio.id]);
   }
-  async function importProgram(file: File) {
-    const imported=await importFiles([file]);const media=imported.find(m=>m.kind==='video'&&m.status==='ready'&&m.hasVideo);
-    if(!media)throw new Error('The program recording could not be decoded.');const seq=get(activeSequence);if(!seq)throw new Error('Open a sequence before recording.');
-    const start=get(playhead);const pair=createClipFromMedia(media,start,{fps:seq.fps});if(!pair.video)throw new Error('No video stream found in the recording.');
-    let vId:string|null=null,aId:string|null=null;
-    editSequence('record multicamera program',(draft)=>{const v=freeTrack(draft,'video',start,pair.video!.duration);if(!v)return;const placements=[{trackId:v.id,clip:pair.video!}];if(pair.audio){const a=freeTrack(draft,'audio',start,pair.audio.duration);if(a){placements.push({trackId:a.id,clip:pair.audio});aId=a.id;}}const placed=placeClips(draft,placements,'overwrite');if(placed.includes(pair.video!.id))vId=v.id;});
-    if(!vId)throw new Error('No unlocked video track available.');selection.set([pair.video.id,...(pair.audio&&aId?[pair.audio.id]:[])]);addToast('Multicamera program recording added to timeline.','success');
+  async function importProgram(file: File, anchor: RecordingAnchor) {
+    const imported = await importFiles([file]);
+    const media = imported.find((m) => m.kind === 'video' && m.status === 'ready' && m.hasVideo);
+
+    if (!media) throw new Error('The program recording could not be decoded.');
+
+    const seq = get(activeSequence);
+
+    if (!seq || seq.id !== anchor.sequenceId) throw new Error('The active sequence changed before the recording could be imported.');
+
+    const start = anchor.start;
+    const pair = createClipFromMedia(media, start, { fps: anchor.fps });
+
+    if (!pair.video) throw new Error('No video stream found in the recording.');
+
+    let vId: string | null = null,
+      aId: string | null = null;
+
+    editSequence('record multicamera program', (draft) => {
+      const v = freeTrack(draft, 'video', start, (pair.video!).duration);
+
+      if (!v) return;
+
+      const placements = [{ trackId: v.id, clip: pair.video! }];
+
+      if (pair.audio) {
+        const a = freeTrack(draft, 'audio', start, pair.audio.duration);
+
+        if (a) {
+          placements.push({ trackId: a.id, clip: pair.audio });
+          aId = a.id;
+        }
+      }
+
+      const placed = placeClips(draft, placements, 'overwrite');
+
+      if (placed.includes((pair.video!).id)) vId = v.id;
+    });
+
+    if (!vId) throw new Error('No unlocked video track available.');
+
+    selection.set([pair.video.id, ...pair.audio && aId ? [pair.audio.id] : []]);
+    addToast('Multicamera program recording added to timeline.', 'success');
   }
 
   function waitForIce(pc: RTCPeerConnection, timeoutMs = 12000): Promise<void> {
@@ -188,49 +291,261 @@
       roomStatus = 'Guest-room service ready · creating private room…';
       const response = await fetch(`${guestSignalBase}/api/guest-rooms`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
       if (!response.ok) throw new Error((await response.json()).error || 'Could not create room.');
-      const room = await response.json(); roomCode = room.roomCode;
-      const socket = new WebSocket(`${roomSocketUrl()}?room=${encodeURIComponent(room.roomCode)}&role=host&token=${encodeURIComponent(room.hostToken)}`); roomSocket = socket;
-      socket.onopen = () => { roomStatus = 'Room signaling connected · waiting for host authorization'; if (guestStatsTimer) clearInterval(guestStatsTimer); guestStatsTimer = setInterval(() => void refreshGuestQuality(), 3000); };
-      socket.onmessage = (event) => { const message = JSON.parse(event.data);
-        if (message.type === 'host-ready') { roomIceServers = message.iceServers ?? roomIceServers; roomStatus = 'Room open · share guest invitation'; socket.send(JSON.stringify({ type: 'invite-guests' })); }
-        else if (message.type === 'guest-invite') { guestToken = message.guestToken; roomStatus = 'Room open · invitation ready'; }
-        else if (message.type === 'guest-joined') { void connectRoomGuest(message.guestId); }
-        else if (message.type === 'answer') { const pc = guestPeers.get(message.guestId); if (pc) void pc.setRemoteDescription({ type: 'answer', sdp: message.sdp }).then(() => updateGuest(message.guestId, { status: 'Connected' })).catch(() => updateGuest(message.guestId, { status: 'Answer rejected' })); }
-        else if (message.type === 'guest-left') { removeRoomGuest(message.guestId); }
-        else if (message.type === 'guest-status') { const label = message.status.replaceAll('-', ' '); updateGuest(message.guestId, { status: label }); }
-        else if (message.type === 'error') roomStatus = message.message;
-        else if (message.type === 'room-closed') { roomStatus = 'Room closed'; closeRoom(false); }
+
+      const room = await response.json();
+
+      roomCode = room.roomCode;
+
+      const socket = new WebSocket(`${roomSocketUrl()}?room=${encodeURIComponent(room.roomCode)}&role=host&token=${encodeURIComponent(room.hostToken)}`);
+
+      roomSocket = socket;
+
+      socket.onopen = () => {
+        roomStatus = 'Room signaling connected · waiting for host authorization';
+
+        if (guestStatsTimer) clearInterval(guestStatsTimer);
+
+        guestStatsTimer = setInterval(() => void refreshGuestQuality(), 3000);
       };
-      socket.onerror = () => { roomStatus = 'Room signaling connection failed. Check the local signaling service.'; };
-      socket.onclose = () => { if (roomSocket === socket) { roomSocket = null; if (!disposed) roomStatus = 'Room signaling disconnected'; } };
-    } catch (e) { roomStatus = e instanceof Error ? e.message : 'Could not create production room.'; roomCode = ''; }
-    finally { roomBusy = false; }
+
+      socket.onmessage = (event) => {
+        const message = JSON.parse(event.data);
+
+        if (message.type === 'host-ready') {
+          roomIceServers = message.iceServers ?? roomIceServers;
+          roomStatus = 'Room open · share guest invitation';
+          socket.send(JSON.stringify({ type: 'invite-guests' }));
+        } else if (message.type === 'guest-invite') {
+          guestToken = message.guestToken;
+          roomStatus = 'Room open · invitation ready';
+        } else if (message.type === 'guest-joined') {
+          void connectRoomGuest(message.guestId);
+        } else if (message.type === 'answer') {
+          const pc = guestPeers.get(message.guestId);
+
+          if (pc) void pc.setRemoteDescription({ type: 'answer', sdp: message.sdp }).then(() => updateGuest(message.guestId, { status: 'Connected' })).catch(() => updateGuest(message.guestId, { status: 'Answer rejected' }));
+        } else if (message.type === 'guest-left') {
+          removeRoomGuest(message.guestId);
+        } else if (message.type === 'guest-status') {
+          const label = message.status.replaceAll('-', ' ');
+
+          updateGuest(message.guestId, { status: label });
+        } else if (message.type === 'error') roomStatus = message.message; else if (message.type === 'room-closed') {
+          roomStatus = 'Room closed';
+          closeRoom(false);
+        }
+      };
+
+      socket.onerror = () => {
+        roomStatus = 'Room signaling connection failed. Check the local signaling service.';
+      };
+
+      socket.onclose = () => {
+        if (roomSocket === socket) {
+          roomSocket = null;
+
+          if (!disposed) roomStatus = 'Room signaling disconnected';
+        }
+      };
+    } catch(e) {
+      roomStatus = e instanceof Error ? e.message : 'Could not create production room.';
+      roomCode = '';
+    } finally {
+      roomBusy = false;
+    }
   }
+
   async function connectRoomGuest(guestId: string) {
     if (!roomSocket || guestPeers.has(guestId)) return;
-    const pc = new RTCPeerConnection({ iceServers: roomIceServers, bundlePolicy: 'max-bundle' }); guestPeers.set(guestId, pc);
-    guests = [...guests, { id: guestId, name: `Guest ${guests.length + 1}`, status: 'Negotiating', audioEnabled: true, videoEnabled: true, quality: 'Measuring…' }];
-    pc.addTransceiver('video', { direction: 'recvonly' }); pc.addTransceiver('audio', { direction: 'recvonly' });
-    pc.ontrack = (event) => { const stream = event.streams[0] ?? new MediaStream([event.track]); if (!stream.getVideoTracks().length || slots.some(source => source.id === `guest-${guestId}`) || guestSourcePending.has(guestId)) return; guestSourcePending.add(guestId);
-      const video = document.createElement('video'); video.srcObject = stream; video.muted = true; video.playsInline = true;
-      void video.play().then(() => { if (disposed || guestPeers.get(guestId) !== pc) return; const source: Source = { id: `guest-${guestId}`, name: guests.find(g=>g.id===guestId)?.name ?? 'Participant', deviceId: '', stream, video, audioEnabled: true }; slots = [...slots, source]; if (!selected) selected = source.id; connected = true; guestSourcePending.delete(guestId); startPreview(); updateGuest(guestId, { status: 'Live' }); }).catch(() => { guestSourcePending.delete(guestId); updateGuest(guestId, { status: 'Video playback blocked' }); });
+
+    const pc = new RTCPeerConnection({ iceServers: roomIceServers, bundlePolicy: 'max-bundle' });
+
+    guestPeers.set(guestId, pc);
+
+    guests = [
+      ...guests,
+      {
+        id: guestId,
+        name: `Guest ${guests.length + 1}`,
+        status: 'Negotiating',
+        audioEnabled: true,
+        videoEnabled: true,
+        quality: 'Measuring…'
+      }
+    ];
+
+    pc.addTransceiver('video', { direction: 'recvonly' });
+    pc.addTransceiver('audio', { direction: 'recvonly' });
+
+    pc.ontrack = (event) => {
+      const stream = event.streams[0] ?? new MediaStream([event.track]);
+
+      if (!stream.getVideoTracks().length || slots.some((source) => source.id === `guest-${guestId}`) || guestSourcePending.has(guestId)) return;
+
+      guestSourcePending.add(guestId);
+
+      const video = document.createElement('video');
+
+      video.srcObject = stream;
+      video.muted = true;
+      video.playsInline = true;
+
+      void video.play().then(() => {
+        if (disposed || guestPeers.get(guestId) !== pc) return;
+
+        const source: Source = {
+          id: `guest-${guestId}`,
+          name: guests.find((g) => g.id === guestId)?.name ?? 'Participant',
+          deviceId: '',
+          stream,
+          video,
+          audioEnabled: true
+        };
+
+        slots = [...slots, source];
+
+        if (!selected) selected = source.id;
+
+        connected = true;
+        guestSourcePending.delete(guestId);
+        startPreview();
+        updateGuest(guestId, { status: 'Live' });
+        if (recording) void startGuestStem(source, recordingSession);
+      }).catch(() => {
+        guestSourcePending.delete(guestId);
+        updateGuest(guestId, { status: 'Video playback blocked' });
+      });
     };
     pc.onconnectionstatechange = () => { if (pc.connectionState === 'connected') updateGuest(guestId, { status: 'Connected' }); else if (['failed','disconnected','closed'].includes(pc.connectionState)) updateGuest(guestId, { status: pc.connectionState }); };
     try { const offer = await pc.createOffer(); await pc.setLocalDescription(offer); await waitForIce(pc, 20000); roomSocket?.send(JSON.stringify({ type: 'offer', guestId, sdp: pc.localDescription?.sdp })); }
     catch (e) { updateGuest(guestId, { status: e instanceof Error ? e.message : 'Offer failed' }); }
   }
-  function updateGuest(id: string, patch: Partial<Guest>) { guests = guests.map(guest => guest.id === id ? { ...guest, ...patch } : guest); }
-  function removeRoomGuest(id: string) { guestSourcePending.delete(id); const pc = guestPeers.get(id); if (pc) { pc.ontrack = null; pc.close(); guestPeers.delete(id); } const source = slots.find(item => item.id === `guest-${id}`); if (source) { release(source); slots = slots.filter(item => item.id !== source.id); } guests = guests.filter(guest => guest.id !== id); if (selected === `guest-${id}`) selected = slots[0]?.id ?? ''; connected = allSources().length > 0; }
-  function guestControl(id: string, action: 'mute-audio'|'enable-audio'|'disable-video'|'enable-video'|'kick') { roomSocket?.send(JSON.stringify({ type: 'host-control', guestId: id, action })); if (action === 'kick') removeRoomGuest(id); if (action === 'mute-audio' || action === 'enable-audio') { const source = slots.find(item => item.id === `guest-${id}`); if (source) { const enabled = action === 'enable-audio'; for (const mix of [recordingAudioMix, broadcastAudioMix]) { const gain = mix?.gains.get(source.id); if (gain && mix) gain.gain.setTargetAtTime(enabled ? 1 : 0, mix.context.currentTime, 0.015); } slots = slots.map(item => item.id === source.id ? { ...item, audioEnabled: enabled } : item); updateGuest(id, { audioEnabled: enabled }); } } if (action === 'disable-video' || action === 'enable-video') updateGuest(id, { videoEnabled: action === 'enable-video' }); }
-  async function refreshGuestQuality() { for (const [id, pc] of guestPeers) { try { const stats = await pc.getStats(); let rtt = 0, bitrate = 0; stats.forEach(report => { if (report.type === 'candidate-pair' && report.state === 'succeeded' && (report.selected || report.nominated)) rtt = Math.round((report.currentRoundTripTime || 0) * 1000); if (report.type === 'inbound-rtp' && report.kind === 'video') bitrate = Math.round((report.bytesReceived || 0) / 1024); }); updateGuest(id, { quality: `${rtt ? `${rtt} ms RTT` : 'RTT —'} · ${bitrate ? `${bitrate} KB received` : 'video waiting'}` }); } catch { updateGuest(id, { quality: 'Stats unavailable' }); } } }
+
+  function updateGuest(id: string, patch: Partial<Guest>) {
+    guests = guests.map((guest) => guest.id === id ? { ...guest, ...patch } : guest);
+  }
+
+  function removeRoomGuest(id: string) {
+    guestSourcePending.delete(id);
+
+    const pc = guestPeers.get(id);
+
+    if (pc) {
+      pc.ontrack = null;
+      pc.close();
+      guestPeers.delete(id);
+    }
+
+    const source = slots.find((item) => item.id === `guest-${id}`);
+
+    if (source) {
+      release(source);
+      slots = slots.filter((item) => item.id !== source.id);
+    }
+
+    guests = guests.filter((guest) => guest.id !== id);
+
+    if (selected === `guest-${id}`) selected = slots[0]?.id ?? '';
+
+    connected = allSources().length > 0;
+  }
+
+  function guestControl(
+    id: string,
+    action: 
+      'mute-audio' |
+      'enable-audio' |
+      'disable-video' |
+      'enable-video' |
+      'kick'
+  ) {
+    roomSocket?.send(JSON.stringify({ type: 'host-control', guestId: id, action }));
+
+    if (action === 'kick') removeRoomGuest(id);
+
+    if (action === 'mute-audio' || action === 'enable-audio') {
+      const source = slots.find((item) => item.id === `guest-${id}`);
+
+      if (source) {
+        const enabled = action === 'enable-audio';
+
+        for (const mix of [recordingAudioMix, broadcastAudioMix]) {
+          const gain = mix?.gains.get(source.id);
+
+          if (gain && mix) gain.gain.setTargetAtTime(enabled ? 1 : 0, mix.context.currentTime, 0.015);
+        }
+
+        slots = slots.map((item) => item.id === source.id ? { ...item, audioEnabled: enabled } : item);
+        updateGuest(id, { audioEnabled: enabled });
+      }
+    }
+
+    if (action === 'disable-video' || action === 'enable-video') updateGuest(id, { videoEnabled: action === 'enable-video' });
+  }
+
+  async function refreshGuestQuality() {
+    for (const [id, pc] of guestPeers) {
+      try {
+        const stats = await pc.getStats();
+        let rtt = 0, bitrate = 0;
+
+        stats.forEach((report) => {
+          if (report.type === 'candidate-pair' && report.state === 'succeeded' && (report.selected || report.nominated)) rtt = Math.round((report.currentRoundTripTime || 0) * 1000);
+          if (report.type === 'inbound-rtp' && report.kind === 'video') bitrate = Math.round((report.bytesReceived || 0) / 1024);
+        });
+
+        updateGuest(id, {
+          quality: `${rtt ? `${rtt} ms RTT` : 'RTT —'} · ${bitrate ? `${bitrate} KB received` : 'video waiting'}`
+        });
+      } catch {
+        updateGuest(id, { quality: 'Stats unavailable' });
+      }
+    }
+  }
+
   let guestStatsTimer: ReturnType<typeof setInterval> | null = null;
-  function closeRoom(showStatus = true) { if (guestStatsTimer) clearInterval(guestStatsTimer); guestStatsTimer = null; for (const id of [...guestPeers.keys()]) removeRoomGuest(id); if (roomSocket) { roomSocket.onclose = null; roomSocket.close(); roomSocket = null; } roomCode = ''; guestToken = ''; if (showStatus) roomStatus = 'Production room closed'; }
-  async function copyGuestInvite() { const invite = `${new URL(`${base}/guest.html`, location.origin)}#room=${encodeURIComponent(roomCode)}&token=${encodeURIComponent(guestToken)}`; try { await navigator.clipboard.writeText(invite); roomStatus = 'Guest invitation link copied.'; } catch { roomStatus = `Copy blocked · guest link: ${invite}`; } }
+
+  function closeRoom(showStatus = true) {
+    if (guestStatsTimer) clearInterval(guestStatsTimer);
+
+    guestStatsTimer = null;
+
+    for (const id of [...guestPeers.keys()]) removeRoomGuest(id);
+
+    if (roomSocket) {
+      roomSocket.onclose = null;
+      roomSocket.close();
+      roomSocket = null;
+    }
+
+    roomCode = '';
+    guestToken = '';
+
+    if (showStatus) roomStatus = 'Production room closed';
+  }
+
+  async function copyGuestInvite() {
+    const editorRoot = new URL(resolve('/'), location.origin);
+    const invite = `${new URL('guest.html', editorRoot)}#room=${encodeURIComponent(roomCode)}&token=${encodeURIComponent(guestToken)}`;
+
+    try {
+      await navigator.clipboard.writeText(invite);
+      roomStatus = 'Guest invitation link copied.';
+    } catch {
+      roomStatus = `Copy blocked · guest link: ${invite}`;
+    }
+  }
 
   async function startBroadcast() {
     if (broadcasting || !allSources().length) return;
     const endpoint = whipEndpoint.trim();
-    if (!/^https:\/\//i.test(endpoint)) { broadcastStatus = 'Enter a secure HTTPS WHIP endpoint.'; return; }
+
+    if (!(/^https:\/\//i).test(endpoint)) {
+      broadcastStatus = 'Enter a secure HTTPS WHIP endpoint.';
+
+      return;
+    }
+
     try {
       broadcastStatus = 'Preparing secure WebRTC connection…';
       const video = canvas.captureStream(30);
@@ -238,11 +553,15 @@
       const audio = broadcastAudioMix?.stream.getAudioTracks() ?? [];
       broadcastStream = new MediaStream([...video.getVideoTracks(), ...audio]);
       peer = new RTCPeerConnection({ bundlePolicy: 'max-bundle' });
-      broadcastStream.getTracks().forEach((track) => peer!.addTrack(track, broadcastStream!));
+      broadcastStream.getTracks().forEach((track) => (peer!).addTrack(track, broadcastStream!));
       peer.onconnectionstatechange = () => {
         if (!peer) return;
         if (peer.connectionState === 'connected') { broadcasting = true; broadcastStatus = 'Live · WebRTC connected'; }
-        else if (peer.connectionState === 'failed' || peer.connectionState === 'disconnected') { broadcasting = false; broadcastStatus = `Connection ${peer.connectionState}. Check the endpoint/network.`; }
+        else if (peer.connectionState === 'failed' || peer.connectionState === 'disconnected') {
+          const state = peer.connectionState;
+          broadcastStatus = `Connection ${state}. Ending the WHIP session.`;
+          stopBroadcast();
+        }
       };
       const offer = await peer.createOffer(); await peer.setLocalDescription(offer); await waitForIce(peer);
       broadcastStatus = 'Negotiating with streaming destination…';
@@ -250,17 +569,18 @@
       if (whipToken.trim()) headers.Authorization = `Bearer ${whipToken.trim()}`;
       const response = await fetch(endpoint, { method: 'POST', headers, body: peer.localDescription?.sdp ?? offer.sdp, redirect: 'error' });
       if (!response.ok) throw new Error(`WHIP server returned HTTP ${response.status}. Check endpoint, token and CORS settings.`);
+      const location = response.headers.get('Location');
+      if (!location) throw new Error('WHIP server accepted the offer without a Location session URL; cannot safely manage or close the session.');
+      whipSessionUrl = new URL(location, endpoint).toString();
       const answer = await response.text();
       if (!answer.startsWith('v=0')) throw new Error('The streaming service returned an invalid SDP answer.');
-      const location = response.headers.get('Location');
-      whipSessionUrl = location ? new URL(location, endpoint).toString() : '';
       await peer.setRemoteDescription({ type: 'answer', sdp: answer });
       broadcasting = true; broadcastStartedAt = Date.now(); broadcastStatus = 'Connecting to destination…';
       previousOutbound = null; statsTimer = setInterval(() => { void refreshBroadcastStats(); }, 2000);
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Could not start WebRTC broadcast.';
       broadcastStatus = message.includes('Failed to fetch') ? 'Could not reach WHIP server. Verify HTTPS, endpoint and cross-origin (CORS) support.' : message;
-      stopBroadcast(false);
+      stopBroadcast(true);
     }
   }
   async function refreshBroadcastStats() {
@@ -271,10 +591,28 @@
         if (report.type === 'outbound-rtp' && report.kind === 'video' && !report.isRemote) outbound = report as RTCOutboundRtpStreamStats;
         if (report.type === 'candidate-pair' && (report as RTCIceCandidatePairStats).state === 'succeeded' && ((report as RTCIceCandidatePairStats & { selected?: boolean }).selected || (report as RTCIceCandidatePairStats).nominated)) pair = report as RTCIceCandidatePairStats;
       });
-      if (outbound) { const now = outbound.timestamp; const bytes = outbound.bytesSent ?? 0; const frames = outbound.framesEncoded ?? 0; if (previousOutbound && now > previousOutbound.timestamp) { const elapsed=(now-previousOutbound.timestamp)/1000; bitrateKbps=Math.max(0,Math.round(((bytes-previousOutbound.bytes)*8/elapsed)/1000)); streamFps=Math.max(0,Math.round((frames-previousOutbound.frames)/elapsed)); } previousOutbound={bytes,timestamp:now,frames}; }
-      if (pair?.currentRoundTripTime != null) latencyMs=Math.round(pair.currentRoundTripTime*1000);
-    } catch { /* stats are optional; keep the last reported values */ }
+
+      if (outbound) {
+        const now = outbound.timestamp;
+        const bytes = outbound.bytesSent ?? 0;
+        const frames = outbound.framesEncoded ?? 0;
+
+        if (previousOutbound && now > previousOutbound.timestamp) {
+          const elapsed = (now - previousOutbound.timestamp) / 1000;
+
+          bitrateKbps = Math.max(0, Math.round((bytes - previousOutbound.bytes) * 8 / elapsed / 1000));
+          streamFps = Math.max(0, Math.round((frames - previousOutbound.frames) / elapsed));
+        }
+
+        previousOutbound = { bytes, timestamp: now, frames };
+      }
+
+      if (pair?.currentRoundTripTime != null) latencyMs = Math.round(pair.currentRoundTripTime * 1000);
+    } catch {
+      /* stats are optional; keep the last reported values */
+    }
   }
+
   function stopBroadcast(sendDelete = true) {
     if (sendDelete && whipSessionUrl) {
       const headers: Record<string,string> = {}; if (whipToken.trim()) headers.Authorization = `Bearer ${whipToken.trim()}`;
@@ -287,46 +625,182 @@
   }
 
   function finishGuestStems(): Promise<void>[] {
+    const anchor = recordingAnchor;
     const jobs: Promise<void>[] = [];
     for (const [id, stem] of guestStems) {
-      const job = new Promise<void>(resolve => {
-        const finish = () => { const blob = new Blob(stem.chunks, { type: stem.recorder.mimeType || 'audio/webm' }); stem.output.getTracks().forEach(track => track.stop()); releaseAudio(stem.mix); guestStems.delete(id); if (!blob.size || disposed) { resolve(); return; } const file = recordingFile(blob, blob.type, new Date(), `guest-${id}-audio`); void importGuestStem(file).then(resolve).catch(error => { status = error instanceof Error ? error.message : `Could not import ${stem.name} audio.`; resolve(); }); };
-        stem.recorder.addEventListener('stop', finish, { once: true }); if (stem.recorder.state !== 'inactive') stem.recorder.stop(); else finish();
-      }); jobs.push(job);
+      const job = new Promise<void>((resolve) => {
+        const finish = () => {
+          const blob = new Blob(stem.chunks, { type: stem.recorder.mimeType || 'audio/webm' });
+
+          stem.output.getTracks().forEach((track) => track.stop());
+          releaseAudio(stem.mix);
+          guestStems.delete(id);
+
+          if (!blob.size || disposed) {
+            resolve();
+
+            return;
+          }
+
+          const file = recordingFile(blob, blob.type, new Date(), `guest-${id}-audio`);
+
+          void (anchor ? importGuestStem(file, anchor) : Promise.resolve()).then(resolve).catch((error) => {
+            status = error instanceof Error
+              ? error.message
+              : `Could not import ${stem.name} audio.`;
+
+            resolve();
+          });
+        };
+
+        stem.recorder.addEventListener('stop', finish, { once: true });
+
+        if (stem.recorder.state !== 'inactive') stem.recorder.stop(); else finish();
+      });
+
+      jobs.push(job);
     }
+
     return jobs;
   }
-  function stopRecording() { if(recorder&&recorder.state!=='inactive')recorder.stop(); }
-  async function startRecording() {
-    if(!allSources().length||recording)return;
+  async function startGuestStem(source: Source, session: number) {
+    if (!source.id.startsWith('guest-') || !source.audioEnabled || !recordingAnchor || guestStems.has(source.id) || !recording) return;
     try {
-      const videoStream=canvas.captureStream(30);recordingAudioMix=await captureAudio();const audioTracks=recordingAudioMix?.stream.getAudioTracks()??[];const output=new MediaStream([...videoStream.getVideoTracks(),...audioTracks]);
-      const types=['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'];const mime=types.find(t=>MediaRecorder.isTypeSupported(t))??'';
-      recorder=new MediaRecorder(output,mime?{mimeType:mime}:undefined);chunks=[];recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data);};
-      recorder.onerror=()=>{recording=false;status='The browser reported a program recording error.';};
-      recorder.onstop=()=>{if(timer)clearInterval(timer);timer=null;recording=false;seconds=Math.floor((Date.now()-startedAt)/1000);const blob=new Blob(chunks,{type:recorder?.mimeType||mime||'video/webm'});chunks=[];output.getTracks().forEach(t=>t.stop());releaseAudio(recordingAudioMix);recordingAudioMix=null;const stemJobs=finishGuestStems();if(disposed)return;if(!blob.size){status='No program frames were captured.';return;}const file=recordingFile(blob,blob.type,new Date(),'multicam-program');status='Importing program mix and isolated guest audio stems…';void Promise.all([importProgram(file),...stemJobs]).then(()=>{if(!disposed)status=`Program mix and ${stemJobs.length} isolated guest audio stem(s) added to the timeline.`;}).catch(e=>{if(!disposed)status=e instanceof Error?e.message:'Could not import the program recording.';});};
+      const mix = await captureSourceAudio(source);
+      if (!mix) return;
+      if (!recording || session !== recordingSession || disposed) { releaseAudio(mix); return; }
+      const stemOutput = new MediaStream(mix.stream.getAudioTracks());
+      const stemMime = ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/webm'].find((type) => MediaRecorder.isTypeSupported(type)) ?? '';
+      const stemRecorder = new MediaRecorder(stemOutput, stemMime ? { mimeType: stemMime } : undefined);
+      const stem: GuestStem = { recorder: stemRecorder, chunks: [], output: stemOutput, mix, name: source.name };
+      stemRecorder.ondataavailable = (event) => { if (event.data.size) stem.chunks.push(event.data); };
+      guestStems.set(source.id, stem);
+      stemRecorder.start(1000);
+    } catch (error) {
+      status = `Program recording continues; isolated audio for ${source.name} could not start${error instanceof Error ? `: ${error.message}` : '.'}`;
+    }
+  }
+  function stopRecording() { if (recorder && recorder.state !== 'inactive') recorder.stop(); }
+  async function startRecording() {
+    if (!allSources().length || recording || recordingStarting) return;
+    const sequence = get(activeSequence);
+    if (!sequence) { status = 'Open a sequence before recording.'; return; }
+    recordingStarting = true;
+    const session = ++recordingSession;
+    recordingAnchor = { sequenceId: sequence.id, start: get(playhead), fps: sequence.fps, capturedAt: Date.now() };
+    try {
+      const videoStream = canvas.captureStream(30);
+
+      recordingAudioMix = await captureAudio();
+
+      const audioTracks = recordingAudioMix?.stream.getAudioTracks() ?? [];
+      const output = new MediaStream([...videoStream.getVideoTracks(), ...audioTracks]);
+      recordingOutput = output;
+
+      const types = [
+        'video/webm;codecs=vp9,opus',
+        'video/webm;codecs=vp8,opus',
+        'video/webm'
+      ];
+
+      const mime = types.find((t) => MediaRecorder.isTypeSupported(t)) ?? '';
+
+      recorder = new MediaRecorder(output, mime ? { mimeType: mime } : undefined);
+      chunks = [];
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size) chunks.push(e.data);
+      };
+
+      recorder.onerror = () => {
+        recording = false;
+        status = 'The browser reported a program recording error.';
+        stopRecording();
+      };
+
+      recorder.onstop = () => {
+        if (timer) clearInterval(timer);
+
+        timer = null;
+        recording = false;
+        seconds = Math.floor((Date.now() - startedAt) / 1000);
+
+        const blob = new Blob(chunks, { type: recorder?.mimeType || mime || 'video/webm' });
+
+        chunks = [];
+        output.getTracks().forEach((t) => t.stop());
+        recordingOutput = null;
+        releaseAudio(recordingAudioMix);
+        recordingAudioMix = null;
+
+        const stemJobs = finishGuestStems();
+        const anchor = recordingAnchor;
+        recordingAnchor = null;
+
+        if (disposed) return;
+
+        if (!blob.size) {
+          status = 'No program frames were captured.';
+
+          return;
+        }
+
+        const file = recordingFile(blob, blob.type, new Date(), 'multicam-program');
+
+        status = 'Importing program mix and isolated guest audio stems…';
+
+        void Promise.all([anchor ? importProgram(file, anchor) : Promise.reject(new Error('Recording timeline anchor is missing.')), ...stemJobs]).then(() => {
+          if (!disposed) status = `Program mix and ${stemJobs.length} isolated guest audio stem(s) added to the timeline.`;
+        }).catch((e) => {
+          if (!disposed) status = e instanceof Error ? e.message : 'Could not import the program recording.';
+        });
+      };
+
+      recorder.start(1000);
+      startedAt = Date.now(); seconds = 0; recording = true;
+      for (const source of slots.filter((item) => item.id.startsWith('guest-'))) void startGuestStem(source, session);
+      status = 'Recording program mix and guest audio stems where available.';
+      timer = setInterval(() => seconds = Math.floor((Date.now() - startedAt) / 1000), 250);
+    } catch (e) {
+      if (recorder && recorder.state !== 'inactive') recorder.stop();
+      recording = false; recordingAnchor = null;
+      for (const stem of guestStems.values()) { try { if (stem.recorder.state !== 'inactive') stem.recorder.stop(); } catch {} stem.output.getTracks().forEach((track) => track.stop()); releaseAudio(stem.mix); }
       guestStems.clear();
-      for (const source of slots.filter(item => item.id.startsWith('guest-') && item.audioEnabled)) {
-        const mix = await captureSourceAudio(source); if (!mix) continue;
-        const stemOutput = new MediaStream(mix.stream.getAudioTracks());
-        const stemTypes = ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/webm'];
-        const stemMime = stemTypes.find(type => MediaRecorder.isTypeSupported(type)) ?? '';
-        const stemRecorder = new MediaRecorder(stemOutput, stemMime ? { mimeType: stemMime } : undefined);
-        const stem: GuestStem = { recorder: stemRecorder, chunks: [], output: stemOutput, mix, name: source.name };
-        stemRecorder.ondataavailable = event => { if (event.data.size) stem.chunks.push(event.data); };
-        guestStems.set(source.id, stem); stemRecorder.start(1000);
-      }
-      recorder.start(1000);startedAt=Date.now();seconds=0;recording=true;status=`Recording program mix${guestStems.size ? ` plus ${guestStems.size} isolated guest audio stem(s)` : ''}.`;timer=setInterval(()=>seconds=Math.floor((Date.now()-startedAt)/1000),250);
-    } catch(e) { status=e instanceof Error?e.message:'Could not start program recording.';releaseAudio(recordingAudioMix);recordingAudioMix=null; }
+      status = e instanceof Error ? e.message : 'Could not start program recording.';
+      releaseAudio(recordingAudioMix); recordingAudioMix = null;
+    } finally { recordingStarting = false; }
   }
   function toggleSourceAudio(id:string) {
     const nextEnabled = !allSources().find((source) => source.id === id)?.audioEnabled;
     for (const mix of [recordingAudioMix, broadcastAudioMix]) { const gain=mix?.gains.get(id); if (gain && mix) gain.gain.setTargetAtTime(nextEnabled ? 1 : 0, mix.context.currentTime, 0.015); }
+    const stemGain = guestStems.get(id)?.mix.gains.get(id);
+    const stemMix = guestStems.get(id)?.mix;
+    if (stemGain && stemMix) stemGain.gain.setTargetAtTime(nextEnabled ? 1 : 0, stemMix.context.currentTime, 0.015);
     slots = slots.map((source) => source.id === id ? { ...source, audioEnabled: !source.audioEnabled } : source);
     if (screen?.id === id) screen = { ...screen, audioEnabled: !screen.audioEnabled };
   }
-  function removeSource(id:string) { if(recording)return;const source=allSources().find(s=>s.id===id);if(!source)return;if(source.id==='screen'){release(source);screen=null;}else{release(source);slots=slots.filter(s=>s.id!==id);}if(selected===id)selected=allSources()[0]?.id??'';connected=allSources().length>0; }
-  const clock=(s:number)=>`${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+
+  function removeSource(id: string) {
+    if (recording) return;
+
+    const source = allSources().find((s) => s.id === id);
+
+    if (!source) return;
+
+    if (source.id === 'screen') {
+      release(source);
+      screen = null;
+    } else {
+      release(source);
+      slots = slots.filter((s) => s.id !== id);
+    }
+
+    if (selected === id) selected = allSources()[0]?.id ?? '';
+
+    connected = allSources().length > 0;
+  }
+
+  const clock = (s: number) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 </script>
 
 <section class="multi-studio" aria-label="Multicamera production studio">
@@ -343,9 +817,40 @@
     {#if allSources().length===0}<div class="empty">No live sources connected</div>{/if}
   </div>
   <div class="controls">
-    <label>Add camera<select aria-label="Add camera" value="" onchange={(e)=>addCamera(e.currentTarget.value)}><option value="">Choose webcam…</option>{#each cameras as camera}<option value={camera.deviceId} disabled={slots.some(s=>s.deviceId===camera.deviceId)}>{camera.label||'Camera'}</option>{/each}</select></label>
-    <button onclick={addScreen} disabled={!!screen||recording}>＋ Share screen</button>
-    <label>Program layout<select bind:value={layout}><option value="single">Single camera</option><option value="split">Side by side</option><option value="pip">Picture in picture</option><option value="quad">2 × 2 multiview</option></select></label>
+    <label>
+      Add camera
+
+      <select
+        aria-label="Add camera"
+        value=""
+        onchange={(e) => addCamera(e.currentTarget.value)}
+      >
+        <option value="">Choose webcam…</option>
+
+        {#each cameras as camera}
+          <option
+            value={camera.deviceId}
+            disabled={slots.some((s) => s.deviceId === camera.deviceId)}
+          >{camera.label || 'Camera'}</option>
+        {/each}
+      </select>
+    </label>
+
+    <button
+      onclick={addScreen}
+      disabled={!!screen || recording}
+    >＋ Share screen</button>
+
+    <label>
+      Program layout
+
+      <select bind:value={layout}>
+        <option value="single">Single camera</option>
+        <option value="split">Side by side</option>
+        <option value="pip">Picture in picture</option>
+        <option value="quad">2 × 2 multiview</option>
+      </select>
+    </label>
   </div>
   <div class="graphics"><label>Lower-third title<input bind:value={title} maxlength="80" placeholder="Show title / speaker name"/></label><label>Subtitle<input bind:value={subtitle} maxlength="120" placeholder="Guest, role or topic"/></label></div>
   <section class="guest-panel" aria-label="Remote guest connection">

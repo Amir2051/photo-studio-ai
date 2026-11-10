@@ -10,15 +10,24 @@ import {
   Texture,
   type BLEND_MODES,
   type Filter,
-  type Renderer
+  type Renderer,
 } from 'pixi.js';
-import type { Clip, EffectInstance, Id, MediaItem, Rotation, Sequence, Track, Transition } from '$lib/project/types';
-import { paramsAt } from '$lib/project/keyframes';
-import { clipAt } from '$lib/project/ops';
-import { createVideoEffect } from '$lib/engine/effects/filters';
-import { ToneMapFilter, toneMapMode } from '$lib/engine/effects/shaders/tone-map';
-import { transitionDef } from '$lib/engine/transitions/registry';
-import { createTransitionFilter } from '$lib/engine/transitions/filter';
+import type {
+  Clip,
+  EffectInstance,
+  Id,
+  MediaItem,
+  Rotation,
+  Sequence,
+  Track,
+  Transition,
+} from '#lib/project/types.ts';
+import { paramsAt } from '#lib/project/keyframes.ts';
+import { clipAt } from '#lib/project/ops.ts';
+import { createVideoEffect } from '#lib/engine/effects/filters.ts';
+import { ToneMapFilter, toneMapMode } from '#lib/engine/effects/shaders/tone-map.ts';
+import { transitionDef } from '#lib/engine/transitions/registry.ts';
+import { createTransitionFilter } from '#lib/engine/transitions/filter.ts';
 import type { FrameHandle } from './media-reader';
 import type { FrameMode, FrameProvider } from './media-cache';
 import { buildTitleText, ensureFontLoaded, titleHash, type TitleView } from './text';
@@ -61,7 +70,7 @@ const blendModes: Record<string, BLEND_MODES> = {
   'hard-light': 'hard-light',
   'soft-light': 'soft-light',
   'color-dodge': 'color-dodge',
-  'color-burn': 'color-burn'
+  'color-burn': 'color-burn',
 };
 
 // normal, add, multiply and screen are what gl blends by itself. the rest go
@@ -76,7 +85,7 @@ const advancedBlend = new Set<BLEND_MODES>([
   'hard-light',
   'soft-light',
   'color-dodge',
-  'color-burn'
+  'color-burn',
 ]);
 
 function findEffect(clip: Clip, type: string): EffectInstance | undefined {
@@ -106,9 +115,15 @@ export class Compositor {
   private destroyed = false;
   private tail: Promise<unknown> = Promise.resolve();
 
-  private readonly effects = new Map<Id, { type: string; runtime: VideoEffectRuntime; used: number }>();
+  private readonly effects = new Map<
+    Id,
+    { type: string; runtime: VideoEffectRuntime; used: number }
+  >();
   private readonly titles = new Map<Id, { hash: string; view: TitleView; used: number }>();
-  private readonly transitions = new Map<Id, { type: string; filter: TransitionFilter; used: number }>();
+  private readonly transitions = new Map<
+    Id,
+    { type: string; filter: TransitionFilter; used: number }
+  >();
   private readonly stills = new Map<Id, { bitmap: ImageBitmap; texture: Texture; used: number }>();
   private readonly slates = new Map<Id, { key: string; view: Container; used: number }>();
   private readonly toneMaps = new Map<string, ToneMapFilter>();
@@ -154,7 +169,13 @@ export class Compositor {
     return this.lost;
   }
 
-  constructor(opts: { width: number; height: number; scale?: number; background?: number; onRecovered?: () => void }) {
+  constructor(opts: {
+    width: number;
+    height: number;
+    scale?: number;
+    background?: number;
+    onRecovered?: () => void;
+  }) {
     this.onRecovered = opts.onRecovered;
     this.width = Math.max(1, Math.round(opts.width));
     this.height = Math.max(1, Math.round(opts.height));
@@ -187,7 +208,7 @@ export class Compositor {
       powerPreference: 'high-performance',
       // every frame texture is destroyed right after it is drawn, the
       // collector would only get in the way of the caches this class keeps
-      gcActive: false
+      gcActive: false,
     });
     if (this.destroyed) {
       renderer.destroy();
@@ -196,7 +217,8 @@ export class Compositor {
     this.renderer = renderer;
     const gl = (renderer as unknown as { gl?: WebGL2RenderingContext }).gl;
     this.loseContext = gl?.getExtension('WEBGL_lose_context') ?? null;
-    this.backBuffer = (renderer as unknown as { backBuffer?: { useBackBuffer: boolean } }).backBuffer ?? null;
+    this.backBuffer =
+      (renderer as unknown as { backBuffer?: { useBackBuffer: boolean } }).backBuffer ?? null;
   }
 
   setSize(width: number, height: number, scale: number): void {
@@ -251,13 +273,23 @@ export class Compositor {
     const now = performance.now();
     this.needsBackdrop = false;
     try {
-      const videoTracks = sequence.tracks.filter((t) => t.kind === 'video' && !t.hidden && !t.muted);
+      const videoTracks = sequence.tracks.filter(
+        (t) => t.kind === 'video' && !t.hidden && !t.muted,
+      );
       const solo = videoTracks.some((t) => t.solo);
       for (const track of videoTracks) {
         if (solo && !track.solo) continue;
         const transition = this.activeTransition(track, time);
         if (transition) {
-          const layer = await this.buildTransition(track, transition, sequence, time, ctx, usedTargets, now);
+          const layer = await this.buildTransition(
+            track,
+            transition,
+            sequence,
+            time,
+            ctx,
+            usedTargets,
+            now,
+          );
           if (layer) {
             this.root.addChild(layer.node);
             cleanups.push(layer.cleanup);
@@ -269,13 +301,27 @@ export class Compositor {
         if (clip.kind === 'adjustment') {
           const snapshot = this.acquireTarget();
           usedTargets.push(snapshot);
-          renderer.render({ container: this.root, target: snapshot, clear: true, clearColor: [0, 0, 0, 1] });
+          renderer.render({
+            container: this.root,
+            target: snapshot,
+            clear: true,
+            clearColor: [0, 0, 0, 1],
+          });
           // everything below now lives in the snapshot, the layers stay alive
           // until the end of the frame because their cleanups still run
           this.root.removeChildren();
           const below = new Sprite(snapshot);
           below.setSize(this.width, this.height);
-          const layer = this.wrapLayer(clip, below, this.width, this.height, sequence, time, now, () => below.destroy());
+          const layer = this.wrapLayer(
+            clip,
+            below,
+            this.width,
+            this.height,
+            sequence,
+            time,
+            now,
+            () => below.destroy(),
+          );
           this.root.addChild(layer.node);
           cleanups.push(layer.cleanup);
           continue;
@@ -329,7 +375,7 @@ export class Compositor {
     time: number,
     ctx: RenderContext,
     usedTargets: RenderTexture[],
-    now: number
+    now: number,
   ): Promise<Layer | null> {
     const renderer = this.renderer;
     if (!renderer) return null;
@@ -345,11 +391,19 @@ export class Compositor {
     }
     entry.used = now;
 
-    const outgoing = transition.leftClipId ? track.clips.find((c) => c.id === transition.leftClipId) : undefined;
-    const incoming = transition.rightClipId ? track.clips.find((c) => c.id === transition.rightClipId) : undefined;
+    const outgoing = transition.leftClipId
+      ? track.clips.find((c) => c.id === transition.leftClipId)
+      : undefined;
+    const incoming = transition.rightClipId
+      ? track.clips.find((c) => c.id === transition.rightClipId)
+      : undefined;
     const [from, to] = await Promise.all([
-      outgoing && outgoing.enabled ? this.safeClipLayer(outgoing, sequence, time, ctx, now) : Promise.resolve(null),
-      incoming && incoming.enabled ? this.safeClipLayer(incoming, sequence, time, ctx, now) : Promise.resolve(null)
+      outgoing && outgoing.enabled
+        ? this.safeClipLayer(outgoing, sequence, time, ctx, now)
+        : Promise.resolve(null),
+      incoming && incoming.enabled
+        ? this.safeClipLayer(incoming, sequence, time, ctx, now)
+        : Promise.resolve(null),
     ]);
     if (this.lost || this.destroyed) {
       from?.cleanup();
@@ -386,17 +440,28 @@ export class Compositor {
       cleanup: () => {
         full.filters = [];
         full.destroy();
-      }
+      },
     };
   }
 
   // whatever a single clip does wrong, the rest of the frame still draws
-  private async safeClipLayer(clip: Clip, sequence: Sequence, time: number, ctx: RenderContext, now: number): Promise<Layer | null> {
+  private async safeClipLayer(
+    clip: Clip,
+    sequence: Sequence,
+    time: number,
+    ctx: RenderContext,
+    now: number,
+  ): Promise<Layer | null> {
     try {
       return await phaseAsync('layer', () => this.buildClipLayer(clip, sequence, time, ctx, now));
     } catch (e) {
       const media = clip.mediaId ? ctx.media(clip.mediaId) : undefined;
-      if (media) ctx.frames.reportUnusable?.(media.id, media.name, e instanceof Error ? e.message : String(e));
+      if (media)
+        ctx.frames.reportUnusable?.(
+          media.id,
+          media.name,
+          e instanceof Error ? e.message : String(e),
+        );
       else console.warn(`[braincut] clip ${clip.name} could not be drawn:`, e);
       try {
         return this.buildSlateLayer(clip, sequence, time, now, 'this clip cannot be drawn here');
@@ -408,7 +473,13 @@ export class Compositor {
 
   // a dark slate with the clip's name where its picture would be, so a file
   // this browser cannot decode leaves a hole nobody can explain
-  private buildSlateLayer(clip: Clip, sequence: Sequence, time: number, now: number, line: string): Layer {
+  private buildSlateLayer(
+    clip: Clip,
+    sequence: Sequence,
+    time: number,
+    now: number,
+    line: string,
+  ): Layer {
     const w = this.width;
     const h = this.height;
     const key = `${clip.name}|${line}|${w}x${h}`;
@@ -421,21 +492,35 @@ export class Compositor {
       view.addChild(
         new Graphics()
           .rect(inset, inset, w - inset * 2, h - inset * 2)
-          .stroke({ color: BROKEN_EDGE, width: Math.max(1, Math.round(h / 360)) })
+          .stroke({ color: BROKEN_EDGE, width: Math.max(1, Math.round(h / 360)) }),
       );
       const size = Math.max(12, Math.round(h / 22));
       const name = new Text({
         text: clip.name,
-        style: { fontFamily: ['Inter', 'sans-serif'], fontSize: size, fill: '#d4d4d8', align: 'center', wordWrap: true, wordWrapWidth: w * 0.8 },
+        style: {
+          fontFamily: ['Inter', 'sans-serif'],
+          fontSize: size,
+          fill: '#d4d4d8',
+          align: 'center',
+          wordWrap: true,
+          wordWrapWidth: w * 0.8,
+        },
         anchor: 0.5,
-        resolution: 2
+        resolution: 2,
       });
       name.position.set(w / 2, h / 2 - size * 0.7);
       const note = new Text({
         text: line,
-        style: { fontFamily: ['Inter', 'sans-serif'], fontSize: Math.round(size * 0.7), fill: '#a1a1aa', align: 'center', wordWrap: true, wordWrapWidth: w * 0.8 },
+        style: {
+          fontFamily: ['Inter', 'sans-serif'],
+          fontSize: Math.round(size * 0.7),
+          fill: '#a1a1aa',
+          align: 'center',
+          wordWrap: true,
+          wordWrapWidth: w * 0.8,
+        },
         anchor: 0.5,
-        resolution: 2
+        resolution: 2,
       });
       note.position.set(w / 2, h / 2 + size * 0.7);
       view.addChild(name);
@@ -450,7 +535,13 @@ export class Compositor {
     });
   }
 
-  private async buildClipLayer(clip: Clip, sequence: Sequence, time: number, ctx: RenderContext, now: number): Promise<Layer | null> {
+  private async buildClipLayer(
+    clip: Clip,
+    sequence: Sequence,
+    time: number,
+    ctx: RenderContext,
+    now: number,
+  ): Promise<Layer | null> {
     switch (clip.kind) {
       case 'video':
       case 'image':
@@ -458,15 +549,25 @@ export class Compositor {
       case 'title':
         return this.buildTitleLayer(clip, sequence, time, now);
       case 'color': {
-        const rect = new Graphics().rect(0, 0, this.width, this.height).fill({ color: clip.color ?? '#000000' });
-        return this.wrapLayer(clip, rect, this.width, this.height, sequence, time, now, () => rect.destroy());
+        const rect = new Graphics()
+          .rect(0, 0, this.width, this.height)
+          .fill({ color: clip.color ?? '#000000' });
+        return this.wrapLayer(clip, rect, this.width, this.height, sequence, time, now, () =>
+          rect.destroy(),
+        );
       }
       default:
         return null;
     }
   }
 
-  private async buildMediaLayer(clip: Clip, sequence: Sequence, time: number, ctx: RenderContext, now: number): Promise<Layer | null> {
+  private async buildMediaLayer(
+    clip: Clip,
+    sequence: Sequence,
+    time: number,
+    ctx: RenderContext,
+    now: number,
+  ): Promise<Layer | null> {
     const media = clip.mediaId ? ctx.media(clip.mediaId) : undefined;
     if (!media || media.status !== 'ready' || (!media.hasVideo && media.kind !== 'image')) {
       const w = media && media.width > 0 ? media.width : this.width;
@@ -478,7 +579,9 @@ export class Compositor {
       return this.buildSlateLayer(clip, sequence, time, now, "this file can't be decoded here");
     }
     const sourceTime = sourceTimeAt(clip, time, media.duration);
-    const handle = await phaseAsync('decode', () => ctx.frames.getFrame(media, sourceTime, ctx.mode, clip.id));
+    const handle = await phaseAsync('decode', () =>
+      ctx.frames.getFrame(media, sourceTime, ctx.mode, clip.id),
+    );
     if (!handle) {
       // the cache turns a decode that threw into a remembered failure, a
       // plain miss (a clip that starts before its media) still draws nothing
@@ -542,7 +645,12 @@ export class Compositor {
       }
       if (cached) cached.texture.destroy(true);
       const texture = new Texture({
-        source: new ImageSource({ resource: image, width: image.width, height: image.height, autoGarbageCollect: false })
+        source: new ImageSource({
+          resource: image,
+          width: image.width,
+          height: image.height,
+          autoGarbageCollect: false,
+        }),
       });
       this.stills.set(media.id, { bitmap: image, texture, used: now });
       return texture;
@@ -551,7 +659,12 @@ export class Compositor {
     // than writing into one it may still be reading from, so this one is
     // handed over and destroyed as soon as the frame it was drawn in is done
     return new Texture({
-      source: new ImageSource({ resource: image, width: handle.width, height: handle.height, autoGarbageCollect: false })
+      source: new ImageSource({
+        resource: image,
+        width: handle.width,
+        height: handle.height,
+        autoGarbageCollect: false,
+      }),
     });
   }
 
@@ -574,7 +687,12 @@ export class Compositor {
     }
   }
 
-  private async buildTitleLayer(clip: Clip, sequence: Sequence, time: number, now: number): Promise<Layer | null> {
+  private async buildTitleLayer(
+    clip: Clip,
+    sequence: Sequence,
+    time: number,
+    now: number,
+  ): Promise<Layer | null> {
     const title = clip.title;
     if (!title) return null;
     const hash = titleHash(title, sequence);
@@ -607,7 +725,7 @@ export class Compositor {
     sequence: Sequence,
     time: number,
     now: number,
-    release: () => void
+    release: () => void,
   ): Layer {
     const clipTime = time - clip.start;
     const inner = new Container();
@@ -623,7 +741,9 @@ export class Compositor {
     }
 
     const flip = findEffect(clip, 'flip');
-    const transformParams = readTransform(paramsAt(findEffect(clip, 'transform') ?? emptyEffect, clipTime));
+    const transformParams = readTransform(
+      paramsAt(findEffect(clip, 'transform') ?? emptyEffect, clipTime),
+    );
     if (flip && flip.enabled) {
       const p = paramsAt(flip, clipTime);
       if (p.horizontal === true || p.flipH === true) transformParams.flipH = !transformParams.flipH;
@@ -645,7 +765,7 @@ export class Compositor {
           height: mediaH,
           time: clipTime,
           fps: sequence.fps,
-          scale: pixelScale > 0 ? pixelScale : 1
+          scale: pixelScale > 0 ? pixelScale : 1,
         });
         filters.push(runtime.filter);
       }
@@ -677,7 +797,7 @@ export class Compositor {
         inner.removeChild(content);
         release();
         node.destroy({ children: true });
-      }
+      },
     };
   }
 
@@ -710,7 +830,7 @@ export class Compositor {
       width: this.canvas.width,
       height: this.canvas.height,
       antialias: false,
-      autoGarbageCollect: false
+      autoGarbageCollect: false,
     });
   }
 
@@ -720,7 +840,12 @@ export class Compositor {
     if (!this.empty) {
       this.empty = this.acquireTarget();
       const nothing = new Container();
-      this.renderer?.render({ container: nothing, target: this.empty, clear: true, clearColor: [0, 0, 0, 0] });
+      this.renderer?.render({
+        container: nothing,
+        target: this.empty,
+        clear: true,
+        clearColor: [0, 0, 0, 0],
+      });
       nothing.destroy();
     }
     return this.empty;
@@ -731,8 +856,16 @@ export class Compositor {
       const g = new Graphics();
       const w = this.width;
       const h = this.height;
-      g.rect(w * 0.05, h * 0.05, w * 0.9, h * 0.9).stroke({ color: 0xffffff, alpha: 0.5, width: Math.max(1, w / 960) });
-      g.rect(w * 0.1, h * 0.1, w * 0.8, h * 0.8).stroke({ color: 0xffffff, alpha: 0.35, width: Math.max(1, w / 960) });
+      g.rect(w * 0.05, h * 0.05, w * 0.9, h * 0.9).stroke({
+        color: 0xffffff,
+        alpha: 0.5,
+        width: Math.max(1, w / 960),
+      });
+      g.rect(w * 0.1, h * 0.1, w * 0.8, h * 0.8).stroke({
+        color: 0xffffff,
+        alpha: 0.35,
+        width: Math.max(1, w / 960),
+      });
       this.safeMargins = g;
     }
     return this.safeMargins;
@@ -782,7 +915,8 @@ export class Compositor {
 
   private dropGpuCaches(): void {
     this.dropTargets();
-    for (const e of this.slates.values()) e.view.destroy({ children: true, texture: true, textureSource: true });
+    for (const e of this.slates.values())
+      e.view.destroy({ children: true, texture: true, textureSource: true });
     this.slates.clear();
     for (const f of this.toneMaps.values()) f.destroy();
     this.toneMaps.clear();
@@ -833,4 +967,11 @@ function even(v: number): number {
   return Math.max(2, Math.round(v / 2) * 2);
 }
 
-const emptyEffect: EffectInstance = { id: '', type: 'transform', enabled: true, fixed: true, params: {}, keyframes: {} };
+const emptyEffect: EffectInstance = {
+  id: '',
+  type: 'transform',
+  enabled: true,
+  fixed: true,
+  params: {},
+  keyframes: {},
+};

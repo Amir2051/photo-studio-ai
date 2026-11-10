@@ -1,8 +1,15 @@
 import { applyPalette, GIFEncoder, quantize, type Palette } from 'gifenc';
-import type { Sequence } from '$lib/project/types';
+import type { Sequence } from '#lib/project/types.ts';
 import type { ExportSettings } from './presets';
 import { roundEven } from './presets';
-import { Eta, exportRange, openScene, throwIfAborted, yieldToBrowser, type GetMedia } from './scene';
+import {
+  Eta,
+  exportRange,
+  openScene,
+  throwIfAborted,
+  yieldToBrowser,
+  type GetMedia,
+} from './scene';
 
 export interface GifCallbacks {
   onProgress(progress: number, stage: string, eta: number | null): void;
@@ -14,7 +21,12 @@ const bayer = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map((v) => 
 
 // ordered dither before the palette lookup, cheap and it hides banding in
 // gradients, which is where a 256 color gif hurts most
-function dither(rgba: Uint8ClampedArray, width: number, height: number, strength: number): Uint8ClampedArray {
+function dither(
+  rgba: Uint8ClampedArray,
+  width: number,
+  height: number,
+  strength: number,
+): Uint8ClampedArray {
   const out = new Uint8ClampedArray(rgba.length);
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
@@ -29,7 +41,12 @@ function dither(rgba: Uint8ClampedArray, width: number, height: number, strength
   return out;
 }
 
-export async function exportGif(sequence: Sequence, settings: ExportSettings, callbacks: GifCallbacks, getMedia: GetMedia): Promise<Blob> {
+export async function exportGif(
+  sequence: Sequence,
+  settings: ExportSettings,
+  callbacks: GifCallbacks,
+  getMedia: GetMedia,
+): Promise<Blob> {
   const { signal, onProgress } = callbacks;
   // a gif frame delay is whole hundredths of a second, so the rate is snapped
   // to one the format can hold and the animation keeps the length it should
@@ -84,7 +101,7 @@ export async function exportGif(sequence: Sequence, settings: ExportSettings, ca
       encoder.writeFrame(index, width, height, {
         palette,
         delay,
-        repeat: settings.gif.loop ? 0 : -1
+        repeat: settings.gif.loop ? 0 : -1,
       });
       eta.tick();
       onProgress(head + ((1 - head) * (i + 1)) / frames, 'Rendering frames', eta.remaining(i + 1));

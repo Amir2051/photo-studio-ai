@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { base } from '$app/paths';
-  import Logo from '$lib/ui/Logo.svelte';
+  import { resolve } from '$app/paths';
+  import Logo from '#lib/ui/Logo.svelte';
 </script>
 
 <svelte:head>
@@ -14,7 +14,7 @@
 <div class="legal">
   <nav class="nav">
     <div class="nav-inner">
-      <a href="{base}/" class="logo">
+      <a href="{resolve('')}/" class="logo">
         <span class="logo-mark"><Logo size={24} /></span>
         <span class="logo-name">brainCUT</span>
       </a>
@@ -51,9 +51,7 @@
     </p>
   </div>
 
-  <footer class="footer">
-    <a href="{base}/">&larr; Back to brainCUT</a>
-  </footer>
+  <footer class="footer"><a href="{resolve('')}/">← Back to brainCUT</a></footer>
 </div>
 
 <style>

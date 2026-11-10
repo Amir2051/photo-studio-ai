@@ -1,7 +1,7 @@
 import { writable, type Readable } from 'svelte/store';
-import type { Id, MediaItem, Sequence } from '$lib/project/types';
-import { sequenceDuration } from '$lib/project/defaults';
-import { snapToFrame, timeToFrame } from '$lib/project/time';
+import type { Id, MediaItem, Sequence } from '#lib/project/types.ts';
+import { sequenceDuration } from '#lib/project/defaults.ts';
+import { snapToFrame, timeToFrame } from '#lib/project/time.ts';
 import type { AudioEngine } from './audio-engine';
 import { sourceTimeAt } from './clip-time';
 import type { Compositor } from './compositor';
@@ -364,14 +364,21 @@ export class Player {
     this.lastFrame = timeToFrame(t, seq.fps);
     this.lastSeq = seq;
     this.compositor
-      .render(seq, t, { media: this.getMedia, frames: this.cache, mode, showSafeMargins: this.safeMargins })
+      .render(seq, t, {
+        media: this.getMedia,
+        frames: this.cache,
+        mode,
+        showSafeMargins: this.safeMargins,
+      })
       .then(
         () => {
           this.rendered++;
           this.failures = 0;
           // a lost context resolves without drawing anything, which looks
           // exactly like the blank monitor nobody could get back
-          this.setProblem(this.compositor.contextLost ? 'the preview lost its graphics context' : null);
+          this.setProblem(
+            this.compositor.contextLost ? 'the preview lost its graphics context' : null,
+          );
         },
         (e: unknown) => {
           this.failures++;
@@ -380,11 +387,12 @@ export class Player {
             console.warn('[braincut] render failed:', e);
           }
           if (this.failures >= 2) this.setProblem(e instanceof Error ? e.message : String(e));
-        }
+        },
       )
       .finally(() => {
         this.rendering = false;
-        if (!this.isPlaying && !this.destroyed && (this.dirty || this.pendingSeek !== null)) this.schedule();
+        if (!this.isPlaying && !this.destroyed && (this.dirty || this.pendingSeek !== null))
+          this.schedule();
       });
   }
 

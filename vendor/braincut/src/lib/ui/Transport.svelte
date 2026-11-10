@@ -1,8 +1,8 @@
 <script lang="ts">
-  import type { Player } from '$lib/engine/session';
-  import { snapToFrame } from '$lib/project/time';
-  import { loopPlayback } from '$lib/stores/app';
-  import { preferences } from '$lib/stores/preferences';
+  import type { Player } from '#lib/engine/session.ts';
+  import { snapToFrame } from '#lib/project/time.ts';
+  import { loopPlayback } from '#lib/stores/app.ts';
+  import { preferences } from '#lib/stores/preferences.ts';
   import Icon from './Icon.svelte';
   import TimecodeField from './TimecodeField.svelte';
 
