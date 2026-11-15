@@ -8,7 +8,7 @@
 
   const apiBase = (import.meta.env.VITE_RZ_AGENT_URL || 'https://rz-ai.safenestt.com').replace(/\/$/, '');
 
-  let { onClose }: { onClose: () => void } = $props();
+  let { onClose, onUseAnalysis }: { onClose: () => void; onUseAnalysis: (analysis: string) => void } = $props();
   type Candidate = { key: string; mediaId: string; mediaName: string; clipName: string; sequenceTime: number; sourceTime: number };
   type ReviewFrame = Candidate & { dataUrl: string; selected: boolean };
   let frames = $state<ReviewFrame[]>([]);
@@ -219,7 +219,7 @@
       {/if}
       {#if analysisError}<p class="error">{analysisError}</p>{/if}
       {#if analysis}
-        <div class="analysis-result"><strong>MIA visual analysis</strong><p>{analysis}</p></div>
+        <div class="analysis-result"><strong>MIA visual analysis</strong><p>{analysis}</p><button onclick={() => onUseAnalysis(analysis)}>Add analysis to MIA chat</button></div>
       {/if}
     </div>
   {:else if !busy}
@@ -235,6 +235,6 @@
   .progress,.error{font-size:9px;margin:8px 0;color:var(--text-secondary)}.error{color:var(--error)}
   .selection-bar{display:flex;align-items:center;gap:9px;margin:12px 0 7px;color:var(--text-muted);font-size:9px}.selection-bar span{margin-right:auto}.selection-bar button{padding:4px 6px;border:1px solid var(--border);border-radius:4px}
   .frame-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(145px,1fr));gap:8px}.frame{position:relative;overflow:hidden;text-align:left;border:1px solid var(--border);border-radius:5px;background:var(--bg-surface);opacity:.68}.frame.chosen{border-color:var(--accent);opacity:1}.frame img{display:block;width:100%;aspect-ratio:16/9;object-fit:contain;background:#090b10}.frame-check{position:absolute;top:6px;right:6px;display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:rgba(0,0,0,.7);color:white}.chosen .frame-check{color:#8ee6b2}.frame-meta{display:block;padding:6px;font-size:9px;color:var(--text-primary);overflow-wrap:anywhere}.frame-meta small{display:block;margin-top:3px;color:var(--text-muted);font-size:8px}
-  .next-step{margin-top:12px;padding:10px;border:1px solid var(--border);border-radius:5px;background:var(--bg-surface)}.next-step strong{font-size:10px}.next-step p{margin:5px 0 8px;color:var(--text-secondary);font-size:9px;line-height:1.5}.next-step button:disabled{opacity:.4}.analysis-actions{display:flex;gap:7px;flex-wrap:wrap}.next-step .copy{background:var(--bg-surface);color:var(--text-secondary);border:1px solid var(--border)}.provider-note{margin:8px 0;color:var(--text-muted);font-size:9px;line-height:1.5}.approval{margin-top:10px;padding:10px;border:1px solid var(--warning);border-radius:5px;background:var(--bg-surface)}.approval strong{font-size:11px}.approval p{font-size:9px;line-height:1.55;color:var(--text-secondary)}.approval div{display:flex;gap:7px;flex-wrap:wrap}.approval .approve{background:var(--accent);color:white}.approval .cancel{border:1px solid var(--border);background:transparent;color:var(--text-primary)}.analysis-result{margin-top:10px;padding:10px;border:1px solid var(--border);border-radius:5px;background:var(--bg-surface)}.analysis-result strong{font-size:11px}.analysis-result p{white-space:pre-wrap;font-size:10px;line-height:1.6;color:var(--text-secondary)}
+  .next-step{margin-top:12px;padding:10px;border:1px solid var(--border);border-radius:5px;background:var(--bg-surface)}.next-step strong{font-size:10px}.next-step p{margin:5px 0 8px;color:var(--text-secondary);font-size:9px;line-height:1.5}.next-step button:disabled{opacity:.4}.analysis-actions{display:flex;gap:7px;flex-wrap:wrap}.next-step .copy{background:var(--bg-surface);color:var(--text-secondary);border:1px solid var(--border)}.provider-note{margin:8px 0;color:var(--text-muted);font-size:9px;line-height:1.5}.approval{margin-top:10px;padding:10px;border:1px solid var(--warning);border-radius:5px;background:var(--bg-surface)}.approval strong{font-size:11px}.approval p{font-size:9px;line-height:1.55;color:var(--text-secondary)}.approval div{display:flex;gap:7px;flex-wrap:wrap}.approval .approve{background:var(--accent);color:white}.approval .cancel{border:1px solid var(--border);background:transparent;color:var(--text-primary)}.analysis-result{margin-top:10px;padding:10px;border:1px solid var(--border);border-radius:5px;background:var(--bg-surface)}.analysis-result strong{font-size:11px}.analysis-result p{white-space:pre-wrap;font-size:10px;line-height:1.6;color:var(--text-secondary)}.analysis-result button{padding:6px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg-surface);color:var(--text-primary);font-size:9px}
   .empty{min-height:140px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--text-muted);text-align:center;font-size:9px}.empty strong{color:var(--text-primary);font-size:11px}.empty span{max-width:280px;line-height:1.5}
 </style>
