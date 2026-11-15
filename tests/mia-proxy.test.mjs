@@ -72,10 +72,45 @@ describe('Every Frame First MIA proxy', () => {
     const response = await fetch(baseUrl + '/api/mia/vision/analyze', {
       method: 'POST',
       headers: { origin, authorization: 'Bearer valid-firebase-token', 'content-type': 'application/json' },
-      body: JSON.stringify({ instruction: 'Analyze', frames: Array.from({ length: 9 }, () => frame) }),
+      body: JSON.stringify({ approved: true, instruction: 'Analyze', frames: Array.from({ length: 9 }, () => frame) }),
     });
     expect(response.status).toBe(400);
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('refuses to forward vision frames unless the approval flag is explicit', async () => {
+    const fetchImpl = vi.fn();
+    await start({ fetchImpl });
+    const response = await fetch(baseUrl + '/api/mia/vision/analyze', {
+      method: 'POST',
+      headers: { origin, authorization: 'Bearer valid-firebase-token', 'content-type': 'application/json' },
+      body: JSON.stringify({
+        approved: false,
+        instruction: 'Analyze',
+        frames: [{ timestamp_seconds: 1, clip_name: 'clip', image_data_url: 'data:image/jpeg;base64,YWJj' }],
+      }),
+    });
+    expect(response.status).toBe(400);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('forwards approved frames only through the authenticated service proxy', async () => {
+    const fetchImpl = vi.fn(async () => Response.json({ analysis: 'A test frame.' }));
+    await start({ fetchImpl });
+    const response = await fetch(baseUrl + '/api/mia/vision/analyze', {
+      method: 'POST',
+      headers: { origin, authorization: 'Bearer valid-firebase-token', 'content-type': 'application/json' },
+      body: JSON.stringify({
+        approved: true,
+        instruction: 'Describe visible content',
+        frames: [{ timestamp_seconds: 1, clip_name: 'clip', image_data_url: 'data:image/jpeg;base64,YWJj' }],
+      }),
+    });
+    expect(response.status).toBe(200);
+    expect(fetchImpl).toHaveBeenCalledOnce();
+    expect(fetchImpl.mock.calls[0][0]).toBe('https://rz-ai.safenestt.com/v1/studio/vision/analyze');
+    expect(fetchImpl.mock.calls[0][1].headers['X-Api-Key']).toBe(serviceKey);
+    expect(JSON.parse(fetchImpl.mock.calls[0][1].body).approved).toBe(true);
   });
 
   it('rejects unapproved browser origins', async () => {

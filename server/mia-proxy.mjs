@@ -159,7 +159,7 @@ export function createMiaProxyServer({
 
       if (req.url === '/api/mia/vision/analyze') {
         const frames = body?.frames;
-        if (!Array.isArray(frames) || frames.length < 1 || frames.length > MAX_FRAMES ||
+        if (body?.approved !== true || !Array.isArray(frames) || frames.length < 1 || frames.length > MAX_FRAMES ||
             typeof body?.instruction !== 'string' || body.instruction.length > 2000 || !frames.every(validFrame)) {
           return json(res, 400, { error: 'Select between 1 and 8 valid still frames for visual analysis.', requestId }, corsHeaders);
         }
