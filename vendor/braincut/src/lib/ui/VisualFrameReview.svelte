@@ -19,7 +19,7 @@
   let maxFrames = $state('12');
   let progress = $state('');
   let copied = $state(false);
-  let visionStatus = $state<{ configured: boolean; provider: string; model: string | null } | null>(null);
+  let visionStatus = $state<{ available: boolean; provider: string | null; model: string | null; max_frames?: number } | null>(null);
   let showApproval = $state(false);
   let analyzing = $state(false);
   let analysis = $state('');
@@ -126,13 +126,13 @@
       if (!response.ok) throw new Error('Vision service status unavailable.');
       visionStatus = await response.json();
     } catch {
-      visionStatus = { configured: false, provider: 'OpenRouter', model: null };
+      visionStatus = { available: false, provider: 'OpenRouter', model: null };
     }
   }
 
   async function approveAndAnalyze(): Promise<void> {
     const selected = frames.filter((frame) => frame.selected);
-    if (!selected.length || selected.length > 8 || !visionStatus?.configured || analyzing) return;
+    if (!selected.length || selected.length > 8 || !visionStatus?.available || analyzing) return;
     analyzing = true;
     analysisError = '';
     analysis = '';
@@ -204,14 +204,14 @@
       <strong>Ready for visual review</strong>
       <p>These frames are selected locally. A vision provider has not been connected, so there is no send action yet. Your approval will be required before any future provider receives image data.</p>
       <div class="analysis-actions">
-        <button disabled={!frames.some((frame) => frame.selected) || frames.filter((frame) => frame.selected).length > 8 || !visionStatus?.configured} onclick={() => showApproval = true}><Icon name="eye" size={13} />Analyze selected with MIA</button>
+        <button disabled={!frames.some((frame) => frame.selected) || frames.filter((frame) => frame.selected).length > 8 || !visionStatus?.available} onclick={() => showApproval = true}><Icon name="eye" size={13} />Analyze selected with MIA</button>
         <button class="copy" disabled={!frames.some((frame) => frame.selected)} onclick={copyReviewSummary}><Icon name="copy" size={13} />{copied ? 'Summary copied' : 'Copy timestamps'}</button>
       </div>
       {#if frames.filter((frame) => frame.selected).length > 8}
         <p class="provider-note">Select no more than 8 frames for a single cloud analysis request.</p>
       {/if}
-      {#if !visionStatus?.configured}
-        <p class="provider-note">Cloud visual analysis is not configured on RZ Agent yet. No frames have been sent. The server needs an approved OPENROUTER_VISION_MODEL setting.</p>
+      {#if !visionStatus?.available}
+        <p class="provider-note">Cloud visual analysis is not configured on RZ Agent yet. No frames have been sent. The server needs OPENROUTER_VISION_MODEL plus the required Zero Data Retention and no-fallback settings.</p>
       {/if}
       {#if showApproval}
         <div class="approval">
