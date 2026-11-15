@@ -62,6 +62,7 @@ describe('Every Frame First MIA proxy', () => {
     expect(fetchImpl).toHaveBeenCalledOnce();
     expect(fetchImpl.mock.calls[0][0]).toBe('https://rz-ai.safenestt.com/v1/chat');
     expect(fetchImpl.mock.calls[0][1].headers['X-Api-Key']).toBe(serviceKey);
+    expect(fetchImpl.mock.calls[0][1].headers['X-Studio-User-Id']).toBe('firebase-user-123');
   });
 
   it('rejects more than eight frames before forwarding them', async () => {
