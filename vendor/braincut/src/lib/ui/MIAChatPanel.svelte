@@ -53,13 +53,6 @@
     }
   }
 
-  function signOut(): void {
-    user = null;
-    sessionId = null;
-    messages = [];
-    void checkSession();
-  }
-
   function projectContext(): string {
     const current = get(project);
     const sequence = get(activeSequence);
@@ -189,7 +182,7 @@
   <header class="mia-header">
     <div class="mia-brand"><span class="mia-orb"><Icon name="sparkles" size={15} /></span><div><strong>MIA</strong><small>Studio AI assistant</small></div></div>
     {#if user}
-      <div class="account"><span class="online-dot"></span><span title={user.email || user.id}>Studio account</span><button class="signout" onclick={signOut}>Reconnect</button></div>
+      <div class="account"><span class="online-dot"></span><span title={user.email || user.id}>Studio account</span></div>
     {:else}
       <span class="connection-state">{checking ? 'Checking Studio session…' : 'Studio sign-in required'}</span>
     {/if}
