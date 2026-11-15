@@ -1,11 +1,12 @@
 <script lang="ts">
   import { activeSequence } from '#lib/project/store.ts';
-  import { renderStatus, playhead, snapEnabled, timelineZoom } from '#lib/stores/app.ts';
+  import { bottomPanelTab, renderStatus, playhead, snapEnabled, timelineZoom } from '#lib/stores/app.ts';
   import { formatTimecode } from '#lib/project/time.ts';
   import { sequenceDuration } from '#lib/project/defaults.ts';
   import { fitZoom, timelineViewport } from '#lib/editor/timeline-interactions.ts';
   import { preferences } from '#lib/stores/preferences.ts';
   import { claude } from '#lib/agent/state.ts';
+  import { activeProposalPreview } from '#lib/agent/proposals.ts';
 
   const claudeColors: Record<string, string> = {
     off: 'var(--text-muted)',
@@ -89,6 +90,16 @@
       </span>
       <span class="sep"></span>
     {/if}
+    {#if $activeProposalPreview}
+      <button
+        class="status-item toggle ai-preview"
+        onclick={() => bottomPanelTab.set('ai-review')}
+        title="An AI edit preview is active. Open AI Review to apply or cancel it">
+        <span class="dot" style="background: var(--accent)"></span>
+        AI preview
+      </button>
+      <span class="sep"></span>
+    {/if}
     {#if $preferences.claudeBridge}
       <button
         class="status-item toggle claude"
@@ -165,6 +176,10 @@
   }
 
   .toggle.on {
+    color: var(--accent);
+  }
+
+  .ai-preview {
     color: var(--accent);
   }
 

@@ -22,14 +22,16 @@
   import MarkersPanel from '#lib/ui/MarkersPanel.svelte';
   import HistoryPanel from '#lib/ui/HistoryPanel.svelte';
   import TextPanel from '#lib/ui/TextPanel.svelte';
+  import AIReviewPanel from '#lib/ui/AIReviewPanel.svelte';
   import Timeline from '#lib/ui/timeline/Timeline.svelte';
 
-  import { activeSequence, project } from '#lib/project/store.ts';
+  import { activeSequence, cancelPreview, isPreviewing, project, projectSession } from '#lib/project/store.ts';
   import type { RecentProject } from '#lib/project/persistence.ts';
   import { destroySessions, program } from '#lib/engine/session.ts';
   import { pickFiles } from '#lib/media/import.ts';
   import { installShortcuts } from '#lib/editor/shortcuts.ts';
   import { installClaudeBridge } from '#lib/agent/bridge.ts';
+  import { activeProposalPreview, clearProposals, pendingProposalCount } from '#lib/agent/proposals.ts';
   import { buildCommands } from '#lib/editor/commands.ts';
   import { exportCurrentFrame } from '#lib/editor/export-actions.ts';
   import {
@@ -46,6 +48,7 @@
     panelSizes,
     dialog,
     selection,
+    playhead,
     workspace,
     type LeftPanelTab,
     type BottomPanelTab
@@ -67,13 +70,14 @@
     { id: 'multicam', label: 'Multicam' }
   ];
 
-  const bottomTabs = [
+  const bottomTabs = $derived([
     { id: 'project', label: 'Media' },
     { id: 'effects', label: 'Effects' },
     { id: 'text', label: 'Text' },
     { id: 'markers', label: 'Markers' },
-    { id: 'history', label: 'History' }
-  ];
+    { id: 'history', label: 'History' },
+    { id: 'ai-review', label: 'AI Review', badge: $pendingProposalCount }
+  ]);
 
   // a workspace is just a pair of tabs to start from, any tab stays a click away
   const workspaceTabs: Record<string, { left: LeftPanelTab; bottom: BottomPanelTab }> = {
@@ -124,6 +128,25 @@
       }
     }
     lastSelection = ids;
+  });
+
+  // Pending proposals belong to one open project only. If a preview is
+  // cancelled by another edit or a sequence switch, restore the old playhead.
+  let lastProposalSession = $state(0);
+  $effect(() => {
+    const currentSession = $projectSession;
+    if (currentSession !== lastProposalSession) {
+      if ($isPreviewing) cancelPreview();
+      clearProposals();
+      lastProposalSession = currentSession;
+    }
+    const activePreview = $activeProposalPreview;
+    if (activePreview && !$isPreviewing) {
+      if ($project?.id === activePreview.projectId && $activeSequence?.id === activePreview.sequenceId) {
+        playhead.set(activePreview.previousPlayhead);
+      }
+      activeProposalPreview.set(null);
+    }
   });
 
   // the welcome screen lists what this browser remembers, fresh every time
@@ -227,6 +250,8 @@
             <TextPanel />
           {:else if $bottomPanelTab === 'markers'}
             <MarkersPanel />
+          {:else if $bottomPanelTab === 'ai-review'}
+            <AIReviewPanel />
           {:else}
             <HistoryPanel />
           {/if}

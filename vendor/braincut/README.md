@@ -60,6 +60,8 @@ brainCUT can be cut by [Claude Code](https://claude.com/claude-code) while you w
 
 Register the server with Claude Code, then open the editor and explicitly enable **Connect to Claude Code** under Preferences. The connection is session-only: it is never restored automatically on a later visit, and URL parameters cannot enable it. The status bar shows the connection state and the last action. Read-only inspection tools do not require confirmation; every tool that changes project state or uploads an export requires a separate approval in the visible editor tab. Export approval identifies the destination, and uploads require HTTPS (HTTP is permitted only for loopback development destinations). Denying or being unable to display an approval prompt rejects the operation.
 
+For review-first editing, the browser exposes `propose_edits`. It accepts 1–20 typed operations (`add_clip`, `add_title`, `split`, `trim`, `move_clip`, `delete_clips`, `add_transition`, or `add_marker`) and queues them without changing the project. Open **AI Review** to inspect each operation's rationale and arguments, preview it in the timeline/program monitor, then apply or reject it individually. Applying a preview creates one normal undo-history step; cancelling restores the original project state. The separate `braincut-mcp` server must advertise the `propose_edits` tool and its schema before Claude Code can call this workflow; direct mutation tools remain protected by the per-call confirmation above.
+
 ## Keyboard shortcuts
 
 `Ctrl` is `Cmd` on a Mac. Text fields keep their own keys, and while a dialog or the command palette is open it owns the keyboard.

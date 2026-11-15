@@ -15,11 +15,13 @@ import {
   editSequence,
   findClip,
   history,
+  isPreviewing,
   loadProject,
   markSaved,
   mediaById,
   preview,
   project,
+  projectSession,
   redo,
   selectClips,
   selectedClips,
@@ -77,6 +79,22 @@ describe('project store', () => {
     expect(get(activeSequence)?.name).toBe('Main');
     expect(get(mediaById).get('m1')?.name).toBe('clip.mp4');
     expect(get(dirty)).toBe(false);
+  });
+
+  it('advances the project session when a project is loaded or closed', () => {
+    const before = get(projectSession);
+    loadProject(fresh());
+    expect(get(projectSession)).toBe(before + 1);
+    closeProject();
+    expect(get(projectSession)).toBe(before + 2);
+  });
+
+  it('cancels a manual preview before a normal user edit', () => {
+    preview((draft) => void (draft.name = 'unapproved'), { commitOnEdit: false });
+    edit('Rename', (draft) => void (draft.name = 'approved user edit'));
+    expect(get(project)?.name).toBe('approved user edit');
+    expect(get(history).entries).toEqual(['Rename']);
+    expect(get(isPreviewing)).toBe(false);
   });
 
   it('records undo steps and tracks dirtiness', () => {

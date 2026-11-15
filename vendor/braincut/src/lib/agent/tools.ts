@@ -76,6 +76,7 @@ import { preferences } from '#lib/stores/preferences.ts';
 import { version } from '#lib/version.ts';
 import type { ImportEntry } from '#lib/media/import.ts';
 import { claude } from './state';
+import { createEditProposal } from './proposals.ts';
 import type { ExportProgress } from './protocol';
 
 export type ToolArgs = Record<string, unknown>;
@@ -97,6 +98,7 @@ export interface ToolContext {
 type Handler = (args: ToolArgs, ctx: ToolContext) => Promise<unknown> | unknown;
 
 const READ_ONLY_TOOLS = new Set(['status', 'get_timeline', 'list_media', 'catalog']);
+const NON_PROJECT_TOOLS = new Set([...READ_ONLY_TOOLS, 'propose_edits']);
 
 function approvalRequest(tool: string, args: ToolArgs): ToolApprovalRequest {
   const id = (key: string) => typeof args[key] === 'string' ? String(args[key]).replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) : '';
@@ -403,6 +405,29 @@ function mb(bytes: number): string {
 // ---- the tools ----------------------------------------------------------------
 
 const handlers: Record<string, Handler> = {
+  propose_edits({ title, summary, operations, source }) {
+    const current = requireProject();
+    const sequence = get(activeSequence);
+    if (!sequence) throw new Error('Create or open a sequence before proposing edits');
+    if (!Array.isArray(operations)) throw new Error('operations must be a list of proposed edits');
+    const proposal = createEditProposal({
+      projectId: current.id,
+      sequenceId: sequence.id,
+      sequenceName: sequence.name,
+      title: optStr(title),
+      summary: optStr(summary),
+      source: optStr(source),
+      operations,
+    });
+    return {
+      proposalId: proposal.id,
+      title: proposal.title,
+      operationCount: proposal.operations.length,
+      operations: proposal.operations.map(({ id, tool, summary: operationSummary }) => ({ id, tool, summary: operationSummary })),
+      summary: `Prepared ${proposal.operations.length} edit${proposal.operations.length === 1 ? '' : 's'} for review. No project changes have been made.`,
+    };
+  },
+
   status() {
     const p = get(project);
     const seq = get(activeSequence);
@@ -1403,7 +1428,7 @@ export async function runTool(name: string, args: ToolArgs, ctx: ToolContext): P
   const handler = handlers[name];
   if (!handler) throw new Error(`Unknown tool "${name}"`);
   const safeArgs = args ?? {};
-  if (!READ_ONLY_TOOLS.has(name)) {
+  if (!NON_PROJECT_TOOLS.has(name)) {
     if (!ctx.approve) throw new Error(`Tool "${name}" requires explicit user approval; no approval handler is available`);
     const approved = await ctx.approve(approvalRequest(name, safeArgs));
     if (approved !== true) throw new Error(`User denied or did not approve tool "${name}"`);

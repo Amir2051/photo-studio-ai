@@ -182,3 +182,22 @@ Verification after implementation:
 - Rebuilt `vendor/braincut/build/` on the current integration branch and synchronized it to `public/video-studio/` without deleting older hashed assets. Confirmed the new approval code is present and query-based auto-connect code is absent from the generated client bundle.
 
 Release scope: the `fix/phase1-secure-agent` integration branch will trigger the repository's GitHub Pages workflow on push. This release changes only the editor source and published static build; it does not deploy Base44 backend resources, alter databases, start the local agent service, connect an AI provider, transcribe media, or upload user media. The local-agent bridge remains off by default.
+
+
+## 11. Implementation log — Phase 2 AI edit review (2026-11-15)
+
+Implemented on a separate development branch based on the deployed Phase 1 commit:
+- Added a typed proposal model with a strict allowlist of timeline operations, required/optional argument validation, field bounds, per-operation status, and a 20-operation proposal cap.
+- Added the browser `propose_edits` tool. It can create a review queue but does not mutate the project or history.
+- Added the **AI Review** bottom-panel tab, pending-count badge, operation summaries/rationales, readable media/clip/time arguments, and a status-bar link back to an active preview.
+- Added non-destructive visual previews for add clip, add title, split, trim, move, delete, transition, and marker operations. Previews update the existing timeline/program monitor without marking the project dirty or adding history.
+- Applying a preview commits exactly one undoable history step. Cancelling restores the pre-preview project. A normal edit or sequence/project switch cancels an unapproved AI preview rather than silently committing it.
+- Added tests for proposal validation, no-side-effect queue creation, preview cancellation, preview commit, and sequence-switch safety.
+
+Verification on the Phase 2 branch:
+- brainCUT tests: 272 passed across 25 files.
+- Svelte diagnostics: 0 errors, 0 warnings.
+- Root app tests: 82 passed across 17 files.
+- Video-studio and root production builds: successful; existing bundle-size and ineffective dynamic-import warnings remain.
+
+Integration boundary: the `braincut-mcp` server is maintained separately and its source is not present in this repository/worktree. The browser now accepts `propose_edits`, but the external MCP server must advertise that tool and its schema before a connected Claude Code agent can invoke the proposal workflow. Until that server-side registry is updated, the new panel is ready for proposals but the connected agent still uses the Phase 1 per-operation confirmation path. No Phase 2 deployment, provider connection, transcription, or media upload has been performed.
