@@ -6,6 +6,8 @@
   import { filmstripFrames } from '#lib/media/thumbnails.ts';
   import type { MediaItem } from '#lib/project/types.ts';
 
+  const apiBase = (import.meta.env.VITE_RZ_AGENT_URL || 'https://rz-ai.safenestt.com').replace(/\/$/, '');
+
   let { onClose }: { onClose: () => void } = $props();
   type Candidate = { key: string; mediaId: string; mediaName: string; clipName: string; sequenceTime: number; sourceTime: number };
   type ReviewFrame = Candidate & { dataUrl: string; selected: boolean };
@@ -16,6 +18,11 @@
   let maxFrames = $state('12');
   let progress = $state('');
   let copied = $state(false);
+  let visionStatus = $state<{ configured: boolean; provider: string; model: string | null } | null>(null);
+  let showApproval = $state(false);
+  let analyzing = $state(false);
+  let analysis = $state('');
+  let analysisError = $state('');
 
   function candidates(): Candidate[] {
     const current = get(project);
@@ -55,6 +62,9 @@
     error = '';
     frames = [];
     copied = false;
+    showApproval = false;
+    analysis = '';
+    analysisError = '';
     try {
       const current = get(project);
       const sequence = get(activeSequence);
@@ -100,10 +110,53 @@
 
   function toggleFrame(key: string): void {
     frames = frames.map((frame) => frame.key === key ? { ...frame, selected: !frame.selected } : frame);
+    showApproval = false;
+    analysis = '';
   }
 
   function selectAll(value: boolean): void {
     frames = frames.map((frame) => ({ ...frame, selected: value }));
+  }
+
+  async function loadVisionStatus(): Promise<void> {
+    try {
+      const response = await fetch(new URL('/v1/studio/vision/status', apiBase), { credentials: 'include' });
+      if (!response.ok) throw new Error('Vision service status unavailable.');
+      visionStatus = await response.json();
+    } catch {
+      visionStatus = { configured: false, provider: 'OpenRouter', model: null };
+    }
+  }
+
+  async function approveAndAnalyze(): Promise<void> {
+    const selected = frames.filter((frame) => frame.selected);
+    if (!selected.length || selected.length > 8 || !visionStatus?.configured || analyzing) return;
+    analyzing = true;
+    analysisError = '';
+    analysis = '';
+    try {
+      const response = await fetch(new URL('/v1/studio/vision/analyze', apiBase), {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          instruction: 'Analyze these selected frames for visible scenes, shot composition, continuity, visual quality, and useful editing opportunities. Identify the timestamps when making observations.',
+          frames: selected.map((frame) => ({
+            timestamp_seconds: frame.sequenceTime,
+            clip_name: frame.clipName,
+            image_data_url: frame.dataUrl,
+          })),
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Visual analysis request failed.');
+      analysis = data.analysis || 'No analysis was returned.';
+      showApproval = false;
+    } catch (cause) {
+      analysisError = cause instanceof Error ? cause.message : 'Visual analysis failed.';
+    } finally {
+      analyzing = false;
+    }
   }
 
   async function copyReviewSummary(): Promise<void> {
@@ -112,6 +165,8 @@
     await navigator.clipboard.writeText('Locally sampled frames for review (image pixels remain on this device):\n' + summary);
     copied = true;
   }
+
+  $effect(() => { void loadVisionStatus(); });
 </script>
 
 <section class="visual-review">
@@ -119,7 +174,7 @@
     <div><strong>Visual Intelligence</strong><small>Local frame sampler · no upload</small></div>
     <button class="close" onclick={onClose} aria-label="Close frame review"><Icon name="x" size={15} /></button>
   </header>
-  <p class="privacy">Frames are decoded in your browser from the original media. Nothing is sent to RZ Agent, MIA, or another provider by this tool.</p>
+  <p class="privacy">Frames are decoded locally. Nothing is sent until you review the selected images and press Approve & send.</p>
   <div class="controls">
     <label>Sample interval
       <select bind:value={interval}><option value="1">Every 1 second</option><option value="2">Every 2 seconds</option><option value="3">Every 3 seconds</option><option value="5">Every 5 seconds</option><option value="10">Every 10 seconds</option></select>
@@ -145,7 +200,27 @@
     <div class="next-step">
       <strong>Ready for visual review</strong>
       <p>These frames are selected locally. A vision provider has not been connected, so there is no send action yet. Your approval will be required before any future provider receives image data.</p>
-      <button disabled={!frames.some((frame) => frame.selected)} onclick={copyReviewSummary}><Icon name="copy" size={13} />{copied ? 'Summary copied' : 'Copy timestamp list'}</button>
+      <div class="analysis-actions">
+        <button disabled={!frames.some((frame) => frame.selected) || frames.filter((frame) => frame.selected).length > 8 || !visionStatus?.configured} onclick={() => showApproval = true}><Icon name="eye" size={13} />Analyze selected with MIA</button>
+        <button class="copy" disabled={!frames.some((frame) => frame.selected)} onclick={copyReviewSummary}><Icon name="copy" size={13} />{copied ? 'Summary copied' : 'Copy timestamps'}</button>
+      </div>
+      {#if frames.filter((frame) => frame.selected).length > 8}
+        <p class="provider-note">Select no more than 8 frames for a single cloud analysis request.</p>
+      {/if}
+      {#if !visionStatus?.configured}
+        <p class="provider-note">Cloud visual analysis is not configured on RZ Agent yet. No frames have been sent. The server needs an approved OPENROUTER_VISION_MODEL setting.</p>
+      {/if}
+      {#if showApproval}
+        <div class="approval">
+          <strong>Confirm frame sharing</strong>
+          <p>You are about to send {frames.filter((frame) => frame.selected).length} selected still frames to <b>{visionStatus?.provider}</b> using {visionStatus?.model}. This is a cloud request. OpenRouter Zero Data Retention is required and provider fallbacks are disabled. Only the selected still images and their clip names/timestamps will be sent; no full video or audio.</p>
+          <div><button class="approve" disabled={analyzing} onclick={approveAndAnalyze}>{analyzing ? 'Analyzing…' : 'Approve & send selected frames'}</button><button class="cancel" disabled={analyzing} onclick={() => showApproval = false}>Cancel</button></div>
+        </div>
+      {/if}
+      {#if analysisError}<p class="error">{analysisError}</p>{/if}
+      {#if analysis}
+        <div class="analysis-result"><strong>MIA visual analysis</strong><p>{analysis}</p></div>
+      {/if}
     </div>
   {:else if !busy}
     <div class="empty"><Icon name="images" size={25} /><strong>No frames sampled yet</strong><span>Choose a sampling interval, then extract a contact sheet from the active sequence.</span></div>
@@ -160,6 +235,6 @@
   .progress,.error{font-size:9px;margin:8px 0;color:var(--text-secondary)}.error{color:var(--error)}
   .selection-bar{display:flex;align-items:center;gap:9px;margin:12px 0 7px;color:var(--text-muted);font-size:9px}.selection-bar span{margin-right:auto}.selection-bar button{padding:4px 6px;border:1px solid var(--border);border-radius:4px}
   .frame-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(145px,1fr));gap:8px}.frame{position:relative;overflow:hidden;text-align:left;border:1px solid var(--border);border-radius:5px;background:var(--bg-surface);opacity:.68}.frame.chosen{border-color:var(--accent);opacity:1}.frame img{display:block;width:100%;aspect-ratio:16/9;object-fit:contain;background:#090b10}.frame-check{position:absolute;top:6px;right:6px;display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:rgba(0,0,0,.7);color:white}.chosen .frame-check{color:#8ee6b2}.frame-meta{display:block;padding:6px;font-size:9px;color:var(--text-primary);overflow-wrap:anywhere}.frame-meta small{display:block;margin-top:3px;color:var(--text-muted);font-size:8px}
-  .next-step{margin-top:12px;padding:10px;border:1px solid var(--border);border-radius:5px;background:var(--bg-surface)}.next-step strong{font-size:10px}.next-step p{margin:5px 0 8px;color:var(--text-secondary);font-size:9px;line-height:1.5}.next-step button:disabled{opacity:.4}
+  .next-step{margin-top:12px;padding:10px;border:1px solid var(--border);border-radius:5px;background:var(--bg-surface)}.next-step strong{font-size:10px}.next-step p{margin:5px 0 8px;color:var(--text-secondary);font-size:9px;line-height:1.5}.next-step button:disabled{opacity:.4}.analysis-actions{display:flex;gap:7px;flex-wrap:wrap}.next-step .copy{background:var(--bg-surface);color:var(--text-secondary);border:1px solid var(--border)}.provider-note{margin:8px 0;color:var(--text-muted);font-size:9px;line-height:1.5}.approval{margin-top:10px;padding:10px;border:1px solid var(--warning);border-radius:5px;background:var(--bg-surface)}.approval strong{font-size:11px}.approval p{font-size:9px;line-height:1.55;color:var(--text-secondary)}.approval div{display:flex;gap:7px;flex-wrap:wrap}.approval .approve{background:var(--accent);color:white}.approval .cancel{border:1px solid var(--border);background:transparent;color:var(--text-primary)}.analysis-result{margin-top:10px;padding:10px;border:1px solid var(--border);border-radius:5px;background:var(--bg-surface)}.analysis-result strong{font-size:11px}.analysis-result p{white-space:pre-wrap;font-size:10px;line-height:1.6;color:var(--text-secondary)}
   .empty{min-height:140px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--text-muted);text-align:center;font-size:9px}.empty strong{color:var(--text-primary);font-size:11px}.empty span{max-width:280px;line-height:1.5}
 </style>
