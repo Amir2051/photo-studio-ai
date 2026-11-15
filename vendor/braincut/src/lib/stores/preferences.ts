@@ -27,8 +27,7 @@ export interface Preferences {
   audioScrubbing: boolean;
   timecodeFormat: 'timecode' | 'frames' | 'seconds';
   thumbnailSize: number;
-  // the tab keeps a socket to a braincut-mcp server on this machine so claude
-  // code can drive the editor; off unless asked for
+  // session-only consent: never restore a localhost agent connection on reload
   claudeBridge: boolean;
   claudePort: number;
 }
@@ -58,7 +57,7 @@ function createPreferencesStore() {
   if (browser) {
     try {
       const stored = localStorage.getItem('braincut-preferences');
-      if (stored) initial = { ...defaults, ...JSON.parse(stored) };
+      if (stored) initial = { ...defaults, ...JSON.parse(stored), claudeBridge: false };
     } catch {}
   }
 
@@ -69,14 +68,16 @@ function createPreferencesStore() {
     set(value: Preferences) {
       set(value);
       if (browser) {
-        localStorage.setItem('braincut-preferences', JSON.stringify(value));
+        // A localhost agent connection is a session consent, not a durable preference.
+        localStorage.setItem('braincut-preferences', JSON.stringify({ ...value, claudeBridge: false }));
       }
     },
     update(fn: (prefs: Preferences) => Preferences) {
       update((current) => {
         const next = fn(current);
         if (browser) {
-          localStorage.setItem('braincut-preferences', JSON.stringify(next));
+          // Never restore local-agent consent automatically on a later visit.
+          localStorage.setItem('braincut-preferences', JSON.stringify({ ...next, claudeBridge: false }));
         }
         return next;
       });

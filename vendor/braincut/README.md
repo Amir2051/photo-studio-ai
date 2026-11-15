@@ -58,7 +58,7 @@ There's no magic and no backend.
 
 brainCUT can be cut by [Claude Code](https://claude.com/claude-code) while you watch. [braincut-mcp](https://github.com/swimmingbrain/braincut-mcp) is a small MCP server that runs on your machine; the tab connects to it over localhost and Claude gets tools to import media, place and trim clips, add titles, transitions, effects and keyframes, look at a frame, and export.
 
-Register the server with Claude Code, then open [cut.swimmingbrain.dev/editor?claude](https://cut.swimmingbrain.dev/editor?claude). The status bar shows a `Claude` segment: amber while it waits for the server, green once connected, and after that the name of whatever Claude did last. Every tool call is one undo step, so Ctrl+Z walks back through Claude's work like your own. The switch lives under Preferences, Claude Code, and in the command palette; it is off unless you turn it on, and the socket only ever points at `127.0.0.1`.
+Register the server with Claude Code, then open the editor and explicitly enable **Connect to Claude Code** under Preferences. The connection is session-only: it is never restored automatically on a later visit, and URL parameters cannot enable it. The status bar shows the connection state and the last action. Read-only inspection tools do not require confirmation; every tool that changes project state or uploads an export requires a separate approval in the visible editor tab. Export approval identifies the destination, and uploads require HTTPS (HTTP is permitted only for loopback development destinations). Denying or being unable to display an approval prompt rejects the operation.
 
 ## Keyboard shortcuts
 

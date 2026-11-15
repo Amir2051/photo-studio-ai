@@ -22,6 +22,7 @@ let retry: ReturnType<typeof setTimeout> | null = null;
 // set when another tab took the connection, so this one stops trying
 let replaced = false;
 let announced = false;
+const inFlight = new Set<string>();
 
 function send(message: TabMessage): void {
   if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
@@ -41,14 +42,47 @@ function summarize(tool: string, result: unknown): string {
     : tool.replace(/_/g, ' ');
 }
 
+function requestUserApproval(request: { tool: string; summary: string; warning?: string }): Promise<boolean> {
+  // Do not let a background tab, unsupported browser, or blocked dialog approve work.
+  if (typeof window === 'undefined' || typeof document === 'undefined' || document.visibilityState !== 'visible') {
+    return Promise.resolve(false);
+  }
+  if (typeof window.confirm !== 'function') return Promise.resolve(false);
+  const detail = [
+    `The connected local agent wants to: ${request.summary}.`,
+    request.warning ?? 'This operation may change the open project.',
+    '',
+    'Allow this one operation?'
+  ].join('\n\n');
+  try {
+    return Promise.resolve(window.confirm(detail));
+  } catch {
+    return Promise.resolve(false);
+  }
+}
+
+function isCallMessage(value: unknown): value is CallMessage {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const message = value as Record<string, unknown>;
+  return message.type === 'call'
+    && typeof message.id === 'string' && message.id.length > 0 && message.id.length <= 128
+    && typeof message.tool === 'string' && message.tool.length > 0 && message.tool.length <= 128
+    && !!message.args && typeof message.args === 'object' && !Array.isArray(message.args);
+}
+
 async function handleCall(call: CallMessage): Promise<void> {
+  if (inFlight.has(call.id)) {
+    send({ type: 'result', id: call.id, ok: false, error: 'Duplicate in-flight call id' });
+    return;
+  }
+  inFlight.add(call.id);
   claude.update((c) => ({
     ...c,
     calls: c.calls + 1,
     lastAction: `${call.tool.replace(/_/g, ' ')}…`,
   }));
   try {
-    const result = await runTool(call.tool, call.args ?? {}, { emit });
+    const result = await runTool(call.tool, call.args ?? {}, { emit, approve: requestUserApproval });
     send({ type: 'result', id: call.id, ok: true, result });
     claude.update((c) => ({ ...c, lastAction: summarize(call.tool, result) }));
   } catch (error) {
@@ -58,29 +92,50 @@ async function handleCall(call: CallMessage): Promise<void> {
       ...c,
       lastAction: `${call.tool.replace(/_/g, ' ')} failed: ${message}`,
     }));
+  } finally {
+    inFlight.delete(call.id);
   }
 }
 
 function onMessage(event: MessageEvent): void {
+  const raw = typeof event.data === 'string' ? event.data : '';
+  if (!raw || raw.length > 128 * 1024) return;
   let message: ServerMessage;
   try {
-    message = JSON.parse(String(event.data)) as ServerMessage;
+    message = JSON.parse(raw) as ServerMessage;
   } catch {
     return;
   }
+  if (!message || typeof message !== 'object') return;
   switch (message.type) {
     case 'welcome':
+      if (message.protocol !== PROTOCOL_VERSION) {
+        addToast('Local agent protocol mismatch. Connection refused.', 'error', 6000);
+        preferences.update((p) => ({ ...p, claudeBridge: false }));
+        return;
+      }
       attempts = 0;
       claude.update((c) => ({ ...c, state: 'connected', port }));
-      if (!announced) addToast('Claude Code connected', 'success');
+      if (!announced) addToast('Local agent connected. Project changes require approval.', 'success');
       announced = true;
       break;
     case 'call':
+      if (!isCallMessage(message)) {
+        const id = (message as { id?: unknown }).id;
+        if (typeof id === 'string' && id.length > 0 && id.length <= 128) {
+          send({ type: 'result', id, ok: false, error: 'Invalid agent call payload' });
+        }
+        break;
+      }
+      if (JSON.stringify(message).length > 64 * 1024) {
+        send({ type: 'result', id: message.id, ok: false, error: 'Agent call payload exceeds the 64 KB limit' });
+        break;
+      }
       void handleCall(message);
       break;
     case 'replaced':
       replaced = true;
-      addToast('Another tab took over the Claude Code connection', 'info', 5000);
+      addToast('Another tab took over the local agent connection', 'info', 5000);
       break;
   }
 }
@@ -154,19 +209,9 @@ function disconnect(): void {
   if (open) addToast('Claude Code disconnected', 'info');
 }
 
-// wires the bridge to the preference: on means keep a connection up, off
-// means drop it. opening the editor with ?claude (or ?claude=PORT) switches
-// the preference on, which is how the readme tells people to start
+// The bridge only follows an explicit user preference. URL parameters never
+// enable a localhost connection or change its port.
 export function installClaudeBridge(): () => void {
-  const flag = new URL(location.href).searchParams.get('claude');
-  if (flag !== null) {
-    const asked = Number(flag);
-    preferences.update((p) => ({
-      ...p,
-      claudeBridge: true,
-      claudePort: Number.isInteger(asked) && asked > 0 && asked < 65536 ? asked : p.claudePort,
-    }));
-  }
   const unsubscribe = preferences.subscribe((p) => {
     if (p.claudeBridge) {
       if (!wanted || p.claudePort !== port) {
