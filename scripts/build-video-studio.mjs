@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync, rmSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -36,7 +36,6 @@ if (!existsSync(path.join(editorBuild, 'index.html'))) {
   throw new Error('The nested editor build did not produce build/index.html.');
 }
 
-rmSync(publishedEditor, { recursive: true, force: true });
 mkdirSync(path.dirname(publishedEditor), { recursive: true });
 cpSync(editorBuild, publishedEditor, { recursive: true });
 console.log('Synced vendor/braincut/build into public/video-studio.');
