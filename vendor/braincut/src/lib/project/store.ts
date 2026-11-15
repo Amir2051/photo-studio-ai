@@ -6,6 +6,8 @@ import { linkedClips } from './ops';
 import { selection } from '#lib/stores/app.ts';
 
 export const project: Writable<Project | null> = writable(null);
+export const isPreviewing = writable(false);
+export const projectSession = writable(0);
 
 export const activeSequence: Readable<Sequence | null> = derived(project, ($p) => {
   if (!$p) return null;
@@ -37,9 +39,13 @@ function syncHistory(): void {
 
 // a preview in flight: the state before it and what has been applied since
 let previewBase: Project | null = null;
+let previewCommitOnEdit = true;
 
 export function edit(label: string, recipe: (draft: Project) => void): void {
-  if (previewBase) commitPreview(label);
+  if (previewBase) {
+    if (previewCommitOnEdit) commitPreview(label);
+    else cancelPreview();
+  }
   const current = get(project);
   if (!current) return;
   const [next, patches, inverse] = produceWithPatches(current, (draft) => {
@@ -64,11 +70,15 @@ export function editSequence(label: string, recipe: (seq: Sequence, draft: Proje
 // live drags: apply on top of the current state without touching history.
 // each call stacks on the previous preview, so a drag either writes absolute
 // values captured at its start or incremental deltas, both work
-export function preview(recipe: (draft: Project) => void): void {
+export function preview(recipe: (draft: Project) => void, options: { commitOnEdit?: boolean } = {}): void {
+  const commitOnEdit = options.commitOnEdit ?? true;
+  if (previewBase && previewCommitOnEdit !== commitOnEdit) cancelPreview();
   const current = get(project);
   if (!current) return;
   previewBase ??= current;
+  previewCommitOnEdit = commitOnEdit;
   project.set(produce(current, recipe));
+  isPreviewing.set(true);
 }
 
 function diffPatches(base: Project, next: Project): { patches: Patch[]; inverse: Patch[] } {
@@ -96,6 +106,8 @@ function diffPatches(base: Project, next: Project): { patches: Patch[]; inverse:
 export function commitPreview(label: string): void {
   const base = previewBase;
   previewBase = null;
+  previewCommitOnEdit = true;
+  isPreviewing.set(false);
   const current = get(project);
   if (!base || !current || base === current) return;
   const stamped = produce(current, (draft) => {
@@ -111,6 +123,8 @@ export function commitPreview(label: string): void {
 export function cancelPreview(): void {
   const base = previewBase;
   previewBase = null;
+  previewCommitOnEdit = true;
+  isPreviewing.set(false);
   if (base) project.set(base);
 }
 
@@ -148,6 +162,9 @@ export function seekHistory(index: number): void {
 
 export function loadProject(p: Project): void {
   previewBase = null;
+  previewCommitOnEdit = true;
+  isPreviewing.set(false);
+  projectSession.update((session) => session + 1);
   undoStack.clear();
   // frozen like everything immer produces, so a stray mutation fails loudly
   project.set(freeze(p, true));
@@ -159,6 +176,9 @@ export function loadProject(p: Project): void {
 
 export function closeProject(): void {
   previewBase = null;
+  previewCommitOnEdit = true;
+  isPreviewing.set(false);
+  projectSession.update((session) => session + 1);
   undoStack.clear();
   project.set(null);
   selection.set([]);
@@ -168,6 +188,7 @@ export function closeProject(): void {
 
 // which sequence is open is saved in the file but is not an undo step
 export function setActiveSequence(sequenceId: Id): void {
+  if (previewBase) cancelPreview();
   const current = get(project);
   if (!current || current.activeSequenceId === sequenceId) return;
   if (!current.sequences.some((s) => s.id === sequenceId)) return;

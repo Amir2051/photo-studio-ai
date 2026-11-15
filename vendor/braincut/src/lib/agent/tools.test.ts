@@ -4,6 +4,7 @@ import { runTool } from './tools';
 import { createProject, createSequence } from '#lib/project/defaults.ts';
 import { activeSequence, history, loadProject } from '#lib/project/store.ts';
 import { selection } from '#lib/stores/app.ts';
+import { clearProposals, editProposals } from './proposals.ts';
 import type { MediaItem } from '#lib/project/types.ts';
 
 function media(): MediaItem {
@@ -37,6 +38,7 @@ function media(): MediaItem {
 }
 
 function fresh(): void {
+  clearProposals();
   const p = createProject('test');
   const s = createSequence({ name: 'Sequence 1', width: 1920, height: 1080, fps: 25 });
   p.sequences.push(s);
@@ -311,6 +313,38 @@ describe('agent tools', () => {
   it('rejects insecure or credential-bearing export destinations', async () => {
     await expect(run('export', { jobId: 'test-job', uploadUrl: 'http://example.com/upload' })).rejects.toThrow(/require HTTPS/);
     await expect(run('export', { jobId: 'test-job', uploadUrl: 'https://user:pass@example.com/upload' })).rejects.toThrow(/URL credentials/);
+  });
+
+  it('creates typed edit proposals without changing the project', async () => {
+    const result = await runTool('propose_edits', {
+      title: 'Tighten the opening',
+      summary: 'Remove the dead air and bring the first shot forward.',
+      operations: [
+        {
+          tool: 'add_clip',
+          args: { mediaId: 'm1', at: 2, sourceIn: 0, sourceOut: 4 },
+          summary: 'Place the opening shot at 00:00:02',
+          rationale: 'Start the sequence with the clearest visual.',
+        },
+      ],
+    }, { emit() {} }) as Any;
+    expect(result.operationCount).toBe(1);
+    expect(result.summary).toMatch(/No project changes have been made/);
+    expect(get(editProposals)).toHaveLength(1);
+    expect(get(editProposals)[0].operations[0]).toMatchObject({ tool: 'add_clip', status: 'pending' });
+    expect(get(activeSequence)!.tracks[0].clips).toHaveLength(0);
+    expect(get(history).entries).toHaveLength(0);
+  });
+
+  it('rejects unsafe or malformed proposal operations', async () => {
+    await expect(runTool('propose_edits', {
+      operations: [{ tool: 'export', args: {}, summary: 'Upload the whole project' }],
+    }, { emit() {} })).rejects.toThrow(/Unsupported proposal tool/);
+    await expect(runTool('propose_edits', {
+      operations: [{ tool: 'delete_clips', args: { clipIds: [] }, summary: 'Delete nothing' }],
+    }, { emit() {} })).rejects.toThrow(/between 1 and 50 clip IDs/);
+    expect(get(editProposals)).toHaveLength(0);
+    expect(get(history).entries).toHaveLength(0);
   });
 
   it('rejects tools it does not have', async () => {
