@@ -5,8 +5,9 @@
   import { getBlob } from '#lib/media/sources.ts';
   import { filmstripFrames } from '#lib/media/thumbnails.ts';
   import type { MediaItem } from '#lib/project/types.ts';
+  import { getStudioAuth } from './studioAuth';
 
-  const apiBase = (import.meta.env.VITE_RZ_AGENT_URL || 'https://rz-ai.safenestt.com').replace(/\/$/, '');
+  const apiBase = (import.meta.env.VITE_MIA_API_BASE_URL || 'https://every-frame-first-mia.onrender.com/api/mia').replace(/\/$/, '');
 
   let { onClose, onUseAnalysis }: { onClose: () => void; onUseAnalysis: (analysis: string) => void } = $props();
   type Candidate = { key: string; mediaId: string; mediaName: string; clipName: string; sequenceTime: number; sourceTime: number };
@@ -120,7 +121,8 @@
 
   async function loadVisionStatus(): Promise<void> {
     try {
-      const response = await fetch(new URL('/v1/studio/vision/status', apiBase), { credentials: 'include' });
+      const auth = await getStudioAuth();
+      const response = await fetch(apiBase + '/vision/status', { headers: { Authorization: 'Bearer ' + auth.token }, credentials: 'omit' });
       if (!response.ok) throw new Error('Vision service status unavailable.');
       visionStatus = await response.json();
     } catch {
@@ -135,10 +137,11 @@
     analysisError = '';
     analysis = '';
     try {
-      const response = await fetch(new URL('/v1/studio/vision/analyze', apiBase), {
+      const auth = await getStudioAuth();
+      const response = await fetch(apiBase + '/vision/analyze', {
         method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
+        credentials: 'omit',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + auth.token },
         body: JSON.stringify({
           instruction: 'Analyze these selected frames for visible scenes, shot composition, continuity, visual quality, and useful editing opportunities. Identify the timestamps when making observations.',
           frames: selected.map((frame) => ({
@@ -149,7 +152,7 @@
         }),
       });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Visual analysis request failed.');
+      if (!response.ok) throw new Error(typeof data.error === 'string' ? data.error : 'Visual analysis request failed.');
       analysis = data.analysis || 'No analysis was returned.';
       showApproval = false;
     } catch (cause) {
