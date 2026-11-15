@@ -24,7 +24,7 @@ function fresh(): void {
   loadProject(p);
 }
 
-const ctx = { emit() {} };
+const ctx = { emit() {}, approve: async () => true };
 type Any = Record<string, any>;
 const run = (tool: string, args: Record<string, unknown> = {}): Promise<Any> => runTool(tool, args, ctx) as Promise<Any>;
 
@@ -212,6 +212,18 @@ describe('agent tools', () => {
     const made = await run('new_project', { name: 'next' });
     expect(made.name).toBe('next');
     expect((await run('status')).project.name).toBe('next');
+  });
+
+  it('requires explicit approval for every project-changing tool', async () => {
+    await expect(runTool('add_clip', { mediaId: 'm1' }, { emit() {} })).rejects.toThrow(/requires explicit user approval/);
+    await expect(runTool('add_clip', { mediaId: 'm1' }, { emit() {}, approve: async () => false })).rejects.toThrow(/denied/);
+    expect((await run('get_timeline')).tracks[0].clips).toHaveLength(0);
+    await expect(runTool('status', {}, { emit() {} })).resolves.toMatchObject({ project: { name: 'test' } });
+  });
+
+  it('rejects insecure or credential-bearing export destinations', async () => {
+    await expect(run('export', { jobId: 'test-job', uploadUrl: 'http://example.com/upload' })).rejects.toThrow(/require HTTPS/);
+    await expect(run('export', { jobId: 'test-job', uploadUrl: 'https://user:pass@example.com/upload' })).rejects.toThrow(/URL credentials/);
   });
 
   it('rejects tools it does not have', async () => {

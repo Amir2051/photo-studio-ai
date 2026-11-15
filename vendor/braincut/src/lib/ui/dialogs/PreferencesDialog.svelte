@@ -368,8 +368,8 @@
       <ToggleField value={$preferences.claudeBridge} label="Connect to Claude Code" onchange={(v) => set('claudeBridge', v)} />
     </Field>
     <p class="help">
-      Lets Claude Code drive the editor through the braincut-mcp server running on this machine. The tab talks to it over localhost only;
-      the status bar shows what it is doing. Opening the editor with ?claude in the address switches this on too.
+      Connects to the local braincut-mcp service on this machine. This connection is off until you enable it here. The agent may inspect the open project;
+      every operation that changes the project or uploads an export requires a separate confirmation in this tab. Background tabs and unavailable approval dialogs fail closed.
     </p>
     <Field label="Port">
       <NumberField value={$preferences.claudePort} min={1024} max={65535} step={1} precision={0} label="Claude Code port" onchange={(v) => set('claudePort', Math.round(v))} />

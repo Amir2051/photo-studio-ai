@@ -68,12 +68,73 @@ import type { ExportProgress } from './protocol';
 
 export type ToolArgs = Record<string, unknown>;
 
+export interface ToolApprovalRequest {
+  tool: string;
+  summary: string;
+  warning?: string;
+}
+
 export interface ToolContext {
   // something happened that the server did not ask about, export progress mostly
   emit(name: string, data: unknown): void;
+  // Every non-read-only tool must obtain a fresh, per-call user approval.
+  // Missing approval handlers fail closed; there is no agent-side bypass.
+  approve?: (request: ToolApprovalRequest) => Promise<boolean>;
 }
 
 type Handler = (args: ToolArgs, ctx: ToolContext) => Promise<unknown> | unknown;
+
+const READ_ONLY_TOOLS = new Set(['status', 'get_timeline', 'list_media', 'catalog']);
+
+function approvalRequest(tool: string, args: ToolArgs): ToolApprovalRequest {
+  const id = (key: string) => typeof args[key] === 'string' ? String(args[key]).replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) : '';
+  const count = Array.isArray(args.clipIds) ? args.clipIds.length : 0;
+  const summaries: Record<string, string> = {
+    add_clip: `add media ${id('mediaId') || 'to the timeline'}`,
+    add_title: `add a title clip${id('text') ? ` (${id('text')})` : ''}`,
+    split: 'split a timeline clip',
+    trim: 'trim a timeline clip',
+    move_clip: 'move a timeline clip',
+    delete_clips: `delete ${count || 'selected'} timeline clip(s)`,
+    set_clip: 'change clip properties',
+    add_transition: 'add a timeline transition',
+    add_effect: 'add an effect to a clip',
+    set_effect: 'change a clip effect',
+    remove_effect: 'remove an effect from a clip',
+    add_keyframe: 'change clip animation with a keyframe',
+    add_marker: 'add a timeline marker',
+    new_sequence: 'create a new sequence',
+    set_active_sequence: 'switch the active sequence',
+    select: 'change the timeline selection',
+    new_project: `create project ${id('name') || '(unnamed)'}`,
+    save_project: 'save the current project file',
+    undo: 'undo the last project edit',
+    redo: 'redo a project edit',
+    export: 'export the current sequence'
+  };
+  const request: ToolApprovalRequest = {
+    tool,
+    summary: summaries[tool] ?? `run ${tool.replace(/_/g, ' ')}`
+  };
+  if (tool === 'new_project' && args.force === true) {
+    request.warning = 'This may replace the currently open project and discard unsaved work.';
+  } else if (tool === 'delete_clips') {
+    request.warning = 'This changes the timeline. You can use Undo after approval.';
+  } else if (tool === 'export') {
+    const raw = typeof args.uploadUrl === 'string' ? args.uploadUrl : '';
+    try {
+      const destination = new URL(raw);
+      request.summary += ` and upload the rendered media to ${destination.origin}${destination.pathname.slice(0, 120)}`;
+      request.warning = 'The rendered media will leave this browser and be sent to that destination.';
+    } catch {
+      request.summary += ' and upload the rendered media to a supplied destination';
+      request.warning = 'The rendered media will leave this browser.';
+    }
+  } else {
+    request.warning = 'This operation changes the open project. It will be recorded in the editor history when supported.';
+  }
+  return request;
+}
 
 const labels: Label[] = [
   'none', 'violet', 'iris', 'caribbean', 'lavender', 'cerulean', 'forest', 'rose', 'mango',
@@ -1001,6 +1062,16 @@ const handlers: Record<string, Handler> = {
   async export({ jobId, uploadUrl, preset, sequenceId, path }, ctx) {
     const job = str(jobId, 'jobId');
     const url = str(uploadUrl, 'uploadUrl');
+    let destination: URL;
+    try {
+      destination = new URL(url);
+    } catch {
+      throw new Error('uploadUrl must be an absolute HTTPS URL (or HTTP loopback URL)');
+    }
+    const loopback = destination.hostname === 'localhost' || destination.hostname === '127.0.0.1' || destination.hostname === '[::1]';
+    if (destination.username || destination.password || !['https:', 'http:'].includes(destination.protocol) || (destination.protocol === 'http:' && !loopback)) {
+      throw new Error('Export uploads require HTTPS; HTTP is allowed only for localhost. URL credentials are not allowed.');
+    }
     const seq = sequenceOf(requireProject(), sequenceId);
     if (get(exportJob)) throw new Error('An export is already running');
     const presetsModule = await import('$lib/export/presets');
@@ -1076,5 +1147,11 @@ export const toolNames = Object.keys(handlers);
 export async function runTool(name: string, args: ToolArgs, ctx: ToolContext): Promise<unknown> {
   const handler = handlers[name];
   if (!handler) throw new Error(`Unknown tool "${name}"`);
-  return await handler(args ?? {}, ctx);
+  const safeArgs = args ?? {};
+  if (!READ_ONLY_TOOLS.has(name)) {
+    if (!ctx.approve) throw new Error(`Tool "${name}" requires explicit user approval; no approval handler is available`);
+    const approved = await ctx.approve(approvalRequest(name, safeArgs));
+    if (approved !== true) throw new Error(`User denied or did not approve tool "${name}"`);
+  }
+  return await handler(safeArgs, ctx);
 }
