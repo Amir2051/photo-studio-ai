@@ -143,6 +143,7 @@
         credentials: 'omit',
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + auth.token },
         body: JSON.stringify({
+          approved: true,
           instruction: 'Analyze these selected frames for visible scenes, shot composition, continuity, visual quality, and useful editing opportunities. Identify the timestamps when making observations.',
           frames: selected.map((frame) => ({
             timestamp_seconds: frame.sequenceTime,
