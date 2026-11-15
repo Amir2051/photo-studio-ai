@@ -4,6 +4,8 @@
   import { activeSequence, project } from '#lib/project/store.ts';
   import { addToast } from '#lib/stores/app.ts';
   import { createEditProposal } from '#lib/agent/proposals.ts';
+  import { pendingVisualAnalysis } from '#lib/agent/visual-analysis.ts';
+  import { bottomPanelTab } from '#lib/stores/app.ts';
   import VisualFrameReview from './VisualFrameReview.svelte';
   import { getStudioAuth } from './studioAuth';
 
@@ -176,6 +178,13 @@
   }
 
   $effect(() => { void checkSession(); });
+
+  $effect(() => {
+    const approvedAnalysis = $pendingVisualAnalysis;
+    if (!approvedAnalysis) return;
+    draft = 'Use this approved visual analysis as context for my editing request. Treat it as observations from selected still frames, not a complete review of the video.\n\n' + approvedAnalysis;
+    pendingVisualAnalysis.set(null);
+  });
 </script>
 
 <div class="mia-panel">
@@ -199,7 +208,7 @@
       {#if error}<p class="error">{error}</p>{/if}
     </div>
   {:else}
-    <div class="context-strip"><Icon name="film" size={13} /><span>{$project?.name ?? 'No project open'}</span><span class="context-divider">·</span><span>{$activeSequence?.name ?? 'No active sequence'}</span><button class="visual-open" onclick={() => visualReviewOpen = !visualReviewOpen}><Icon name="scan-search" size={12} />{visualReviewOpen ? 'Chat' : 'Sample frames'}</button></div>
+    <div class="context-strip"><Icon name="film" size={13} /><span>{$project?.name ?? 'No project open'}</span><span class="context-divider">·</span><span>{$activeSequence?.name ?? 'No active sequence'}</span><button class="visual-open" onclick={() => bottomPanelTab.set('visual-intelligence')}><Icon name="scan-search" size={12} />Visual Intelligence</button></div>
     {#if visualReviewOpen}
       <VisualFrameReview onClose={() => visualReviewOpen = false} onUseAnalysis={(result) => { draft = 'Use this approved visual analysis as context for my editing request. Treat it as observations from selected still frames, not a complete review of the video.\n\n' + result; visualReviewOpen = false; }} />
     {:else}

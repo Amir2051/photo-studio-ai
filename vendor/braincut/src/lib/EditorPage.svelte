@@ -24,6 +24,7 @@
   import TextPanel from '#lib/ui/TextPanel.svelte';
   import AIReviewPanel from '#lib/ui/AIReviewPanel.svelte';
   import MIAChatPanel from '#lib/ui/MIAChatPanel.svelte';
+  import VisualFrameReview from '#lib/ui/VisualFrameReview.svelte';
   import Timeline from '#lib/ui/timeline/Timeline.svelte';
 
   import { activeSequence, cancelPreview, isPreviewing, project, projectSession } from '#lib/project/store.ts';
@@ -33,6 +34,7 @@
   import { installShortcuts } from '#lib/editor/shortcuts.ts';
   import { installClaudeBridge } from '#lib/agent/bridge.ts';
   import { activeProposalPreview, clearProposals, pendingProposalCount } from '#lib/agent/proposals.ts';
+  import { pendingVisualAnalysis } from '#lib/agent/visual-analysis.ts';
   import { buildCommands } from '#lib/editor/commands.ts';
   import { exportCurrentFrame } from '#lib/editor/export-actions.ts';
   import {
@@ -78,6 +80,7 @@
     { id: 'markers', label: 'Markers' },
     { id: 'history', label: 'History' },
     { id: 'mia', label: 'MIA' },
+    { id: 'visual-intelligence', label: 'Visual Intelligence' },
     { id: 'ai-review', label: 'AI Review', badge: $pendingProposalCount }
   ]);
 
@@ -254,6 +257,13 @@
             <MarkersPanel />
           {:else if $bottomPanelTab === 'ai-review'}
             <AIReviewPanel />
+          {:else if $bottomPanelTab === 'visual-intelligence'}
+            <VisualFrameReview
+              onClose={() => bottomPanelTab.set('mia')}
+              onUseAnalysis={(result) => {
+                pendingVisualAnalysis.set(result);
+                bottomPanelTab.set('mia');
+              }} />
           {:else if $bottomPanelTab === 'mia'}
             <MIAChatPanel />
           {:else}
