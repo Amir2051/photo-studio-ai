@@ -52,7 +52,7 @@ export const sourceMedia = writable<{
 } | null>(null);
 
 export type LeftPanelTab = 'source' | 'effect-controls' | 'audio-mixer' | 'color' | 'multicam';
-export type BottomPanelTab = 'project' | 'effects' | 'markers' | 'history' | 'text' | 'ai-review';
+export type BottomPanelTab = 'project' | 'effects' | 'markers' | 'history' | 'text' | 'ai-review' | 'mia';
 export const leftPanelTab = writable<LeftPanelTab>('source');
 export const bottomPanelTab = writable<BottomPanelTab>('project');
 

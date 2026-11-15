@@ -23,6 +23,7 @@
   import HistoryPanel from '#lib/ui/HistoryPanel.svelte';
   import TextPanel from '#lib/ui/TextPanel.svelte';
   import AIReviewPanel from '#lib/ui/AIReviewPanel.svelte';
+  import MIAChatPanel from '#lib/ui/MIAChatPanel.svelte';
   import Timeline from '#lib/ui/timeline/Timeline.svelte';
 
   import { activeSequence, cancelPreview, isPreviewing, project, projectSession } from '#lib/project/store.ts';
@@ -76,6 +77,7 @@
     { id: 'text', label: 'Text' },
     { id: 'markers', label: 'Markers' },
     { id: 'history', label: 'History' },
+    { id: 'mia', label: 'MIA' },
     { id: 'ai-review', label: 'AI Review', badge: $pendingProposalCount }
   ]);
 
@@ -252,6 +254,8 @@
             <MarkersPanel />
           {:else if $bottomPanelTab === 'ai-review'}
             <AIReviewPanel />
+          {:else if $bottomPanelTab === 'mia'}
+            <MIAChatPanel />
           {:else}
             <HistoryPanel />
           {/if}
