@@ -121,9 +121,21 @@
       project: { id: current.id, name: current.name, mediaCount: current.media.length, sequenceCount: current.sequences.length },
       activeSequence: { id: sequence.id, name: sequence.name, width: sequence.width, height: sequence.height, fps: sequence.fps, sampleRate: sequence.sampleRate },
       media, tracks,
-      markers: sequence.markers.slice(0, 100).map((marker) => ({ timeSeconds: marker.time, name: marker.name, color: marker.color })),
+      markers: sequence.markers.slice(0, 60).map((marker) => ({ timeSeconds: marker.time, name: marker.name, color: marker.color })),
     };
-    return 'CURRENT STUDIO PROJECT CONTEXT (metadata only; no video/audio bytes or frames have been uploaded or visually inspected):\n' + JSON.stringify(context).slice(0, 18000);
+    // ChatRequest.system is capped at 12 KB. Keep JSON complete and reserve room
+    // for the editing policy above it instead of slicing a malformed JSON string.
+    let encoded = JSON.stringify(context);
+    while (encoded.length > 8200) {
+      const largestTrack = tracks.reduce((best, item) => item.clips.length > best.clips.length ? item : best, tracks[0]);
+      if (largestTrack?.clips.length) largestTrack.clips.pop();
+      else if (media.length > 1) media.pop();
+      else if (context.markers.length > 1) context.markers.pop();
+      else if (tracks.length > 1) tracks.pop();
+      else break;
+      encoded = JSON.stringify(context);
+    }
+    return 'CURRENT STUDIO PROJECT CONTEXT (metadata only; no video/audio bytes or frames have been uploaded or visually inspected):\n' + encoded;
   }
 
   function extractProposal(reply: string): { visible: string; payload: any | null } {
