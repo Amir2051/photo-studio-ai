@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useLayoutEffect, useRef } from 'react';
 import { auth, getCurrentFirebaseIdToken } from '../lib/firebase';
 
 type VideoStudioFrameProps = {
@@ -9,7 +9,7 @@ type VideoStudioFrameProps = {
 export default function VideoStudioFrame({ onBack }: VideoStudioFrameProps): React.JSX.Element {
   const frameRef = useRef<HTMLIFrameElement>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const handleAuthRequest = async (event: MessageEvent) => {
       const frame = frameRef.current;
       if (!frame?.contentWindow || event.origin !== window.location.origin || event.source !== frame.contentWindow) return;
