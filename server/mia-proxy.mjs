@@ -124,13 +124,13 @@ export function createMiaProxyServer({
     }
 
     const upstreamBase = config.rzAgentUrl.replace(/\/$/, '');
-    const upstreamHeaders = { 'X-Api-Key': config.serviceApiKey, 'Content-Type': 'application/json' };
+    const upstreamHeaders = { 'X-Api-Key': config.serviceApiKey, 'X-Studio-User-Id': userId, 'Content-Type': 'application/json' };
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), config.timeoutMs || 45000);
     try {
       if (req.method === 'GET' && req.url === '/api/mia/vision/status') {
         const upstream = await fetchImpl(upstreamBase + '/v1/studio/vision/status', {
-          method: 'GET', headers: { 'X-Api-Key': config.serviceApiKey }, signal: controller.signal,
+          method: 'GET', headers: { 'X-Api-Key': config.serviceApiKey, 'X-Studio-User-Id': userId }, signal: controller.signal,
         });
         const data = await upstream.json().catch(() => ({}));
         return json(res, upstream.status, data, corsHeaders);
