@@ -24,3 +24,8 @@ MIA may return a bounded `edit_proposal` JSON block. The studio validates every 
 - This branch is not deployed.
 - The project context is metadata-only; no video vision/audio analysis or automatic footage upload is implemented.
 - Chat history/session ID is held in component memory; signing out clears it.
+
+
+## Local visual frame sampling
+
+The MIA panel includes a Visual Intelligence frame sampler for the active sequence. It reads original media locally through the editor's existing media source and Mediabunny thumbnail pipeline, samples up to 30 frames at a user-selected interval, and presents a contact sheet with per-frame selection. Frame pixels are held as browser-local data URLs for review only; they are not added to the RZ Agent chat payload, uploaded, persisted to the project, or sent to any provider. The UI currently offers a timestamp-list copy action, not a frame-send action. Vision analysis remains intentionally disconnected until a provider/model is selected and an explicit per-send approval flow is implemented.
