@@ -218,7 +218,7 @@
           {:else if $leftPanelTab === 'color'}
             <ColorPanel />
           {:else if $leftPanelTab === 'multicam'}
-            <SourceMonitor />
+            <MulticamEditor />
           {:else}
             <AudioMixer />
           {/if}
@@ -230,11 +230,7 @@
       </div>
 
       <section class="panel program" data-panel="program" tabindex="-1">
-        {#if $leftPanelTab === 'multicam'}
-          <MulticamEditor />
-        {:else}
-          <ProgramMonitor />
-        {/if}
+        <ProgramMonitor />
       </section>
 
       <div class="rz rz-h">
