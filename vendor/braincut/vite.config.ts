@@ -4,8 +4,14 @@ import adapter from '@sveltejs/adapter-static';
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vite';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const configDir = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
+  // Reuse the parent Studio's public Firebase web-app config for standalone video-studio login.
+  envDir: path.resolve(configDir, '../..'),
   plugins: [
     tailwindcss(),
     sveltekit({
