@@ -35,8 +35,9 @@
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      const detail = typeof data?.error === 'string' ? data.error : 'MIA request failed (' + response.status + ').';
-      throw new Error(detail);
+      const detail = [data?.error, data?.detail, data?.message].find((value) => typeof value === 'string' && value.trim()) || 'MIA request failed (' + response.status + ').';
+      const requestId = typeof data?.requestId === 'string' ? ' (request ' + data.requestId + ')' : '';
+      throw new Error(detail + requestId);
     }
     return data;
   }
