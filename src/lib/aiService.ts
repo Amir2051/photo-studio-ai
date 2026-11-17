@@ -1,165 +1,127 @@
-// AI Service — Configurable provider abstraction
-// Supports: OpenAI, Anthropic, Google, OpenRouter, Ollama, Offline (deterministic fallback)
-
-import { AiMessage, AiMessageContext, ScenePrompt, SceneAnalysis } from './types';
-import { generateId, formatDate } from './utils';
+import type { AiMessage, AiMessageContext, ScenePrompt } from './types';
 
 export interface AiProvider {
   name: string;
   supportsImages: boolean;
   getModel(): string;
   chat(messages: AiMessage[], options?: { context?: AiMessageContext }): Promise<string>;
-  generateScene(imageBase64: string, prompt: string, options?: {}): Promise<ScenePrompt[]>;
+  generateScene(
+    imageBase64: string,
+    prompt: string,
+    options?: Record<string, unknown>,
+  ): Promise<ScenePrompt[]>;
   canUploadToCloud(): boolean;
 }
 
-// ── Offline deterministic fallback ─────────────────────────────────────
+/** Local guidance only. It never claims to generate or analyze images. */
 export class OfflineProvider implements AiProvider {
-  name: string;
-  supportsImages: boolean;
-  private model: string = 'offline-fallback';
-
-  constructor() {
-    this.name = 'offline';
-    this.supportsImages = false;
-  }
-
+  name = 'offline';
+  supportsImages = false;
   getModel(): string {
-    return this.model;
+    return 'local-guidance';
   }
-
-  async chat(_messages: AiMessage[], _options?: { context?: AiMessageContext }): Promise<string> {
-    const last = _messages[_messages.length - 1];
-    if (last && last.content.toLowerCase().includes('help')) {
-      return 'I can help with: brightness, contrast, warmth, coolness, film/fade, vintage, mood, color enhancement, and applying styles. Try a phrase like "make this brighter" or "give it a vintage look"!';
+  async chat(messages: AiMessage[]): Promise<string> {
+    const text = messages.at(-1)?.content.toLowerCase() ?? '';
+    if (/scene|background|place me|landmark/.test(text)) {
+      return 'Scene generation is not configured yet. Your source image has not been uploaded or changed.';
     }
-    if (last.content.toLowerCase().includes('what can you do')) {
-      return 'I can help with: brightness, contrast, warmth, coolness, film/fade, vintage, mood, color enhancement, and applying styles. Try a phrase like "make this brighter" or "give it a vintage look"!';
-    }
-    return 'I can make adjustments to your photo! Try a phrase like "make it brighter", "give it a warm look", "make it moody", or "apply a cinematic style".';
+    return 'I can offer simple local editing guidance. Try asking for a warmer, brighter, more contrast-rich, or more muted look. A connected AI model is not configured.';
   }
-
-  async generateScene(_imageBase64: string, _prompt: string, _options?: {}): Promise<ScenePrompt[]> {
-    const analysis: SceneAnalysis = {
-      subjectPose: 'standing',
-      lightingDirection: 'natural',
-      cameraAngle: 'eye-level',
-      backgroundType: 'outdoor',
-      focalLength: 50,
-      depthOfField: 0,
-    };
-    const prompts: ScenePrompt[] = [
-      {
-        id: generateId(),
-        prompt: 'New scene generated',
-        destination: 'stylish street',
-        style: 'place-inspired',
-        timeOfDay: 'afternoon',
-        weather: 'clear',
-        atmosphere: 'realistic',
-        backgroundBlur: 0,
-        realism: 0.8,
-        lighting: 'natural',
-        analysis: analysis,
-        createdAt: formatDate(new Date()),
-      },
-    ];
-    return prompts;
+  async generateScene(): Promise<ScenePrompt[]> {
+    throw new Error(
+      'Scene generation is unavailable: configure a secure server-side image-generation service first. No placeholder result was created.',
+    );
   }
-
   canUploadToCloud(): boolean {
     return false;
   }
 }
 
-// ── OpenRouter provider (configurable) ─────────────────────────────────
+/**
+ * Browser adapter for a server-side AI gateway. API keys must remain on the
+ * server; this client deliberately ignores legacy browser-supplied API keys.
+ */
 export class OpenRouterProvider implements AiProvider {
-  name: string;
-  supportsImages: boolean;
-  private apiKey: string;
-  private model: string;
+  name = 'server-ai';
+  supportsImages = false;
   private modelId: string;
-
-  constructor(apiKey: string, modelId: string = 'deepseek/deepseek-chat-v3') {
-    this.name = 'openrouter';
-    this.supportsImages = true;
-    this.apiKey = apiKey;
-    this.model = modelId;
+  private endpoint: string;
+  private accessTokenProvider?: () => Promise<string | null>;
+  constructor(
+    _legacyApiKey?: string,
+    modelId = 'configured-server-model',
+    accessTokenProvider?: () => Promise<string | null>,
+  ) {
     this.modelId = modelId;
+    this.accessTokenProvider = accessTokenProvider;
+    this.endpoint = (import.meta.env.VITE_AI_API_BASE_URL || '/api/ai').replace(/\/$/, '');
   }
 
+  private async authorizationHeaders(): Promise<Record<string, string>> {
+    const token = await this.accessTokenProvider?.();
+    if (!token) throw new Error('Sign in is required before using cloud AI.');
+    return { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
+  }
   getModel(): string {
-    return this.model;
+    return this.modelId;
   }
-
-  async chat(_messages: AiMessage[], _options?: { context?: AiMessageContext }): Promise<string> {
-    try {
-      const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.apiKey}`,
-        },
-        body: JSON.stringify({
-          model: this.modelId,
-          messages: _messages.map((m) => ({ role: m.role, content: m.content })),
-        }),
-      });
-      const data = await res.json();
-      return data.choices?.[0]?.message?.content || 'I received a response but could not parse it.';
-    } catch (err) {
-      return 'AI provider unavailable. Using offline fallback.';
-    }
-  }
-
-  async generateScene(_imageBase64: string, _prompt: string, _options?: {}): Promise<ScenePrompt[]> {
-    try {
-      const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.apiKey}`,
-        },
-        body: JSON.stringify({
-          model: this.modelId,
-          messages: [
-            {
-              role: 'user',
-              content: 'Scene generation request',
-            },
-          ],
-        }),
-      });
-      await res.json();
-      return [
-        {
-          id: generateId(),
-          prompt: 'New scene generated',
-          destination: 'stylish street',
-          style: 'place-inspired',
-          timeOfDay: 'afternoon',
-          weather: 'clear',
-          atmosphere: 'realistic',
-          backgroundBlur: 0,
-          realism: 0.8,
-          lighting: 'natural',
-          analysis: {
-            subjectPose: 'standing',
-            lightingDirection: 'natural',
-            cameraAngle: 'eye-level',
-            backgroundType: 'outdoor',
-            focalLength: 50,
-            depthOfField: 0,
-          },
-          createdAt: formatDate(new Date()),
-        },
-      ];
-    } catch (err) {
-      return [];
-    }
-  }
-
   canUploadToCloud(): boolean {
-    return true;
+    return false;
   }
+
+  async chat(messages: AiMessage[]): Promise<string> {
+    const response = await fetch(this.endpoint + '/chat', {
+      method: 'POST',
+      headers: await this.authorizationHeaders(),
+      credentials: 'same-origin',
+      body: JSON.stringify({
+        model: this.modelId,
+        messages: messages.map(({ role, content }) => ({ role, content })),
+      }),
+    });
+    if (!response.ok)
+      throw new Error(
+        'AI service request failed (' +
+          response.status +
+          '). Check the server-side AI gateway configuration.',
+      );
+    const data = await response.json();
+    const content = data?.choices?.[0]?.message?.content ?? data?.content;
+    if (typeof content !== 'string' || !content.trim())
+      throw new Error('AI service returned no usable text.');
+    return content;
+  }
+
+  async generateScene(
+    imageBase64: string,
+    prompt: string,
+    options: Record<string, unknown> = {},
+  ): Promise<ScenePrompt[]> {
+    if (!imageBase64 || !prompt.trim())
+      throw new Error('A source image and scene description are required.');
+    const response = await fetch(this.endpoint + '/scene', {
+      method: 'POST',
+      headers: await this.authorizationHeaders(),
+      credentials: 'same-origin',
+      body: JSON.stringify({ image: imageBase64, prompt, options }),
+    });
+    if (!response.ok)
+      throw new Error(
+        'Scene generation failed (' + response.status + '). No generated result was saved.',
+      );
+    const data = await response.json();
+    if (!Array.isArray(data?.scenes))
+      throw new Error('Scene service returned an invalid response.');
+    return data.scenes as ScenePrompt[];
+  }
+}
+
+/**
+ * Creates the browser AI adapter using the current Firebase user's ID token.
+ * The token is fetched on demand so refreshed Firebase sessions are respected.
+ */
+export function createFirebaseAiProvider(
+  getIdToken: () => Promise<string | null>,
+): OpenRouterProvider {
+  return new OpenRouterProvider(undefined, 'server-configured-model', getIdToken);
 }

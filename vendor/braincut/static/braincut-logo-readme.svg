@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 8 64 48">
+  <defs>
+    <mask id="h"><rect width="64" height="64" fill="#fff"/><rect x="9" y="19" width="5.4" height="5" rx="1"/><rect x="19.2" y="19" width="5.4" height="5" rx="1"/><rect x="29.4" y="19" width="5.4" height="5" rx="1"/><rect x="39.6" y="19" width="5.4" height="5" rx="1"/><rect x="49.8" y="19" width="5.4" height="5" rx="1"/><rect x="9" y="40" width="5.4" height="5" rx="1"/><rect x="19.2" y="40" width="5.4" height="5" rx="1"/><rect x="29.4" y="40" width="5.4" height="5" rx="1"/><rect x="39.6" y="40" width="5.4" height="5" rx="1"/><rect x="49.8" y="40" width="5.4" height="5" rx="1"/></mask>
+    <g id="s"><rect x="4" y="15" width="56" height="34" rx="4" fill="#d19a66" mask="url(#h)"/></g>
+    <clipPath id="l"><polygon points="-20,-20 42.6,-20 21.4,84 -20,84"/></clipPath>
+    <clipPath id="r"><polygon points="42.6,-20 84,-20 84,84 21.4,84"/></clipPath>
+  </defs>
+  <g transform="translate(-2.44 -3.05)"><g clip-path="url(#l)"><use href="#s"/></g></g>
+  <g transform="translate(2.44 3.05)"><g clip-path="url(#r)"><use href="#s"/></g></g>
+</svg>

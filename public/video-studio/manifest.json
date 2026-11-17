@@ -1,0 +1,17 @@
+{
+  "name": "Every Frame First Video Studio",
+  "short_name": "Every Frame First",
+  "author": "Every Frame First",
+  "description": "Professional local-first video editing studio.",
+  "start_url": "/video-studio/",
+  "display": "standalone",
+  "background_color": "#111113",
+  "theme_color": "#111113",
+  "icons": [
+    {
+      "src": "/video-studio/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

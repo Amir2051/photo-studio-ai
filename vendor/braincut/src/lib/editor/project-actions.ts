@@ -1,0 +1,308 @@
+import { get } from 'svelte/store';
+import { closeProject, dirty, loadProject, markSaved, project } from '#lib/project/store.ts';
+import {
+  PROJECT_EXTENSION,
+  parseProject,
+  projectFileName,
+  serializeProject,
+} from '#lib/project/serialize.ts';
+import {
+  cancelAutosave,
+  flushAutosave,
+  isStoredLocally,
+  listRecents,
+  loadProjectLocal,
+  scheduleAutosave,
+  setLastOpenedId,
+  touchRecent,
+  type RecentProject,
+} from '#lib/project/persistence.ts';
+import { restoreSources } from '#lib/media/sources.ts';
+import { createProject, createSequence } from '#lib/project/defaults.ts';
+import { presets } from '#lib/templates/sequences.ts';
+import { importFiles, isMediaFile } from '#lib/media/import.ts';
+import { downloadBlob } from '#lib/export/download.ts';
+import { addToast, dialog, projectHandle, sourceMedia } from '#lib/stores/app.ts';
+import { preferences } from '#lib/stores/preferences.ts';
+import type { Project } from '#lib/project/types.ts';
+
+const PICKER_TYPES: FilePickerAcceptType[] = [
+  { description: 'brainCUT project', accept: { 'application/json': [PROJECT_EXTENSION] } },
+];
+
+type SavePicker = (opts: {
+  suggestedName?: string;
+  types?: FilePickerAcceptType[];
+  id?: string;
+}) => Promise<FileSystemFileHandle>;
+
+function savePicker(): SavePicker | null {
+  const w = window as Window & { showSaveFilePicker?: SavePicker };
+  return typeof w.showSaveFilePicker === 'function' ? w.showSaveFilePicker.bind(w) : null;
+}
+
+function aborted(e: unknown): boolean {
+  return e instanceof DOMException && e.name === 'AbortError';
+}
+
+function message(e: unknown, fallback: string): string {
+  return e instanceof Error && e.message ? e.message : fallback;
+}
+
+async function writeToHandle(handle: FileSystemFileHandle, text: string): Promise<void> {
+  const writable = await handle.createWritable();
+  await writable.write(text);
+  await writable.close();
+}
+
+// the project goes back to the file it came from, or a fresh one is picked.
+// without the file system access api the browser downloads it instead
+async function write(p: Project, askForFile: boolean): Promise<boolean> {
+  const text = serializeProject(p);
+  let handle = askForFile ? null : get(projectHandle);
+  try {
+    if (!handle) {
+      const picker = savePicker();
+      if (picker) {
+        handle = await picker({
+          suggestedName: projectFileName(p),
+          types: PICKER_TYPES,
+          id: 'braincut-project',
+        });
+      } else {
+        downloadBlob(new Blob([text], { type: 'application/json' }), projectFileName(p));
+        return true;
+      }
+    }
+    await writeToHandle(handle, text);
+    projectHandle.set(handle);
+    return true;
+  } catch (e) {
+    if (aborted(e)) return false;
+    addToast(
+      `Could not save the project: ${message(e, 'the file could not be written')}`,
+      'error',
+      6000,
+    );
+    return false;
+  }
+}
+
+async function afterSave(p: Project): Promise<void> {
+  markSaved();
+  await touchRecent(p).catch(() => {});
+  addToast(`Saved ${p.name}`, 'success', 2000);
+}
+
+export async function saveProject(): Promise<void> {
+  const p = get(project);
+  if (!p) return;
+  if (await write(p, false)) await afterSave(p);
+}
+
+export async function saveProjectAs(): Promise<void> {
+  const p = get(project);
+  if (!p) return;
+  if (await write(p, true)) await afterSave(p);
+}
+
+// one place every open path ends up: loading, hooking the media back up,
+// remembering it for the welcome screen
+async function open(p: Project, handle: FileSystemFileHandle | null): Promise<void> {
+  loadProject(p);
+  projectHandle.set(handle);
+  sourceMedia.set(null);
+  await restoreSources(p);
+  await touchRecent(p).catch(() => {});
+  await setLastOpenedId(p.id).catch(() => {});
+  addToast(`Opened ${p.name}`, 'success', 2000);
+}
+
+// Route footage selected through the Open dialog to the media importer instead
+// of trying to parse the binary video as a JSON project. This also makes the
+// distinction between Open project and Import video explicit to the user.
+export function ensureProjectForImport(): void {
+  if (get(project)) return;
+  const preset = presets[1] ?? presets[0];
+  const next = createProject('Untitled project');
+  const sequence = createSequence({
+    name: 'Sequence 1',
+    width: preset.width,
+    height: preset.height,
+    fps: preset.fps,
+  });
+  next.sequences.push(sequence);
+  next.activeSequenceId = sequence.id;
+  loadProject(next);
+  void touchRecent(next);
+  void setLastOpenedId(next.id);
+  addToast('Video project created. Importing your footage…', 'success', 3500);
+}
+
+async function openSelectedFile(file: File, handle: FileSystemFileHandle | null): Promise<void> {
+  if (!file.name.toLowerCase().endsWith(PROJECT_EXTENSION)) {
+    if (isMediaFile(file.name, file.type)) {
+      // Dropped footage starts a default sequence instead of being mistaken
+      // for a JSON project or rejected on the welcome screen.
+      ensureProjectForImport();
+      await importFiles([file]);
+      return;
+    }
+    addToast(
+      `${file.name} is not a brainCUT project. Choose a .braincut project file or use Import video for media.`,
+      'error',
+      6000,
+    );
+    return;
+  }
+  if (!confirmDiscard()) return;
+  await openFromFile(file, handle);
+}
+
+// a project file dropped on the window lands here
+export async function openProjectFromFile(file: File): Promise<void> {
+  await openSelectedFile(file, null);
+}
+
+async function openFromFile(file: File, handle: FileSystemFileHandle | null): Promise<void> {
+  let p: Project;
+  try {
+    p = parseProject(await file.text());
+  } catch (e) {
+    addToast(message(e, `${file.name} is not a brainCUT project`), 'error', 6000);
+    return;
+  }
+  await open(p, handle);
+}
+
+function inputFallback(): Promise<File | null> {
+  return new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = PROJECT_EXTENSION;
+    input.style.display = 'none';
+    input.onchange = () => {
+      resolve(input.files?.[0] ?? null);
+      input.remove();
+    };
+    input.oncancel = () => {
+      resolve(null);
+      input.remove();
+    };
+    document.body.append(input);
+    input.click();
+  });
+}
+
+// work is only really lost when the browser has no copy of it either.
+// with autosave on, a stored project comes back from the recents list, so
+// asking about it is noise
+export function unsavedWork(): boolean {
+  const p = get(project);
+  if (!p || !get(dirty)) return false;
+  return !(get(preferences).autoSave && isStoredLocally(p.id));
+}
+
+export function confirmDiscard(): boolean {
+  if (!unsavedWork()) return true;
+  return confirm('The open project has unsaved changes. Continue without saving them?');
+}
+
+export async function openProjectFile(): Promise<void> {
+  // The selected file determines whether this is a project replacement or
+  // media import; only project replacement should ask about discarding work.
+  try {
+    if ('showOpenFilePicker' in window) {
+      const [handle] = await window.showOpenFilePicker({
+        multiple: false,
+        types: PICKER_TYPES,
+        id: 'braincut-project',
+      });
+      if (!handle) return;
+      await openSelectedFile(await handle.getFile(), handle);
+      return;
+    }
+    const file = await inputFallback();
+    if (file) await openSelectedFile(file, null);
+  } catch (e) {
+    if (aborted(e)) return;
+    addToast(
+      `Could not open the project: ${message(e, 'the file could not be read')}`,
+      'error',
+      6000,
+    );
+  }
+}
+
+export async function openRecent(id: string): Promise<void> {
+  if (!confirmDiscard()) return;
+  let p: Project | null = null;
+  try {
+    p = await loadProjectLocal(id);
+  } catch (e) {
+    addToast(
+      `Could not open the project: ${message(e, 'the stored copy is damaged')}`,
+      'error',
+      6000,
+    );
+    return;
+  }
+  if (!p) {
+    addToast('That project is no longer stored in this browser', 'warning', 5000);
+    return;
+  }
+  await open(p, null);
+}
+
+export function newProject(): void {
+  if (!confirmDiscard()) return;
+  dialog.set({ kind: 'new-project' });
+}
+
+export async function closeCurrentProject(): Promise<void> {
+  if (!get(project)) return;
+  if (!confirmDiscard()) return;
+  // whatever autosave still holds lands before the project goes away
+  if (get(preferences).autoSave) await flushAutosave();
+  else cancelAutosave();
+  closeProject();
+  projectHandle.set(null);
+  sourceMedia.set(null);
+}
+
+export function recentProjects(): Promise<RecentProject[]> {
+  return listRecents().catch(() => []);
+}
+
+// what the editor page keeps running while it is up: autosave after every
+// change, the handle dropped when another project takes over, a warning
+// before the tab closes on unsaved work
+export function installProjectLifecycle(): () => void {
+  let currentId = get(project)?.id ?? null;
+  const unsubscribe = project.subscribe((p) => {
+    const id = p?.id ?? null;
+    if (id !== currentId) {
+      currentId = id;
+      // a project loaded by someone else (new project dialog, recents) has
+      // no file yet. openFromFile sets its handle right after loading
+      projectHandle.set(null);
+    }
+    if (p && get(preferences).autoSave) scheduleAutosave(p);
+  });
+
+  // an import, a conversion or an export running is never a reason to hold
+  // the tab: only changes that would be gone for good are
+  function onBeforeUnload(e: BeforeUnloadEvent) {
+    void flushAutosave();
+    if (!unsavedWork()) return;
+    e.preventDefault();
+    e.returnValue = '';
+  }
+  window.addEventListener('beforeunload', onBeforeUnload);
+
+  return () => {
+    unsubscribe();
+    window.removeEventListener('beforeunload', onBeforeUnload);
+    void flushAutosave();
+  };
+}

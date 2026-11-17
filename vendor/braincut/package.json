@@ -1,0 +1,49 @@
+{
+  "name": "braincut",
+  "version": "1.0.0",
+  "author": "Braian Plaku",
+  "private": true,
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "test": "vitest run"
+  },
+  "engines": {
+    "node": ">=22.17"
+  },
+  "type": "module",
+  "devDependencies": {
+    "@sveltejs/adapter-static": "^4.0.1",
+    "@sveltejs/kit": "^3.2.0",
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
+    "@tailwindcss/vite": "^4.0.0",
+    "svelte": "^5.57.2",
+    "svelte-check": "^4.7.8",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^6.0.3",
+    "vite": "^8.3.7",
+    "vitest": "^5.1.0"
+  },
+  "dependencies": {
+    "@ffmpeg/ffmpeg": "^0.12.15",
+    "@ffmpeg/util": "^0.12.2",
+    "bezier-easing": "^3.0.1",
+    "gifenc": "^1.0.3",
+    "gl-transitions": "^1.71.0",
+    "idb-keyval": "^6.3.0",
+    "immer": "^11.1.18",
+    "mediabunny": "^1.55.3",
+    "pixi-filters": "^6.1.5",
+    "pixi.js": "^8.20.1",
+    "tinykeys": "^4.0.0"
+  },
+  "allowScripts": {
+    "esbuild@0.25.12": true
+  },
+  "imports": {
+    "#lib": "./src/lib/index.js",
+    "#lib/*": "./src/lib/*"
+  }
+}
