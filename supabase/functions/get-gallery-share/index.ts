@@ -11,7 +11,7 @@ const SIGNED_URL_TTL_SECONDS = 3600;
 function cors(): HeadersInit {
   return {
     'access-control-allow-origin': '*',
-    'access-control-allow-headers': 'content-type',
+    'access-control-allow-headers': 'content-type, apikey',
     'access-control-allow-methods': 'POST, OPTIONS',
     'content-type': 'application/json',
   };
