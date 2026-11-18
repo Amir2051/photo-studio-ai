@@ -79,7 +79,7 @@ Deep links to `/gallery/:id` require the host to serve `index.html` for unknown 
 
 ## Deployment
 
-The GitHub Actions workflow builds and tests pull requests and pushes to main. A Pages artifact is produced by the build. Deployment is manual: enable GitHub Pages in repository settings, add the repository variable ENABLE_GITHUB_PAGES=true, then run the workflow_dispatch event on main. This avoids failing pull-request checks when Pages has not yet been enabled or is unavailable on the repository plan. Merge the repair pull request after reviewing the diff and successful CI; deployment is intentionally not triggered from this working branch.
+The GitHub Actions workflow builds and tests pull requests and pushes to main. On push to main, the `deploy` job publishes the Pages artifact to GitHub Pages (source must be "GitHub Actions" in the repository's Settings → Pages), followed by a `smoke-test` job that verifies https://studio.safenestt.com and /video-studio/. The custom domain is carried by the CNAME file, which is copied into dist/ during the build.
 
 ## AI gateway contract
 
