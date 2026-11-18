@@ -1,19 +1,12 @@
 import React, { FormEvent, useEffect, useState } from 'react';
-import {
-  createUserWithEmailAndPassword,
-  onAuthStateChanged,
-  sendPasswordResetEmail,
-  signInWithEmailAndPassword,
-  signOut,
-  type User,
-} from 'firebase/auth';
-import { auth, authReady, firebaseConfigured, getFirebaseConfigError } from '../lib/firebase';
+import type { User } from '@supabase/supabase-js';
+import { supabase, supabaseConfigured } from '../lib/supabase';
 
 type Props = { children: React.ReactNode };
 
 export default function AuthBoundary({ children }: Props): React.JSX.Element {
   const [user, setUser] = useState<User | null>(null);
-  const [checking, setChecking] = useState(firebaseConfigured);
+  const [checking, setChecking] = useState(supabaseConfigured);
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -22,55 +15,66 @@ export default function AuthBoundary({ children }: Props): React.JSX.Element {
   const [notice, setNotice] = useState('');
 
   useEffect(() => {
-    if (!auth) {
+    if (!supabase) {
       setChecking(false);
       return;
     }
-    const firebaseAuth = auth;
-    let unsubscribe = () => {};
-    authReady
-      .then(() => {
-        unsubscribe = onAuthStateChanged(firebaseAuth, (nextUser) => {
-          setUser(nextUser);
-          setChecking(false);
-        });
-      })
-      .catch(() => {
-        setError('Firebase Authentication could not initialize. Check the app configuration.');
-        setChecking(false);
-      });
-    return () => unsubscribe();
+    const client = supabase;
+    client.auth.getSession().then(({ data }) => {
+      setUser(data.session?.user ?? null);
+      setChecking(false);
+    });
+    const {
+      data: { subscription },
+    } = client.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      setChecking(false);
+    });
+    return () => subscription.unsubscribe();
   }, []);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!auth) return;
+    if (!supabase) return;
     setBusy(true);
     setError('');
     setNotice('');
     try {
       if (mode === 'signup') {
         if (password.length < 8) throw new Error('Use a password with at least 8 characters.');
-        await createUserWithEmailAndPassword(auth, email.trim(), password);
+        const { data, error: signUpError } = await supabase.auth.signUp({
+          email: email.trim(),
+          password,
+        });
+        if (signUpError) throw signUpError;
+        if (!data.session) {
+          setNotice(
+            'Account created. If email confirmation is required, check your inbox, then sign in.',
+          );
+        }
       } else {
-        await signInWithEmailAndPassword(auth, email.trim(), password);
+        const { error: signInError } = await supabase.auth.signInWithPassword({
+          email: email.trim(),
+          password,
+        });
+        if (signInError) throw signInError;
       }
     } catch (cause) {
-      const code = (cause as { code?: string }).code;
+      const message = cause instanceof Error ? cause.message : '';
       const messages: Record<string, string> = {
-        'auth/email-already-in-use': 'An account already exists for this email.',
-        'auth/invalid-email': 'Enter a valid email address.',
-        'auth/invalid-credential': 'Email or password is incorrect.',
-        'auth/user-disabled': 'This account has been disabled.',
-        'auth/too-many-requests': 'Too many attempts. Wait a moment and try again.',
-        'auth/weak-password': 'Choose a stronger password with at least 8 characters.',
-        'auth/operation-not-allowed':
-          'Email/password sign-in has not been enabled in Firebase yet.',
-        'auth/network-request-failed': 'Could not reach Firebase. Check your connection.',
+        'Invalid login credentials': 'Email or password is incorrect.',
+        'User already registered': 'An account already exists for this email.',
+        'Email not confirmed': 'Confirm your email address first, then sign in.',
+        'Password should be at least 6 characters':
+          'Choose a stronger password with at least 8 characters.',
+        'Email rate limit exceeded': 'Too many attempts. Wait a moment and try again.',
       };
       setError(
-        (code && messages[code]) ||
-          (cause instanceof Error ? cause.message : 'Authentication failed.'),
+        messages[message] ||
+          (message && !/^[A-Za-z]/.test(message)
+            ? 'Could not reach auth service. Check your connection.'
+            : message) ||
+          'Authentication failed.',
       );
     } finally {
       setBusy(false);
@@ -78,7 +82,7 @@ export default function AuthBoundary({ children }: Props): React.JSX.Element {
   };
 
   const resetPassword = async () => {
-    if (!auth || !email.trim()) {
+    if (!supabase || !email.trim()) {
       setError('Enter your email address first.');
       return;
     }
@@ -86,22 +90,25 @@ export default function AuthBoundary({ children }: Props): React.JSX.Element {
     setError('');
     setNotice('');
     try {
-      await sendPasswordResetEmail(auth, email.trim());
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: window.location.origin,
+      });
+      if (resetError) throw resetError;
       setNotice('If an account exists for that email, a password reset message has been sent.');
     } catch {
-      setError(
-        'Could not send a password reset email. Check the address and Firebase configuration.',
-      );
+      setError('Could not send a password reset email. Check the address and try again.');
     } finally {
       setBusy(false);
     }
   };
 
-  if (!firebaseConfigured && !import.meta.env.PROD) {
+  const localDevBypass = !supabaseConfigured && !import.meta.env.PROD;
+
+  if (localDevBypass) {
     return (
       <>
         <div className="auth-dev-notice">
-          Development preview · Firebase is not configured yet. Authentication is bypassed only in
+          Development preview · Supabase is not configured yet. Authentication is bypassed only in
           this local development mode.
         </div>
         {children}
@@ -109,14 +116,17 @@ export default function AuthBoundary({ children }: Props): React.JSX.Element {
     );
   }
 
-  if (!firebaseConfigured) {
+  if (!supabaseConfigured) {
     return (
       <main className="auth-screen">
         <section className="auth-card" role="alert">
           <p className="auth-eyebrow">MINU STUDIO</p>
           <h1>Authentication setup required</h1>
-          <p>{getFirebaseConfigError()}</p>
-          <p>Sign-in is fail-closed in production until the Firebase configuration is supplied.</p>
+          <p>
+            Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY
+            from the project Settings → API.
+          </p>
+          <p>Sign-in is fail-closed in production until the configuration is supplied.</p>
         </section>
       </main>
     );
@@ -137,7 +147,11 @@ export default function AuthBoundary({ children }: Props): React.JSX.Element {
           <span>
             Signed in as <strong>{user.email}</strong>
           </span>
-          <button type="button" onClick={() => signOut(auth!)} className="auth-signout">
+          <button
+            type="button"
+            onClick={() => void supabase?.auth.signOut()}
+            className="auth-signout"
+          >
             Sign out
           </button>
         </div>

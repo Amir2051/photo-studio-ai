@@ -36,7 +36,7 @@ describe('Every Frame First MIA proxy', () => {
     await start();
     const response = await fetch(baseUrl + '/health');
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ status: 'ok', service: 'every-frame-first-mia-proxy' });
+    expect(await response.json()).toEqual({ status: 'ok', service: 'minu-studio-mia-proxy' });
   });
 
   it('rejects requests without a valid Studio Firebase bearer token', async () => {

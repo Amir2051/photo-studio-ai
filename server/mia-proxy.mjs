@@ -42,16 +42,21 @@ async function readJson(req) {
   }
 }
 
-function createFirebaseVerifier(projectId) {
-  if (!projectId) return null;
-  const jwks = createRemoteJWKSet(new URL('https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com'));
+function createSupabaseVerifier(config = {}) {
+  const jwksUrl =
+    config.authJwksUrl ||
+    'https://texgwxmizyxsdzcfsjpo.supabase.co/auth/v1/.well-known/jwks.json';
+  const issuer =
+    config.authIssuer || 'https://texgwxmizyxsdzcfsjpo.supabase.co/auth/v1';
+  const audience = config.authAudience || 'authenticated';
+  const jwks = createRemoteJWKSet(new URL(jwksUrl));
   return async (token) => {
     const { payload } = await jwtVerify(token, jwks, {
-      issuer: 'https://securetoken.google.com/' + projectId,
-      audience: projectId,
-      algorithms: ['RS256'],
+      issuer,
+      audience,
+      algorithms: ['ES256', 'RS256'],
     });
-    if (typeof payload.sub !== 'string' || !payload.sub) throw new Error('Firebase token subject missing.');
+    if (typeof payload.sub !== 'string' || !payload.sub) throw new Error('Supabase token subject missing.');
     return payload.sub;
   };
 }
@@ -72,7 +77,7 @@ function validFrame(frame) {
 export function createMiaProxyServer({
   config = {},
   fetchImpl = globalThis.fetch,
-  verifyToken = createFirebaseVerifier(config.firebaseProjectId),
+  verifyToken = createSupabaseVerifier(config),
   now = Date.now,
 } = {}) {
   const allowedOrigins = config.allowedOrigins || DEFAULT_ALLOWED_ORIGINS;
@@ -96,14 +101,14 @@ export function createMiaProxyServer({
       return res.end();
     }
     if (req.method === 'GET' && req.url === '/health') {
-      return json(res, 200, { status: 'ok', service: 'every-frame-first-mia-proxy' });
+      return json(res, 200, { status: 'ok', service: 'minu-studio-mia-proxy' });
     }
     if (origin && !allowedOrigins.includes(origin)) return json(res, 403, { error: 'Origin not allowed.', requestId });
     if (!verifyToken || !config.serviceApiKey || !config.rzAgentUrl) {
       return json(res, 503, { error: 'MIA proxy authentication or upstream configuration is unavailable.', requestId }, corsHeaders);
     }
     const match = /^Bearer ([A-Za-z0-9._~-]+)$/.exec(req.headers.authorization || '');
-    if (!match) return json(res, 401, { error: 'Sign in to Every Frame First Studio to use MIA.', requestId }, corsHeaders);
+    if (!match) return json(res, 401, { error: 'Sign in to Minu Studio to use MIA.', requestId }, corsHeaders);
 
     let userId;
     try {
@@ -189,13 +194,15 @@ if (process.argv[1] && new URL(import.meta.url).pathname === process.argv[1]) {
   const config = {
     host: process.env.HOST || '0.0.0.0',
     port: Number(process.env.PORT || 10000),
-    firebaseProjectId: process.env.FIREBASE_PROJECT_ID,
+    authJwksUrl: process.env.AUTH_JWKS_URL,
+    authIssuer: process.env.AUTH_ISSUER,
+    authAudience: process.env.AUTH_AUDIENCE,
     serviceApiKey: process.env.STUDIO_MIA_SERVICE_API_KEY,
     rzAgentUrl: process.env.RZ_AGENT_URL || 'https://rz-ai.safenestt.com',
     allowedOrigins: (process.env.STUDIO_ALLOWED_ORIGINS || DEFAULT_ALLOWED_ORIGINS.join(',')).split(',').map((item) => item.trim()).filter(Boolean),
     maxRequestsPerMinute: Number(process.env.MIA_RATE_LIMIT_PER_MINUTE || DEFAULT_RATE_LIMIT),
   };
   createMiaProxyServer({ config }).listen(config.port, config.host, () => {
-    process.stdout.write('Every Frame First MIA proxy listening on ' + config.host + ':' + config.port + '\n');
+    process.stdout.write('Minu Studio MIA proxy listening on ' + config.host + ':' + config.port + '\n');
   });
 }

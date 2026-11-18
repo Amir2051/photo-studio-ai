@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import type { Photo } from '../lib/types';
 import { buildLocalGalleryZip, createGalleryShare, shareUrl } from '../lib/gallery';
-import { auth } from '../lib/firebase';
+import { getSupabaseUser } from '../lib/supabase';
 
 interface ClientGalleryPanelProps {
   photos: Photo[];
@@ -15,7 +15,16 @@ export default function ClientGalleryPanel({ photos }: ClientGalleryPanelProps):
   const [link, setLink] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
-  const signedIn = Boolean(auth?.currentUser);
+  const [signedIn, setSignedIn] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    getSupabaseUser().then((user) => {
+      if (!cancelled) setSignedIn(Boolean(user));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   useEffect(() => {
     // Drop selections for photos that no longer exist in the library.
     setSelectedIds((current) => {

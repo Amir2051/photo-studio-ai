@@ -1,15 +1,13 @@
 // Minu Studio — create a client gallery share.
-// Verifies the caller's Firebase ID token (RS256, Google securetoken JWKS),
+// Verifies the caller's Supabase access token (auth.getUser),
 // then uploads the selected photos to the public gallery-shares bucket and
 // inserts a gallery_shares row via the service role. No client can write
 // directly; reads for unexpired shares are public by link.
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
-const FIREBASE_PROJECT_ID = Deno.env.get('FIREBASE_PROJECT_ID') ?? 'photo-editor-rz';
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
+const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-const GOOGLE_CERTS_URL =
-  'https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com';
 
 const MAX_PHOTOS = 30;
 const MAX_PHOTO_BYTES = 6 * 1024 * 1024;
@@ -28,15 +26,6 @@ function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: cors() });
 }
 
-function base64UrlToBytes(input: string): Uint8Array {
-  const padded = input + '==='.slice((input.length + 3) % 4);
-  const base64 = padded.replace(/-/g, '+').replace(/_/g, '/');
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-  return bytes;
-}
-
 function base64ToBytes(input: string): Uint8Array {
   const binary = atob(input);
   const bytes = new Uint8Array(binary.length);
@@ -44,52 +33,12 @@ function base64ToBytes(input: string): Uint8Array {
   return bytes;
 }
 
-function base64UrlToJson(input: string): Record<string, unknown> {
-  return JSON.parse(new TextDecoder().decode(base64UrlToBytes(input)));
-}
-
-let jwksCache: { keys: JsonWebKey[]; fetchedAt: number } | null = null;
-
-async function verifyFirebaseIdToken(token: string): Promise<{ uid: string }> {
-  const parts = token.split('.');
-  if (parts.length !== 3) throw new Error('Malformed token.');
-  const [headerPart, payloadPart, signaturePart] = parts;
-  const header = base64UrlToJson(headerPart) as { alg?: string; kid?: string };
-  const payload = base64UrlToJson(payloadPart) as Record<string, unknown>;
-  if (header.alg !== 'RS256' || typeof header.kid !== 'string') {
-    throw new Error('Invalid token header.');
-  }
-  if (!jwksCache || Date.now() - jwksCache.fetchedAt > 60 * 60 * 1000) {
-    const response = await fetch(GOOGLE_CERTS_URL);
-    if (!response.ok) throw new Error('Could not fetch Google signing keys.');
-    const body = (await response.json()) as { keys: JsonWebKey[] };
-    jwksCache = { keys: body.keys ?? [], fetchedAt: Date.now() };
-  }
-  const jwk = jwksCache.keys.find((candidate) => (candidate as { kid?: string }).kid === header.kid);
-  if (!jwk) throw new Error('Signing key not found for token.');
-  const key = await crypto.subtle.importKey(
-    'jwk',
-    jwk,
-    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
-    false,
-    ['verify'],
-  );
-  const data = new TextEncoder().encode(headerPart + '.' + payloadPart);
-  const valid = await crypto.subtle.verify(
-    'RSASSA-PKCS1-v1_5',
-    key,
-    base64UrlToBytes(signaturePart),
-    data,
-  );
-  if (!valid) throw new Error('Invalid token signature.');
-  const now = Math.floor(Date.now() / 1000);
-  if (typeof payload.exp !== 'number' || payload.exp <= now) throw new Error('Token expired.');
-  if (payload.aud !== FIREBASE_PROJECT_ID) throw new Error('Invalid token audience.');
-  if (payload.iss !== 'https://securetoken.google.com/' + FIREBASE_PROJECT_ID)
-    throw new Error('Invalid token issuer.');
-  const uid = payload.sub;
-  if (typeof uid !== 'string' || !uid) throw new Error('Invalid token subject.');
-  return { uid };
+async function verifySupabaseAccessToken(token: string): Promise<{ uid: string }> {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) throw new Error('Server is not configured.');
+  const client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const { data, error } = await client.auth.getUser(token);
+  if (error || !data?.user?.id) throw new Error('Invalid or expired session.');
+  return { uid: data.user.id };
 }
 
 const IMAGE_DATA_URL = /^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$/;
@@ -120,7 +69,7 @@ Deno.serve(async (request: Request) => {
 
   let uid: string;
   try {
-    ({ uid } = await verifyFirebaseIdToken(match[1]));
+    ({ uid } = await verifySupabaseAccessToken(match[1]));
   } catch (error) {
     return jsonResponse(
       { error: error instanceof Error ? error.message : 'Invalid sign-in session.' },

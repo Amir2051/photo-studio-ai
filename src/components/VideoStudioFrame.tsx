@@ -1,5 +1,5 @@
 import React, { useLayoutEffect, useRef } from 'react';
-import { auth, getCurrentFirebaseIdToken } from '../lib/firebase';
+import { getSupabaseAccessToken, getSupabaseUser } from '../lib/supabase';
 
 type VideoStudioFrameProps = {
   onBack: () => void;
@@ -15,13 +15,13 @@ export default function VideoStudioFrame({ onBack }: VideoStudioFrameProps): Rea
       if (!frame?.contentWindow || event.origin !== window.location.origin || event.source !== frame.contentWindow) return;
       if (event.data?.type !== 'studio-auth-token-request' || typeof event.data.requestId !== 'string') return;
       try {
-        const token = await getCurrentFirebaseIdToken();
-        const user = auth?.currentUser;
+        const token = await getSupabaseAccessToken();
+        const user = await getSupabaseUser();
         frame.contentWindow.postMessage({
           type: 'studio-auth-token-response',
           requestId: event.data.requestId,
           token,
-          user: user ? { id: user.uid, email: user.email ?? '' } : null,
+          user: user ? { id: user.id, email: user.email ?? '' } : null,
         }, event.origin);
       } catch {
         frame.contentWindow.postMessage({

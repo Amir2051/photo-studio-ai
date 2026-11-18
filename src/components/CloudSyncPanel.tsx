@@ -1,11 +1,21 @@
-import React, { useState } from 'react';
-import { auth } from '../lib/firebase';
+import React, { useEffect, useState } from 'react';
+import { getSupabaseUser } from '../lib/supabase';
 import { syncStyleRecipesToCloud } from '../lib/cloudSync';
 
 export default function CloudSyncPanel({ onBack }: { onBack: () => void }): React.JSX.Element {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('Your photo and video files remain on this device.');
-  const email = auth?.currentUser?.email || '';
+  const [email, setEmail] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    getSupabaseUser().then((user) => {
+      if (!cancelled) setEmail(user?.email ?? '');
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const sync = async () => {
     setBusy(true);

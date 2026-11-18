@@ -39,18 +39,20 @@ Before cloud analysis is enabled on a deployment, configure `OPENROUTER_VISION_M
 
 ## Studio-owned authentication and RZ Agent service bridge
 
-The editor no longer uses RZ Agent's interactive /v1/auth/login, /v1/auth/me, or /v1/auth/logout endpoints. MIA inherits the user's existing Every Frame First Studio Firebase Authentication session from the same-origin parent shell. The parent shell responds only to messages from its own embedded /video-studio/ iframe and provides a short-lived Firebase ID token; the video editor never receives an RZ Agent password, cookie, API key, or service credential.
+The editor no longer uses RZ Agent's interactive /v1/auth/login, /v1/auth/me, or /v1/auth/logout endpoints. MIA inherits the user's existing Minu Studio Supabase Auth session from the same-origin parent shell. The parent shell responds only to messages from its own embedded /video-studio/ iframe and provides a short-lived Supabase access token; the video editor never receives an RZ Agent password, cookie, API key, or service credential.
 
-The browser sends that Firebase ID token to the separate every-frame-first-mia Node service. The proxy verifies the token against Firebase Secure Token signing keys, validates the Studio Firebase project issuer/audience, applies per-user rate limits, and forwards only the supported chat and visual-analysis routes to RZ Agent. The proxy authenticates upstream with X-Api-Key: STUDIO_MIA_SERVICE_API_KEY. That key exists only in Render server environment variables. The RZ Agent's existing OpenRouter credentials, chat model, vision model, ZDR setting, and no-fallback policy remain authoritative.
+The browser sends that Supabase access token to the separate minu-studio-mia Node service. The proxy verifies the token against Supabase auth JWKS (AUTH_JWKS_URL / AUTH_ISSUER / AUTH_AUDIENCE), applies per-user rate limits, and forwards only the supported chat and visual-analysis routes to RZ Agent. The proxy authenticates upstream with X-Api-Key: STUDIO_MIA_SERVICE_API_KEY. That key exists only in Render server environment variables. The RZ Agent's existing OpenRouter credentials, chat model, vision model, ZDR setting, and no-fallback policy remain authoritative.
 
 ### Proxy service environment
 
-- FIREBASE_PROJECT_ID=photo-editor-rz
+- AUTH_JWKS_URL=https://texgwxmizyxsdzcfsjpo.supabase.co/auth/v1/.well-known/jwks.json
+- AUTH_ISSUER=https://texgwxmizyxsdzcfsjpo.supabase.co/auth/v1
+- AUTH_AUDIENCE=authenticated
 - STUDIO_MIA_SERVICE_API_KEY=<same dedicated service key configured on the RZ Agent service>
 - RZ_AGENT_URL=https://rz-ai.safenestt.com
 - STUDIO_ALLOWED_ORIGINS=https://every-frame-first-studio.onrender.com,https://studio.safenestt.com
 - MIA_RATE_LIMIT_PER_MINUTE=20
 
-Run with node server/mia-proxy.mjs (Render supplies PORT). Health check: /health. Browser routes: /api/mia/chat, /api/mia/vision/status, and /api/mia/vision/analyze. The proxy accepts only Firebase bearer tokens, never cookies or browser-supplied upstream credentials. CORS is an additional browser boundary, not the authentication mechanism.
+Run with node server/mia-proxy.mjs (Render supplies PORT). Health check: /health. Browser routes: /api/mia/chat, /api/mia/vision/status, and /api/mia/vision/analyze. The proxy accepts only Supabase bearer tokens, never cookies or browser-supplied upstream credentials. CORS is an additional browser boundary, not the authentication mechanism.
 
 The Studio static build uses VITE_MIA_API_BASE_URL=https://every-frame-first-mia.onrender.com/api/mia (the code has this as its default). The proxy does not store prompts, frame payloads, or project data. The existing explicit still-frame selection/approval flow remains unchanged; the proxy validates 1–8 JPEG/PNG/WebP frames and enforces the 1.4 MB per-frame / 8 MB aggregate limits before forwarding.

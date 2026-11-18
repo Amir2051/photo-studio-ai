@@ -8,7 +8,7 @@
 //  - The /gallery/:shareId route is public — anyone with the link can view
 //    an unexpired gallery.
 // The "Local ZIP" mode remains fully offline and needs no Supabase at all.
-import { getCurrentFirebaseIdToken, auth } from './firebase';
+import { getSupabaseAccessToken, getSupabaseUser } from './supabase';
 
 export const SUPABASE_URL =
   import.meta.env.VITE_SUPABASE_URL || 'https://texgwxmizyxsdzcfsjpo.supabase.co';
@@ -68,8 +68,8 @@ export async function createGalleryShare(
   expiresInDays: number,
   photos: GalleryPhotoInput[],
 ): Promise<{ id: string; share: GalleryShare }> {
-  const user = auth?.currentUser;
-  const idToken = await getCurrentFirebaseIdToken();
+  const user = await getSupabaseUser();
+  const idToken = await getSupabaseAccessToken();
   if (!user || !idToken) throw new Error('Sign in is required before creating a client gallery.');
   if (!photos.length) throw new Error('Select at least one photo for the gallery.');
   if (photos.length > MAX_GALLERY_PHOTOS) {
@@ -116,7 +116,7 @@ export async function createGalleryShare(
     id: body.id,
     share: {
       id: body.id,
-      ownerUid: user.uid,
+      ownerUid: user.id,
       name: body.name ?? (name.trim() || 'Client gallery'),
       createdAt,
       expiresAt: body.expiresAt ?? createdAt,

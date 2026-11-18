@@ -4,7 +4,7 @@ Updated 2026-11-17 after the Evoto-style rebuild (rebrand, cull, background AI, 
 
 ## Minu Studio release notes (2026-11-17)
 
-- Client galleries run on Supabase (project `texgwxmizyxsdzcfsjpo`): the `create-gallery-share` Edge Function verifies a Firebase ID token before writing to the public `gallery-shares` bucket; `gallery_shares` RLS hides expired shares. Firebase is used for Auth only.
+- Client galleries run on Supabase (project `texgwxmizyxsdzcfsjpo`): the `create-gallery-share` Edge Function verifies the caller's Supabase access token (`auth.getUser`) before writing to the public `gallery-shares` bucket; `gallery_shares` RLS hides expired shares. Auth runs on Supabase Auth; Firebase has been fully removed.
 - `/gallery/:shareId` needs SPA fallback on the static host (or a `404.html` copy of `index.html`) for deep links.
 - The background-segmentation model (`public/models/selfie_multiclass.tflite`, ~16 MB) loads on first use; first detection may take a few seconds on slow connections.
 - Cull assist scores are heuristics, not AI judgment — the UI labels them as such.
@@ -27,7 +27,7 @@ Updated 2026-11-10 after the GitHub Pages deployment.
 
 ### Hosting and authentication
 
-The home app includes Firebase email/password sign-in. GitHub Pages is static hosting and GitHub says Pages sites should not handle sensitive transactions such as sending passwords; its acceptable use also excludes free hosting primarily directed at commercial SaaS. Review [GitHub Pages limits](https://docs.github.com/en/pages/getting-started-with-github-pages/github-pages-limits) before treating this authenticated app as a production Pages site.
+The home app uses Supabase email/password sign-in. GitHub Pages is static hosting and GitHub says Pages sites should not handle sensitive transactions such as sending passwords; its acceptable use also excludes free hosting primarily directed at commercial SaaS. Review [GitHub Pages limits](https://docs.github.com/en/pages/getting-started-with-github-pages/github-pages-limits) before treating this authenticated app as a production Pages site.
 
 Recommended production arrangement: use the Render static site for the authenticated app, keep GitHub Actions for source checks and release artifacts, and only use Pages for a non-authenticated demo or documentation site. If Pages remains the chosen host, resolve this policy concern before inviting real users.
 
@@ -38,7 +38,7 @@ The Render static deployment is currently a duplicate. Once the canonical host i
 - Protect `fix/photo-studio-core-repair`: require pull requests and a passing `build` check before merge.
 - Protect the `github-pages` environment and allow deployments only from the approved production branch(es). This repository currently uses a manual workflow on `main` that checks out the integration branch, so include both approved paths deliberately.
 - Keep production secrets in Actions/Render secret stores. Never expose private provider keys through `VITE_*` variables; browser-prefixed values are shipped to visitors.
-- Firebase (Auth only): `firebase/firestore.rules` deny-all is deployed and correct for an Auth-only project. Firebase Storage was never enabled (it requires Blaze); gallery delivery runs on Supabase via the `gallery-shares` bucket + `gallery_shares` table. Confirm before launch that `gallery_shares` has no write policies beyond the Edge Function service role, and review Supabase advisors.
+- Supabase Auth (project `texgwxmizyxsdzcfsjpo`): sessions are browser-persisted; RLS limits `gallery_shares` and `style_recipes_sync` to each user's own rows. Gallery photos live in the public `gallery-shares` bucket (unguessable paths, 8 MB/file) and `gallery_shares` hides expired shares from anonymous readers. Confirm before launch that no write policies exist beyond the Edge Function service role, and review Supabase advisors (`get_advisors`).
 
 ### Guest contribution reliability
 
