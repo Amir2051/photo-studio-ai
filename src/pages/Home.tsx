@@ -415,6 +415,7 @@ export default function Home(): React.JSX.Element {
   const [localRadius, setLocalRadius] = useState(35);
   const [selectedHslChannel, setSelectedHslChannel] = useState<HslChannel>('red');
   const [selectedCurveChannel, setSelectedCurveChannel] = useState<CurveChannel>('master');
+  const [advancedMode, setAdvancedMode] = useState(false);
   const [activeWorkspace, setActiveWorkspace] = useState<'professional' | 'portrait'>(
     'professional',
   );
@@ -2179,7 +2180,7 @@ export default function Home(): React.JSX.Element {
   }
 
   return (
-    <div className="studio-shell">
+    <div className="studio-shell" data-workspace={activeSection} data-advanced={advancedMode ? 'true' : 'false'}>
       <header className="studio-header">
         <a
           className="brand"
@@ -2268,49 +2269,20 @@ export default function Home(): React.JSX.Element {
       </nav>
 
       <aside className="studio-sidebar" aria-label="Studio navigation">
-        <div className="sidebar-workspace-label">WORKSPACE</div>
+        <div className="sidebar-workspace-label">STUDIO</div>
         <button
-          className={`sidebar-link ${activeSection === 'home' ? 'active' : ''}`}
-          onClick={() => navigateStudio('home', 'studio-home')}
-        >
-          <span className="sidebar-icon">⌂</span>
-          <span>Overview</span>
-          <kbd>H</kbd>
-        </button>
-        <Link className="sidebar-link" to="/cull">
-          <span className="sidebar-icon">▧</span>
-          <span>Culling</span>
-        </Link>
-        <button
-          className={`sidebar-link ${activeSection === 'editor' ? 'active' : ''}`}
+          className={`sidebar-link ${activeSection === 'home' || activeSection === 'editor' ? 'active' : ''}`}
           onClick={() => navigateStudio('editor', 'editor-canvas')}
         >
-          <span className="sidebar-icon">▧</span>
-          <span>Photo editor</span>
-          <kbd>1</kbd>
+          <span className="sidebar-icon">⌂</span>
+          <span>Home</span>
         </button>
-        <div className="sidebar-divider" />
-        <div className="sidebar-workspace-label">EDITING SUITES</div>
         <button
           className={`sidebar-link ${activeSection === 'retouch' ? 'active' : ''}`}
           onClick={() => navigateStudio('retouch', 'retouch-workspace')}
         >
           <span className="sidebar-icon">✧</span>
-          <span>Retouch studio</span>
-        </button>
-        <button
-          className={`sidebar-link ${activeSection === 'color' ? 'active' : ''}`}
-          onClick={() => navigateStudio('color', 'color-workspace')}
-        >
-          <span className="sidebar-icon">◉</span>
-          <span>Color lab</span>
-        </button>
-        <button
-          className={`sidebar-link ${activeSection === 'compositing' ? 'active' : ''}`}
-          onClick={() => navigateStudio('compositing', 'layers-workspace')}
-        >
-          <span className="sidebar-icon">▤</span>
-          <span>Compositing</span>
+          <span>Retouch</span>
         </button>
         <button
           className={`sidebar-link ${activeSection === 'effects' ? 'active' : ''}`}
@@ -2319,55 +2291,23 @@ export default function Home(): React.JSX.Element {
           <span className="sidebar-icon">✺</span>
           <span>Effects</span>
         </button>
-        <button
-          className={`sidebar-link ${activeSection === 'creator' ? 'active' : ''}`}
-          onClick={() => setActiveSection('creator')}
-        >
-          <span className="sidebar-icon">▶</span>
-          <span>Video Studio</span>
-        </button>
-        <div className="sidebar-divider" />
-        <div className="sidebar-workspace-label">PROJECT</div>
+        <Link className="sidebar-link" to="/cull">
+          <span className="sidebar-icon">▧</span>
+          <span>Culling</span>
+        </Link>
         <button
           className={`sidebar-link ${activeSection === 'assets' ? 'active' : ''}`}
           onClick={() => navigateStudio('assets', 'assets-workspace')}
         >
           <span className="sidebar-icon">▦</span>
-          <span>Assets & presets</span>
-        </button>
-        <button
-          className={`sidebar-link ${activeSection === 'history' ? 'active' : ''}`}
-          onClick={() => navigateStudio('history', 'history-workspace')}
-        >
-          <span className="sidebar-icon">◷</span>
-          <span>History</span>
-          <span className="sidebar-count">{Math.max(0, history.length - 1)}</span>
-        </button>
-        <button
-          className={`sidebar-link ${activeSection === 'library' ? 'active' : ''}`}
-          onClick={() => navigateStudio('library', 'studio-home')}
-        >
-          <span className="sidebar-icon">▣</span>
-          <span>Photo library</span>
-          <span className="sidebar-count">{savedPhotos.length}</span>
-        </button>
-        <Link className="sidebar-link" to="/audio">
-          <span className="sidebar-icon">♫</span>
-          <span>Podcast studio</span>
-        </Link>
-        <button
-          className={`sidebar-link ${activeSection === 'cloud-sync' ? 'active' : ''}`}
-          onClick={() => setActiveSection('cloud-sync')}
-        >
-          <span className="sidebar-icon">⇄</span>
-          <span>Cloud sync</span>
+          <span>Batch</span>
         </button>
         <button
           className={`sidebar-link ${activeSection === 'export' ? 'active' : ''}`}
           onClick={() => navigateStudio('export', 'export-workspace')}
         >
           <span className="sidebar-icon">⇧</span>
-          <span>Export center</span>
+          <span>Deliver</span>
         </button>
         <div className="sidebar-bottom">
           <div className="sidebar-status">
@@ -2378,16 +2318,6 @@ export default function Home(): React.JSX.Element {
       </aside>
 
       <main className="studio-main">
-        <section className="video-first-launch" aria-labelledby="video-first-title">
-          <div className="video-first-copy">
-            <p className="eyebrow">PRIMARY WORKSPACE · VIDEO PRODUCTION</p>
-            <h2 id="video-first-title">Professional Video Studio</h2>
-            <p>Import footage, edit a real multitrack timeline, mix sound, finish color and export your film.</p>
-          </div>
-          <button className="button button-primary video-first-launch-button" type="button" onClick={() => setActiveSection('creator')}>
-            Open Video Studio <span aria-hidden="true">→</span>
-          </button>
-        </section>
         <section className="workspace-heading" id="studio-home">
           <div>
             <p className="eyebrow">YOUR CREATIVE WORKSPACE</p>
@@ -2678,29 +2608,22 @@ export default function Home(): React.JSX.Element {
             </section>
 
             <aside className="tools-column">
-              <div className="workspace-switcher" role="tablist" aria-label="Editing workspace">
+              <div className="advanced-mode-row">
+                <span className="advanced-mode-label">Advanced tools</span>
                 <button
-                  role="tab"
-                  aria-selected={activeWorkspace === 'professional'}
-                  className={activeWorkspace === 'professional' ? 'active' : ''}
-                  onClick={() => setActiveWorkspace('professional')}
+                  type="button"
+                  role="switch"
+                  aria-checked={advancedMode}
+                  className={`advanced-toggle ${advancedMode ? 'on' : ''}`}
+                  onClick={() => setAdvancedMode((value) => !value)}
                 >
-                  Professional Studio
+                  <span className="advanced-toggle-thumb" />
                 </button>
-                <button
-                  role="tab"
-                  aria-selected={activeWorkspace === 'portrait'}
-                  className={activeWorkspace === 'portrait' ? 'active' : ''}
-                  onClick={() => {
-                    setActiveWorkspace('portrait');
-                    if (hasImage && !faceLandmarks.length && !detectingFaces)
-                      void runFaceDetection();
-                  }}
-                >
-                  Portrait Studio
-                </button>
+                <span className="advanced-mode-hint">
+                  {advancedMode ? 'Curves, HSL, layers and masks are shown' : 'Off — basic tools only'}
+                </span>
               </div>
-              <section className="tool-panel layer-panel" id="layers-workspace">
+              <section className="tool-panel layer-panel" id="layers-workspace" data-panel="advanced">
                 <div className="section-title">
                   <div>
                     <p className="eyebrow">DOCUMENT STACK</p>
@@ -3635,7 +3558,6 @@ export default function Home(): React.JSX.Element {
                   the reference and are not copied.
                 </p>
               </section>
-              {activeWorkspace === 'professional' && (
                 <section className="tool-panel filter-library-panel" id="effects-workspace">
                   <div className="section-title">
                     <div>
@@ -3732,9 +3654,7 @@ export default function Home(): React.JSX.Element {
                     pass.
                   </p>
                 </section>
-              )}
-              {activeWorkspace === 'professional' && (
-                <section className="tool-panel">
+                <section className="tool-panel" data-panel="effects">
                   <div className="section-title">
                     <div>
                       <p className="eyebrow">QUICK LOOKS</p>
@@ -3756,8 +3676,6 @@ export default function Home(): React.JSX.Element {
                     ))}
                   </div>
                 </section>
-              )}
-              {activeWorkspace === 'professional' && (
                 <section className="tool-panel" id="color-workspace">
                   <div className="section-title">
                     <div>
@@ -4039,8 +3957,6 @@ export default function Home(): React.JSX.Element {
                     tint, vibrance, hue, grain and vignette are processed locally.
                   </p>
                 </section>
-              )}
-              {activeWorkspace === 'professional' && (
                 <section className="tool-panel" id="transform-workspace">
                   <div className="section-title">
                     <div>
@@ -4141,9 +4057,7 @@ export default function Home(): React.JSX.Element {
                     full-resolution export.
                   </p>
                 </section>
-              )}
-              {activeWorkspace === 'professional' && (
-                <section className="tool-panel">
+                <section className="tool-panel" data-panel="advanced">
                   <div className="section-title">
                     <div>
                       <p className="eyebrow">LOCAL ADJUSTMENTS</p>
@@ -4489,7 +4403,6 @@ export default function Home(): React.JSX.Element {
                     <span className="tool-note">{healStrokes.length} healing stroke(s)</span>
                   </div>
                 </section>
-              )}
               <section className="tool-panel background-panel" id="background-workspace">
                 <div className="section-title">
                   <div>
@@ -4606,7 +4519,6 @@ export default function Home(): React.JSX.Element {
                   </>
                 )}
               </section>
-              {activeWorkspace === 'portrait' && (
                 <section className="tool-panel retouch-panel" id="retouch-workspace">
                   <div className="section-title">
                     <div>
@@ -4994,7 +4906,6 @@ export default function Home(): React.JSX.Element {
                     </p>
                   )}
                 </section>
-              )}
               <section className="tool-panel assistant-panel">
                 <div className="section-title">
                   <div>
