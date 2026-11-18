@@ -44,6 +44,11 @@ export default function Cull(): React.JSX.Element {
   const [busy, setBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
+  const loupeCloseRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (loupeIndex !== null) loupeCloseRef.current?.focus();
+  }, [loupeIndex]);
 
   useEffect(() => {
     getCullSessions().then(setSessions).catch(() => setSessions([]));
@@ -211,7 +216,7 @@ export default function Cull(): React.JSX.Element {
       link.href = url;
       link.download = 'minu-studio-keepers.zip';
       link.click();
-      URL.revokeObjectURL(url);
+      window.setTimeout(() => URL.revokeObjectURL(url), 5000);
       setMessage(`Exported ${keepers.length} keeper(s) as a ZIP (full frames at 1600px preview).`);
     } catch {
       setMessage('Could not build the keeper ZIP in this browser session.');
@@ -231,7 +236,7 @@ export default function Cull(): React.JSX.Element {
     link.href = url;
     link.download = 'minu-studio-cull-report.csv';
     link.click();
-    URL.revokeObjectURL(url);
+    window.setTimeout(() => URL.revokeObjectURL(url), 5000);
     setMessage('Cull report exported as CSV.');
   }, [items]);
 
@@ -457,7 +462,11 @@ export default function Cull(): React.JSX.Element {
           <div className="cull-loupe-bar" onClick={(event) => event.stopPropagation()}>
             <span>{loupeItem.name}</span>
             <span>Score {loupeItem.score} · {'★'.repeat(loupeItem.rating) || 'unrated'} · {loupeItem.label}</span>
-            <button className="cull-button cull-button-quiet" onClick={() => setLoupeIndex(null)}>
+            <button
+              ref={loupeCloseRef}
+              className="cull-button cull-button-quiet"
+              onClick={() => setLoupeIndex(null)}
+            >
               Close
             </button>
           </div>

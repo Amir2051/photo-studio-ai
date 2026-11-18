@@ -23,22 +23,24 @@ export default function Privacy(): React.JSX.Element {
       <h2>What uses the network</h2>
       <ul>
         <li>
-          <strong>Firebase Authentication</strong> — sign-in (email/password) in the photo-editor-rz project.
+          <strong>Supabase Auth</strong> — email/password sign-in for the studio (project{' '}
+          <code>texgwxmizyxsdzcfsjpo</code>). Sessions live in this browser.
         </li>
         <li>
           <strong>Cloud AI (optional, off unless configured)</strong> — chat and image features route through
-          a fail-closed server-side gateway. Image bytes are uploaded only when you explicitly invoke a cloud
-          feature and the gateway is configured; otherwise those features are disabled and report honestly.
+          a fail-closed server-side gateway. Your photo bytes are uploaded only when you explicitly invoke a
+          cloud feature; otherwise those features are disabled and report that honestly.
         </li>
         <li>
-          <strong>Client galleries</strong> — when you publish a gallery, the photos you select are uploaded to
-          Firebase Storage (photo-editor-rz) and a share document is written to Firestore. Anyone with the
-          unguessable link can view until the expiry. You can delete galleries via the owner account.
-          The "Local ZIP" delivery mode never uses the network.
+          <strong>Client galleries</strong> — when you publish a gallery, only the photos you select are
+          uploaded to the public <code>gallery-shares</code> bucket (unguessable path, 6 MB per photo).
+          Photo URLs are short-lived signed links served by an edge function that enforces share expiry;
+          expired galleries are not readable. The "Local ZIP" delivery mode never uses the network.
         </li>
         <li>
-          <strong>Cloud sync (optional)</strong> — if you enable it, reusable Style Recipes (not photos) sync to
-          your private workspace.
+          <strong>Style Recipe sync (optional)</strong> — uploads only recipe JSON (name, adjustments,
+          timestamps) to your private account-scoped rows in the <code>style_recipes_sync</code> table.
+          Photos and media are never synced.
         </li>
       </ul>
 

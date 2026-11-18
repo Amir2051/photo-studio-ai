@@ -6,9 +6,9 @@
 <svelte:head>
   <title>Terms of Service | brainCUT</title>
   <meta name="description" content="brainCUT terms of service. What you can expect from us and what we ask of you." />
-  <link rel="canonical" href="https://cut.swimmingbrain.dev/terms" />
+  <link rel="canonical" href="https://studio.safenestt.com/terms" />
   <meta property="og:title" content="Terms of Service | brainCUT" />
-  <meta property="og:url" content="https://cut.swimmingbrain.dev/terms" />
+  <meta property="og:url" content="https://studio.safenestt.com/terms" />
 </svelte:head>
 
 <div class="legal">

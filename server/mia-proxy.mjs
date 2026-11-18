@@ -43,12 +43,12 @@ async function readJson(req) {
 }
 
 function createSupabaseVerifier(config = {}) {
-  const jwksUrl =
-    config.authJwksUrl ||
-    'https://texgwxmizyxsdzcfsjpo.supabase.co/auth/v1/.well-known/jwks.json';
-  const issuer =
-    config.authIssuer || 'https://texgwxmizyxsdzcfsjpo.supabase.co/auth/v1';
+  const jwksUrl = config.authJwksUrl;
+  const issuer = config.authIssuer;
   const audience = config.authAudience || 'authenticated';
+  // Fail closed when the verification configuration is missing instead of
+  // silently binding to a project's production JWKS.
+  if (!jwksUrl || !issuer) return null;
   const jwks = createRemoteJWKSet(new URL(jwksUrl));
   return async (token) => {
     const { payload } = await jwtVerify(token, jwks, {
@@ -118,6 +118,15 @@ export function createMiaProxyServer({
     }
 
     const timestamp = now();
+    // Bound the map size: prune expired buckets first, then refuse new users.
+    if (rateLimits.size >= 10000) {
+      for (const [id, candidate] of rateLimits) {
+        if (timestamp - candidate.start >= RATE_WINDOW_MS) rateLimits.delete(id);
+      }
+      if (rateLimits.size >= 10000) {
+        return json(res, 503, { error: 'Rate limit capacity reached. Try again shortly.', requestId }, corsHeaders);
+      }
+    }
     let bucket = rateLimits.get(userId);
     if (!bucket || timestamp - bucket.start >= RATE_WINDOW_MS) {
       bucket = { start: timestamp, count: 0 };

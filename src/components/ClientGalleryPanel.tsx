@@ -92,7 +92,7 @@ export default function ClientGalleryPanel({ photos }: ClientGalleryPanelProps):
       linkElement.href = url;
       linkElement.download = `${galleryName.replace(/[^a-z0-9-_ ]+/gi, '-').trim() || 'gallery'}.zip`;
       linkElement.click();
-      URL.revokeObjectURL(url);
+      window.setTimeout(() => URL.revokeObjectURL(url), 5000);
       setMessage('Offline gallery ZIP downloaded (index.html + photos, no server needed).');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Could not build the gallery ZIP.');

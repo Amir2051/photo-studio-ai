@@ -81,7 +81,7 @@ export function createGuestSignalServer({ host = '127.0.0.1', port = 18788, now 
         if (!equalSecret(token, room.hostToken) || room.host) { send(ws, { type: 'error', message: 'Invalid host credentials or host already connected.' }); return ws.close(1008, 'Unauthorized'); }
         room.host = ws; ws.guestId = 'host'; ws.roomCode = code; ws.role = 'host'; send(ws, { type: 'host-ready', roomCode: code, guestCount: room.guests.size, maxGuests, iceServers: iceServers(code) });
       } else if (role === 'guest') {
-        if (token !== room.guestToken || !room.guestToken) { send(ws, { type: 'error', message: 'This room requires a valid guest invitation.' }); return ws.close(1008, 'Unauthorized'); }
+        if (!equalSecret(token, room.guestToken) || !room.guestToken) { send(ws, { type: 'error', message: 'This room requires a valid guest invitation.' }); return ws.close(1008, 'Unauthorized'); }
         if (room.guests.size >= maxGuests) { send(ws, { type: 'error', message: 'This room is full.' }); return ws.close(1008, 'Room full'); }
         const guestId = randomToken(9); ws.guestId = guestId; ws.roomCode = code; ws.role = 'guest'; room.guests.set(guestId, ws);
         send(ws, { type: 'guest-ready', guestId, iceServers: iceServers(code) }); send(room.host, { type: 'guest-joined', guestId });

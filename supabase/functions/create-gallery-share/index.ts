@@ -1,8 +1,8 @@
 // Minu Studio — create a client gallery share.
-// Verifies the caller's Supabase access token (auth.getUser),
-// then uploads the selected photos to the public gallery-shares bucket and
-// inserts a gallery_shares row via the service role. No client can write
-// directly; reads for unexpired shares are public by link.
+// Verifies the caller's Supabase access token (auth.getUser), then uploads the
+// selected photos to the PRIVATE gallery-shares bucket and inserts a
+// gallery_shares row via the service role. Anonymous readers get time-limited
+// signed URLs through the get-gallery-share function, never direct access.
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
@@ -26,11 +26,19 @@ function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: cors() });
 }
 
-function base64ToBytes(input: string): Uint8Array {
-  const binary = atob(input);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-  return bytes;
+function fail(status: number, message = 'The request could not be completed.'): Response {
+  return jsonResponse({ error: message }, status);
+}
+
+function base64ToBytes(input: string): Uint8Array | null {
+  try {
+    const binary = atob(input);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+  } catch {
+    return null;
+  }
 }
 
 async function verifySupabaseAccessToken(token: string): Promise<{ uid: string }> {
@@ -42,6 +50,21 @@ async function verifySupabaseAccessToken(token: string): Promise<{ uid: string }
 }
 
 const IMAGE_DATA_URL = /^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$/;
+
+function sniffMime(mime: string, bytes: Uint8Array): boolean {
+  if (bytes.length < 12) return false;
+  if (mime === 'image/jpeg') return bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  if (mime === 'image/png')
+    return (
+      bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47
+    );
+  if (mime === 'image/webp')
+    return (
+      bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 &&
+      bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50
+    );
+  return false;
+}
 
 function sanitizeFileName(name: string): string {
   const base = name.replace(/\.[^.]+$/, '').replace(/[^a-z0-9-_ ]+/gi, '-').trim() || 'photo';
@@ -56,25 +79,21 @@ function extensionFor(mime: string): string {
 
 Deno.serve(async (request: Request) => {
   if (request.method === 'OPTIONS') return new Response(null, { headers: cors() });
-  if (request.method !== 'POST') return jsonResponse({ error: 'Method not allowed.' }, 405);
-  if (!SUPABASE_URL || !SERVICE_ROLE_KEY)
-    return jsonResponse({ error: 'Server is not configured.' }, 503);
+  if (request.method !== 'POST') return fail(405, 'Method not allowed.');
+  if (!SUPABASE_URL || !SERVICE_ROLE_KEY) return fail(503, 'Server is not configured.');
 
   const declared = Number(request.headers.get('content-length') || '0');
-  if (declared > MAX_BODY_BYTES) return jsonResponse({ error: 'Request body is too large.' }, 413);
+  if (declared > MAX_BODY_BYTES) return fail(413, 'Request body is too large.');
 
   const authorization = request.headers.get('authorization') || '';
   const match = /^Bearer ([A-Za-z0-9\-_.]+)$/.exec(authorization);
-  if (!match) return jsonResponse({ error: 'A sign-in session is required.' }, 401);
+  if (!match) return fail(401, 'A sign-in session is required.');
 
   let uid: string;
   try {
     ({ uid } = await verifySupabaseAccessToken(match[1]));
-  } catch (error) {
-    return jsonResponse(
-      { error: error instanceof Error ? error.message : 'Invalid sign-in session.' },
-      401,
-    );
+  } catch {
+    return fail(401, 'Invalid or expired session.');
   }
 
   let body: {
@@ -85,45 +104,69 @@ Deno.serve(async (request: Request) => {
   try {
     body = await request.json();
   } catch {
-    return jsonResponse({ error: 'Request body must be valid JSON.' }, 400);
+    return fail(400, 'Request body must be valid JSON.');
   }
 
-  const name = typeof body.name === 'string' && body.name.trim() ? body.name.trim().slice(0, 120) : 'Client gallery';
+  const name =
+    typeof body.name === 'string' && body.name.trim() ? body.name.trim().slice(0, 120) : 'Client gallery';
   const expiryDays = Number(body.expiresInDays);
-  if (!Number.isFinite(expiryDays) || expiryDays < 1 || expiryDays > 90)
-    return jsonResponse({ error: 'expiresInDays must be between 1 and 90.' }, 400);
-  if (!Array.isArray(body.photos) || body.photos.length === 0 || body.photos.length > MAX_PHOTOS)
-    return jsonResponse({ error: 'Provide between 1 and ' + MAX_PHOTOS + ' photos.' }, 400);
+  if (!Number.isFinite(expiryDays) || expiryDays < 1 || expiryDays > 90) {
+    return fail(400, 'expiresInDays must be between 1 and 90.');
+  }
+  if (!Array.isArray(body.photos) || body.photos.length === 0 || body.photos.length > MAX_PHOTOS) {
+    return fail(400, 'Provide between 1 and 30 photos.');
+  }
+
+  // Validate everything before uploading anything so a bad photo can never
+  // leave orphaned objects behind.
+  const decoded: Array<{
+    photoName: string;
+    mime: string;
+    bytes: Uint8Array;
+    extension: string;
+    width: number;
+    height: number;
+  }> = [];
+  for (const [index, photo] of body.photos.entries()) {
+    const photoName =
+      typeof photo.name === 'string' && photo.name.trim() ? photo.name.trim() : 'photo-' + (index + 1);
+    const dataUrl = typeof photo.dataUrl === 'string' ? photo.dataUrl : '';
+    const parsed = IMAGE_DATA_URL.exec(dataUrl);
+    if (!parsed) return fail(400, 'A photo has an unsupported format.');
+    const mime = 'image/' + parsed[1];
+    const bytes = base64ToBytes(parsed[2]);
+    if (!bytes || bytes.length === 0 || bytes.length > MAX_PHOTO_BYTES) {
+      return fail(400, 'A photo exceeds the 6 MB limit.');
+    }
+    if (!sniffMime(mime, bytes)) return fail(400, 'A photo failed content validation.');
+    decoded.push({
+      photoName,
+      mime,
+      bytes,
+      extension: extensionFor(mime),
+      width: Math.max(0, Math.round(Number(photo.width) || 0)),
+      height: Math.max(0, Math.round(Number(photo.height) || 0)),
+    });
+  }
 
   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
   const shareId = crypto.randomUUID();
-  const uploaded: Array<{ name: string; url: string; width: number; height: number }> = [];
+  const uploaded: Array<{ name: string; path: string; width: number; height: number }> = [];
+  const uploadedPaths: string[] = [];
 
-  for (const [index, photo] of body.photos.entries()) {
-    const photoName = typeof photo.name === 'string' && photo.name.trim() ? photo.name.trim() : 'photo-' + (index + 1);
-    const dataUrl = typeof photo.dataUrl === 'string' ? photo.dataUrl : '';
-    const parsed = IMAGE_DATA_URL.exec(dataUrl);
-    if (!parsed) return jsonResponse({ error: 'Photo "' + photoName + '" has an unsupported format.' }, 400);
-    const mime = 'image/' + parsed[1];
-    const bytes = base64ToBytes(parsed[2]);
-    if (bytes.length > MAX_PHOTO_BYTES)
-      return jsonResponse({ error: 'Photo "' + photoName + '" exceeds the 6 MB limit.' }, 400);
-    const width = Math.max(0, Math.round(Number(photo.width) || 0));
-    const height = Math.max(0, Math.round(Number(photo.height) || 0));
-
-    const path = shareId + '/' + String(index + 1).padStart(3, '0') + '-' + sanitizeFileName(photoName) + '.' + extensionFor(mime);
+  // Upload with all-or-nothing semantics: on any failure, remove what we wrote.
+  for (const [index, item] of decoded.entries()) {
+    const path =
+      shareId + '/' + String(index + 1).padStart(3, '0') + '-' + sanitizeFileName(item.photoName) + '.' + item.extension;
     const { error: uploadError } = await supabase.storage
       .from('gallery-shares')
-      .upload(path, bytes.buffer, { contentType: mime, upsert: false });
+      .upload(path, item.bytes.buffer, { contentType: item.mime, upsert: false });
     if (uploadError) {
-      return jsonResponse({ error: 'Upload failed for "' + photoName + '": ' + uploadError.message }, 502);
+      if (uploadedPaths.length) await supabase.storage.from('gallery-shares').remove(uploadedPaths);
+      return fail(502, 'Upload failed. Please try again.');
     }
-    uploaded.push({
-      name: photoName,
-      url: SUPABASE_URL + '/storage/v1/object/public/gallery-shares/' + path,
-      width,
-      height,
-    });
+    uploadedPaths.push(path);
+    uploaded.push({ name: item.photoName, path, width: item.width, height: item.height });
   }
 
   const expiresAt = new Date(Date.now() + expiryDays * 24 * 60 * 60 * 1000).toISOString();
@@ -135,7 +178,8 @@ Deno.serve(async (request: Request) => {
     photos: uploaded,
   });
   if (insertError) {
-    return jsonResponse({ error: 'Could not save the gallery: ' + insertError.message }, 500);
+    await supabase.storage.from('gallery-shares').remove(uploadedPaths);
+    return fail(500, 'Could not save the gallery.');
   }
 
   return jsonResponse({ id: shareId, name, expiresAt, photos: uploaded.length });

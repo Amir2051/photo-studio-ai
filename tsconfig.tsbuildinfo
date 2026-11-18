@@ -1,1 +1,0 @@
-{"root":["./src/app.tsx","./src/main.tsx","./src/pages/home.tsx","./src/components/authboundary.tsx","./src/components/cloudsyncpanel.tsx","./src/components/librarytoolspanel.tsx","./src/components/videostudioframe.tsx","./src/lib/storage.ts","./src/lib/types.ts","./src/lib/utils.ts","./src/lib/imageprocessor.ts","./src/lib/aiservice.ts"],"version":"5.9.3"}

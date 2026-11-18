@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="https://cut.swimmingbrain.dev"><strong>Try it now &rarr; cut.swimmingbrain.dev</strong></a>
+  <a href="https://studio.safenestt.com"><strong>Try it now &rarr; cut.swimmingbrain.dev</strong></a>
 </p>
 
 I edit video for university projects and for a small channel, and every editor I tried wanted something from me first. A subscription, an account, an upload, twenty gigabytes of disk. The web ones wanted my footage on their servers, which for a 40 GB folder of camera files is not a plan, it is a weekend. So I built the editor I actually wanted: it opens in a tab, reads the files where they already are, and never sends them anywhere.
@@ -214,4 +214,4 @@ MIT.
 
 The libraries it is built on keep their own, and [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES) lists every one of them. The single thing in there that is not MIT or close to it: the transition called Page Curl is a BSD 3-Clause shader, copyright Hewlett-Packard, and its notice travels inside the shader source.
 
-Built by [Braian Plaku](https://swimmingbrain.dev)
+Built by [Braian Plaku](https://studio.safenestt.com)

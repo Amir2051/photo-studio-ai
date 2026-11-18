@@ -174,7 +174,7 @@ export async function saveUserPreferences(
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_USER_PREFERENCES, 'readwrite');
     const store = tx.objectStore(STORE_USER_PREFERENCES);
-    const req = store.put(merged);
+    const req = store.put(merged, 'app');
     req.onsuccess = () => resolve(merged);
     req.onerror = () => reject(req.error);
   });

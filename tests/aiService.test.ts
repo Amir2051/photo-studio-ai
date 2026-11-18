@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  createFirebaseAiProvider,
+  createSupabaseAiProvider,
   OfflineProvider,
   OpenRouterProvider,
 } from '../src/lib/aiService';
@@ -43,14 +43,14 @@ describe('AI service security boundary', () => {
     expect(String(requestInit?.body)).not.toContain('sk-test-secret-that-must-not-leak');
   });
 
-  it('creates a Firebase-backed adapter that obtains its token on demand', async () => {
-    const getIdToken = vi.fn(async () => 'fresh-firebase-id-token');
-    const provider = createFirebaseAiProvider(getIdToken);
+  it('creates a token-backed adapter that fetches it on demand', async () => {
+    const getIdToken = vi.fn(async () => 'fresh-access-token');
+    const provider = createSupabaseAiProvider(getIdToken);
     vi.stubGlobal(
       'fetch',
       vi.fn(async (_url: string | URL, init?: RequestInit) => {
         expect(new Headers(init?.headers).get('authorization')).toBe(
-          'Bearer fresh-firebase-id-token',
+          'Bearer fresh-access-token',
         );
         return new Response(JSON.stringify({ content: 'Authenticated response.' }), {
           status: 200,

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'minu-studio-shell-v1';
+const CACHE_NAME = 'minu-studio-shell-v2';
 const APP_SHELL = ['./', './index.html', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', (event) => {

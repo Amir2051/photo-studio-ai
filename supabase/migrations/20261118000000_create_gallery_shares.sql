@@ -1,8 +1,9 @@
 -- Minu Studio — client gallery delivery (Supabase, free tier).
--- Shares live in gallery_shares; photos live in the public gallery-shares bucket.
--- Anonymous readers can SELECT unexpired shares; no client write path exists —
--- only the create-gallery-share Edge Function (service role) writes after
--- verifying the caller's Firebase ID token.
+-- Shares live in gallery_shares; photos live in the gallery-shares bucket.
+-- Anonymous readers can SELECT unexpired shares (see harden migration for the
+-- current, stricter policy); no client write path exists — only the
+-- create-gallery-share Edge Function (service role) writes after verifying
+-- the caller's Supabase access token via auth.getUser.
 
 create table public.gallery_shares (
   id uuid primary key default gen_random_uuid(),

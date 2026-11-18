@@ -9,15 +9,15 @@ let baseUrl;
 async function start(options = {}) {
   server = createMiaProxyServer({
     config: {
-      firebaseProjectId: 'photo-editor-rz',
+      projectId: 'supabase-test',
       serviceApiKey: serviceKey,
       rzAgentUrl: 'https://rz-ai.safenestt.com',
       allowedOrigins: [origin],
       ...options.config,
     },
     verifyToken: options.verifyToken ?? (async (token) => {
-      if (token !== 'valid-firebase-token') throw new Error('invalid');
-      return 'firebase-user-123';
+      if (token !== 'valid-token') throw new Error('invalid');
+      return 'user-123';
     }),
     fetchImpl: options.fetchImpl ?? vi.fn(async () => Response.json({ reply: 'Hello from MIA', session_id: 's1' })),
   });
@@ -39,7 +39,7 @@ describe('Every Frame First MIA proxy', () => {
     expect(await response.json()).toEqual({ status: 'ok', service: 'minu-studio-mia-proxy' });
   });
 
-  it('rejects requests without a valid Studio Firebase bearer token', async () => {
+  it('rejects requests without a valid Studio bearer token', async () => {
     await start();
     const response = await fetch(baseUrl + '/api/mia/chat', {
       method: 'POST',
@@ -54,7 +54,7 @@ describe('Every Frame First MIA proxy', () => {
     await start({ fetchImpl });
     const response = await fetch(baseUrl + '/api/mia/chat', {
       method: 'POST',
-      headers: { origin, authorization: 'Bearer valid-firebase-token', 'content-type': 'application/json' },
+      headers: { origin, authorization: 'Bearer valid-token', 'content-type': 'application/json' },
       body: JSON.stringify({ message: 'Help edit this', system: 'Project metadata only' }),
     });
     expect(response.status).toBe(200);
@@ -62,7 +62,7 @@ describe('Every Frame First MIA proxy', () => {
     expect(fetchImpl).toHaveBeenCalledOnce();
     expect(fetchImpl.mock.calls[0][0]).toBe('https://rz-ai.safenestt.com/v1/chat');
     expect(fetchImpl.mock.calls[0][1].headers['X-Api-Key']).toBe(serviceKey);
-    expect(fetchImpl.mock.calls[0][1].headers['X-Studio-User-Id']).toBe('firebase-user-123');
+    expect(fetchImpl.mock.calls[0][1].headers['X-Studio-User-Id']).toBe('user-123');
   });
 
   it('rejects more than eight frames before forwarding them', async () => {
@@ -71,7 +71,7 @@ describe('Every Frame First MIA proxy', () => {
     const frame = { timestamp_seconds: 1, clip_name: 'clip', image_data_url: 'data:image/jpeg;base64,YWJj' };
     const response = await fetch(baseUrl + '/api/mia/vision/analyze', {
       method: 'POST',
-      headers: { origin, authorization: 'Bearer valid-firebase-token', 'content-type': 'application/json' },
+      headers: { origin, authorization: 'Bearer valid-token', 'content-type': 'application/json' },
       body: JSON.stringify({ approved: true, instruction: 'Analyze', frames: Array.from({ length: 9 }, () => frame) }),
     });
     expect(response.status).toBe(400);
@@ -83,7 +83,7 @@ describe('Every Frame First MIA proxy', () => {
     await start({ fetchImpl });
     const response = await fetch(baseUrl + '/api/mia/vision/analyze', {
       method: 'POST',
-      headers: { origin, authorization: 'Bearer valid-firebase-token', 'content-type': 'application/json' },
+      headers: { origin, authorization: 'Bearer valid-token', 'content-type': 'application/json' },
       body: JSON.stringify({
         approved: false,
         instruction: 'Analyze',
@@ -99,7 +99,7 @@ describe('Every Frame First MIA proxy', () => {
     await start({ fetchImpl });
     const response = await fetch(baseUrl + '/api/mia/vision/analyze', {
       method: 'POST',
-      headers: { origin, authorization: 'Bearer valid-firebase-token', 'content-type': 'application/json' },
+      headers: { origin, authorization: 'Bearer valid-token', 'content-type': 'application/json' },
       body: JSON.stringify({
         approved: true,
         instruction: 'Describe visible content',
@@ -116,7 +116,7 @@ describe('Every Frame First MIA proxy', () => {
   it('rejects unapproved browser origins', async () => {
     await start();
     const response = await fetch(baseUrl + '/api/mia/vision/status', {
-      headers: { origin: 'https://attacker.example', authorization: 'Bearer valid-firebase-token' },
+      headers: { origin: 'https://attacker.example', authorization: 'Bearer valid-token' },
     });
     expect(response.status).toBe(403);
   });

@@ -33,7 +33,7 @@
 <div class="welcome-state">
   <div class="welcome-content">
     <div class="welcome-icon"><Logo size={44} /></div>
-    <h1 class="welcome-title">Every Frame First</h1>
+    <h1 class="welcome-title">Minu Studio</h1>
     <p class="welcome-desc">
       Professional video editing, with real multitrack tools. Import footage, arrange clips, cut and trim precisely, mix audio, apply effects and export your finished video. Your media stays on this device.
     </p>

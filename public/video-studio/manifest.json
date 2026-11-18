@@ -1,7 +1,7 @@
 {
-  "name": "Every Frame First Video Studio",
-  "short_name": "Every Frame First",
-  "author": "Every Frame First",
+  "name": "Minu Studio Video Studio",
+  "short_name": "Minu Studio",
+  "author": "Minu Studio",
   "description": "Professional local-first video editing studio.",
   "start_url": "/video-studio/",
   "display": "standalone",

@@ -19,6 +19,7 @@ async function activatedCacheDeletes(source: string, pathname: string): Promise<
   const names = [
     'minu-studio-shell-v0',
     'minu-studio-shell-v1',
+    'minu-studio-shell-v2',
     'every-frame-first-shell-v0',
     'every-frame-first-shell-v1',
     'braincut-app-old',
@@ -57,6 +58,7 @@ describe('service-worker cache ownership', () => {
   it('lets the photo app remove only obsolete photo-app caches', async () => {
     await expect(activatedCacheDeletes(rootWorker, '/sw.js')).resolves.toEqual([
       'minu-studio-shell-v0',
+      'minu-studio-shell-v1',
       'every-frame-first-shell-v0',
       'every-frame-first-shell-v1',
     ]);

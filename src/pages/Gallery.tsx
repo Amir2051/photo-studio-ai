@@ -71,7 +71,7 @@ export default function Gallery(): React.JSX.Element {
     return (
       <main className="gallery-shell">
         <h1>Could not load this gallery</h1>
-        <p className="gallery-note">Firebase may be unavailable. Try again later.</p>
+        <p className="gallery-note">The gallery service may be unavailable or the link invalid. Try again later.</p>
         <Link className="gallery-link" to="/">
           Go to Minu Studio
         </Link>

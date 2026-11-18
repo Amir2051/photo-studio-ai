@@ -7,7 +7,7 @@
   import type { MediaItem } from '#lib/project/types.ts';
   import { getStudioAuth } from './studioAuth';
 
-  const apiBase = (import.meta.env.VITE_MIA_API_BASE_URL || 'https://every-frame-first-mia.onrender.com/api/mia').replace(/\/$/, '');
+  const apiBase = (import.meta.env.VITE_MIA_API_BASE_URL || 'https://minu-studio-mia.onrender.com/api/mia').replace(/\/$/, '');
 
   let { onClose, onUseAnalysis }: { onClose: () => void; onUseAnalysis: (analysis: string) => void } = $props();
   type Candidate = { key: string; mediaId: string; mediaName: string; clipName: string; sequenceTime: number; sourceTime: number };

@@ -188,7 +188,7 @@
 </script>
 
 <svelte:head>
-  <title>{$project ? `Every Frame First | ${$project.name}` : 'Every Frame First | Video Studio'}</title>
+  <title>{$project ? `Minu Studio | ${$project.name}` : 'Minu Studio | Video Studio'}</title>
   <meta name="robots" content="noindex" />
 </svelte:head>
 

@@ -36,10 +36,10 @@
     <a
       href="{resolve('')}/"
       class="logo"
-      title="Every Frame First Video Studio"
+      title="Minu Studio Video Studio"
     >
       <span class="logo-icon"><Logo size={20} /></span>
-      <span class="logo-text">EVERY FRAME FIRST</span>
+      <span class="logo-text">MINU STUDIO</span>
     </a>
     <span class="separator"></span>
     {#if $project}

@@ -657,7 +657,7 @@ button:disabled {
   }
 }
 
-/* In-house Firebase email/password access */
+/* Supabase email/password access */
 .auth-screen {
   min-height: 100vh;
   display: grid;

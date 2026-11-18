@@ -11,7 +11,7 @@
 
   type ChatMessage = { role: 'user' | 'assistant'; content: string; at: number };
   type MiaUser = { id: string; email: string };
-  const apiBase = (import.meta.env.VITE_MIA_API_BASE_URL || 'https://every-frame-first-mia.onrender.com/api/mia').replace(/\/$/, '');
+  const apiBase = (import.meta.env.VITE_MIA_API_BASE_URL || 'https://minu-studio-mia.onrender.com/api/mia').replace(/\/$/, '');
   let user = $state<MiaUser | null>(null);
   let checking = $state(true);
   let busy = $state(false);
@@ -143,7 +143,7 @@
     const requestSequenceId = get(activeSequence)?.id ?? null;
     try {
       const system = [
-        'You are MIA, the user\'s video-editing copilot inside Every Frame First Studio. The user is the director. Never claim to have watched or heard source footage: you receive only project/media/timeline metadata, not the original media bytes or frames.',
+        'You are MIA, the user\'s video-editing copilot inside Minu Studio Studio. The user is the director. Never claim to have watched or heard source footage: you receive only project/media/timeline metadata, not the original media bytes or frames.',
         'Explain your plan in plain language. Ask a concise clarifying question when the instruction is ambiguous or essential timing/style choices are missing.',
         'When the user clearly requests timeline edits and you have enough information, include exactly one fenced block labelled edit_proposal containing valid JSON: {"title":"...","summary":"...","operations":[{"tool":"...","summary":"...","rationale":"...","args":{...}}]}. Do not include operations that are not supported by the schema. Supported tools: add_clip(args mediaId, at number or "end", trackIndex, sourceIn, sourceOut, sequenceId); add_title(args text, at, duration, trackIndex, fontFamily, fontSize, fontWeight, color, align, strokeWidth, strokeColor, shadow, box, boxColor, x, y, sequenceId); split(args at, clipId?, sequenceId?); trim(args clipId, start?, end?, ripple?); move_clip(args clipId, to, trackIndex?); delete_clips(args clipIds, ripple?); add_transition(args clipId, type?, duration?, edge?); add_marker(args time, name?, color?, sequenceId?).',
         'Use only IDs present in the supplied project context. All timeline times are seconds. Track indexes are zero-based within video or audio tracks of that kind. Never invent media IDs or clip IDs. Keep proposals to 20 operations maximum. For uncertain destructive actions, ask first. A proposal is not an action: no timeline changes happen until the user previews and individually applies edits in AI Review.',
@@ -202,7 +202,7 @@
   {:else if !user}
     <div class="signin-wrap">
       <div class="signin-icon"><Icon name="lock-keyhole" size={23} /></div>
-      <h3>Sign in to Every Frame First Studio</h3>
+      <h3>Sign in to Minu Studio Studio</h3>
       <p>MIA uses your existing Studio account. No separate RZ-AI login is required.</p>
       <button class="primary" type="button" onclick={checkSession}>Check Studio sign-in</button>
       {#if error}<p class="error">{error}</p>{/if}

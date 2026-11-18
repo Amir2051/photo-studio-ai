@@ -1283,9 +1283,9 @@ export default function Home(): React.JSX.Element {
       const downloadUrl = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = downloadUrl;
-      link.download = `${sourceName.replace(/\.[^.]+$/, '') || 'photo'}-edited.${exportFormat.split('/')[1]}`;
+      link.download = `${safeExportName(sourceName || 'photo', 'photo')}-edited.${exportFormat.split('/')[1]}`;
       link.click();
-      URL.revokeObjectURL(downloadUrl);
+      window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 5000);
       setMessage(
         `Exported ${output.width.toLocaleString()} × ${output.height.toLocaleString()} pixels.`,
       );
@@ -1795,7 +1795,7 @@ export default function Home(): React.JSX.Element {
       link.href = url;
       link.download = `${safeExportName(recipe.name, 'style')}-batch.zip`;
       link.click();
-      URL.revokeObjectURL(url);
+      window.setTimeout(() => URL.revokeObjectURL(url), 5000);
       setMessage(
         failures.length
           ? `Exported ${exported} photo(s); ${failures.length} failed (${failures[0]}${failures.length > 1 ? ', …' : ''}).`

@@ -22,16 +22,8 @@
     "paths": { "@/*": ["./src/*"] }
   },
   "include": [
-    "src/App.tsx",
-    "src/main.tsx",
-    "src/pages/Home.tsx",
-    "src/components/**/*.tsx",
-    "src/types/**/*.d.ts",
-    "src/lib/storage.ts",
-    "src/lib/types.ts",
-    "src/lib/utils.ts",
-    "src/lib/imageProcessor.ts",
-    "src/lib/aiService.ts"
+    "src",
+    "vite.config.ts"
   ],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

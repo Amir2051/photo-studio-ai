@@ -184,10 +184,10 @@ export class OpenRouterProvider implements AiProvider {
 }
 
 /**
- * Creates the browser AI adapter using the current Firebase user's ID token.
- * The token is fetched on demand so refreshed Firebase sessions are respected.
+ * Creates the browser AI adapter using the current session access token.
+ * The token is fetched on demand so refreshed sessions are respected.
  */
-export function createFirebaseAiProvider(
+export function createSupabaseAiProvider(
   getIdToken: () => Promise<string | null>,
 ): OpenRouterProvider {
   return new OpenRouterProvider(undefined, 'server-configured-model', getIdToken);

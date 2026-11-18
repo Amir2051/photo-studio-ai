@@ -2,7 +2,7 @@
 // Minu Studio uses the free-tier Supabase project (texgwxmizyxsdzcfsjpo):
 //  - Photos upload to the public `gallery-shares` Storage bucket via the
 //    `create-gallery-share` Edge Function, which verifies the caller's
-//    Firebase ID token before writing (service role).
+//    Supabase access token via auth.getUser before writing.
 //  - Shares live in the `gallery_shares` table. RLS lets anyone read rows
 //    whose expiry is in the future; no client can insert/update/delete.
 //  - The /gallery/:shareId route is public — anyone with the link can view
@@ -130,35 +130,27 @@ export async function createGalleryShare(
   };
 }
 
-interface GalleryRow {
-  id: string;
-  name: string;
-  created_at: string;
-  expires_at: string;
-  photos: Array<GalleryPhotoMeta> | null;
-}
-
-/** Loads a share document for the public gallery route (anon read, RLS-gated by expiry). */
+/** Loads a share for the public gallery route via the gated edge function. */
 export async function getGalleryShare(id: string): Promise<GalleryShare | null> {
-  const response = await fetch(
-    `${SUPABASE_URL}/rest/v1/gallery_shares?id=eq.${encodeURIComponent(id)}&select=id,name,created_at,expires_at,photos`,
-    {
-      headers: {
-        apikey: SUPABASE_PUBLISHABLE_KEY,
-        accept: 'application/json',
-      },
+  const response = await fetch(`${SUPABASE_URL}/functions/v1/get-gallery-share`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      apikey: SUPABASE_PUBLISHABLE_KEY,
     },
-  );
+    body: JSON.stringify({ id }),
+  });
   if (!response.ok) return null;
-  const rows = (await response.json().catch(() => null)) as GalleryRow[] | null;
-  const row = rows?.[0];
+  const row = (await response.json().catch(() => null)) as
+    | { id: string; name: string; expiresAt: string; photos: GalleryPhotoMeta[] }
+    | null;
   if (!row) return null;
   return {
     id: row.id,
     ownerUid: '',
     name: row.name,
-    createdAt: row.created_at,
-    expiresAt: row.expires_at,
+    createdAt: '',
+    expiresAt: row.expiresAt,
     photos: Array.isArray(row.photos) ? row.photos : [],
   };
 }

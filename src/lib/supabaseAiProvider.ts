@@ -1,4 +1,4 @@
-import { createFirebaseAiProvider } from './aiService';
+import { createSupabaseAiProvider } from './aiService';
 import { getSupabaseAccessToken } from './supabase';
 
 /**
@@ -7,4 +7,4 @@ import { getSupabaseAccessToken } from './supabase';
  * included in browser code. The active editor remains local-only until a
  * connected AI workflow is deliberately enabled.
  */
-export const supabaseAiProvider = createFirebaseAiProvider(getSupabaseAccessToken);
+export const supabaseAiProvider = createSupabaseAiProvider(getSupabaseAccessToken);
