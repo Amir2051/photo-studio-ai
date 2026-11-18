@@ -96,16 +96,16 @@
 
 /* Simplified two-panel dark studio */
 .tools-column .tool-panel { display: none; }
-.studio-shell[data-workspace="home"] .tool-panel[data-panel~="adjust"],
-.studio-shell[data-workspace="editor"] .tool-panel[data-panel~="adjust"],
-.studio-shell[data-workspace="retouch"] .tool-panel[data-panel~="retouch"],
-.studio-shell[data-workspace="effects"] .tool-panel[data-panel~="effects"],
-.studio-shell[data-workspace="assets"] .tool-panel[data-panel~="batch"],
-.studio-shell[data-workspace="export"] .tool-panel[data-panel~="deliver"],
-.studio-shell[data-advanced="true"] .tool-panel[data-panel~="advanced"] {
+.pro-shell[data-workspace="home"] .tool-panel[data-panel~="adjust"],
+.pro-shell[data-workspace="editor"] .tool-panel[data-panel~="adjust"],
+.pro-shell[data-workspace="retouch"] .tool-panel[data-panel~="retouch"],
+.pro-shell[data-workspace="effects"] .tool-panel[data-panel~="effects"],
+.pro-shell[data-workspace="assets"] .tool-panel[data-panel~="batch"],
+.pro-shell[data-workspace="export"] .tool-panel[data-panel~="deliver"],
+.pro-shell[data-advanced="true"] .tool-panel[data-panel~="advanced"] {
   display: block;
 }
-.studio-shell[data-workspace="export"] .gallery-panel { display: block; }
+.pro-shell[data-workspace="export"] .gallery-panel { display: block; }
 
 /* Advanced toggle */
 .advanced-mode-row {

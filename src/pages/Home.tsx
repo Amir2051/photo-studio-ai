@@ -6,6 +6,43 @@ const VideoStudioFrame = React.lazy(() => import('../components/VideoStudioFrame
 const CloudSyncPanel = React.lazy(() => import('../components/CloudSyncPanel'));
 const ClientGalleryPanel = React.lazy(() => import('../components/ClientGalleryPanel'));
 import FilterThumbnail from '../components/FilterThumbnail';
+import ImageLibrary from '../editor/ImageLibrary';
+import EditorToolbar from '../editor/EditorToolbar';
+import {
+  Upload,
+  Save,
+  Download,
+  Undo2,
+  Redo2,
+  RotateCcw,
+  RotateCw,
+  Columns2,
+  Maximize2,
+  ZoomIn,
+  ZoomOut,
+  Image as ImageIcon,
+  Brush,
+  Wand2,
+  Type,
+  Crop,
+  MousePointer2,
+  Bandage,
+  Check,
+  Plus,
+  ChevronUp,
+  ChevronDown,
+  ChevronRight,
+  SlidersHorizontal,
+  Folder,
+  ArrowUpRight,
+  Eye,
+  EyeOff,
+  Star,
+  FlipHorizontal2,
+  FlipVertical2,
+  Sun,
+  Moon,
+} from 'lucide-react';
 import {
   savePhoto,
   getAllPhotos,
@@ -176,6 +213,10 @@ const PRESETS: Preset[] = [
 ];
 const MAX_FILE_BYTES = 40 * 1024 * 1024;
 const MAX_PIXELS = 24_000_000;
+const PICK_TAG = 'pro-pick';
+const REJECT_TAG = 'pro-reject';
+const ALBUM_TAG_PREFIX = 'pro-album:';
+const RATING_TAG_PREFIX = 'pro-rating:';
 const MAX_BATCH_PHOTOS = 20;
 const MAX_BATCH_TOTAL_PIXELS = 80_000_000;
 type BatchPhotoItem = {
@@ -451,8 +492,9 @@ export default function Home(): React.JSX.Element {
   );
   const [prompt, setPrompt] = useState('');
   const [styleInterpretation, setStyleInterpretation] = useState<StyleInterpretation | null>(null);
-  const [showSaved, setShowSaved] = useState(false);
   const [activeSection, setActiveSection] = useState('editor');
+  const [selectedPhotoId, setSelectedPhotoId] = useState<string | null>(null);
+  const [zoom, setZoom] = useState(1);
   const [retouchMode, setRetouchMode] = useState<'off' | 'brush'>('off');
   const [retouchStrength, setRetouchStrength] = useState(55);
   const [backgroundOps, setBackgroundOps] = useState<BackgroundOps>(DEFAULT_BACKGROUND_OPS);
@@ -500,18 +542,71 @@ export default function Home(): React.JSX.Element {
     'image/jpeg',
   );
 
+  const stageRef = useRef<HTMLDivElement | null>(null);
+
   const navigateStudio = (section: string, target: string) => {
     setActiveSection(section);
-    setShowSaved(false);
     if (section === 'retouch') setActiveWorkspace('portrait');
     if (['color', 'effects', 'compositing', 'assets'].includes(section))
       setActiveWorkspace('professional');
-    if (section === 'library') setShowSaved(true);
     window.setTimeout(
       () => document.getElementById(target)?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
       40,
     );
   };
+
+  const persistPhotoTags = useCallback(async (photo: Photo, tags: string[]) => {
+    const updated: Photo = { ...photo, tags, updatedAt: new Date().toISOString() };
+    try {
+      await savePhoto(updated);
+      setSavedPhotos((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+    } catch (error) {
+      console.error('Could not update library photo', error);
+      setMessage('Could not save that library change. Try again.');
+    }
+  }, []);
+
+  const togglePhotoTags = useCallback(
+    (photo: Photo, additions: string[]) => {
+      const tags = new Set(photo.tags);
+      for (const tag of additions) {
+        if (tags.has(tag)) {
+          tags.delete(tag);
+          continue;
+        }
+        tags.add(tag);
+        if (tag === PICK_TAG) tags.delete(REJECT_TAG);
+        if (tag === REJECT_TAG) tags.delete(PICK_TAG);
+      }
+      void persistPhotoTags(photo, [...tags]);
+    },
+    [persistPhotoTags],
+  );
+
+  const setPhotoRating = useCallback(
+    (photo: Photo, rating: number) => {
+      const tags = photo.tags.filter((tag) => !tag.startsWith(RATING_TAG_PREFIX));
+      if (rating >= 1 && rating <= 5) tags.push(`${RATING_TAG_PREFIX}${rating}`);
+      void persistPhotoTags(photo, tags);
+    },
+    [persistPhotoTags],
+  );
+
+  const createAlbumAndAssign = useCallback(
+    (name: string) => {
+      const albumTag = `${ALBUM_TAG_PREFIX}${name}`;
+      const target = savedPhotos.find((photo) => photo.id === selectedPhotoId);
+      if (!target) {
+        setMessage(`Album "${name}" ready — open a saved photo to assign it.`);
+        return;
+      }
+      if (!target.tags.includes(albumTag)) {
+        void persistPhotoTags(target, [...target.tags, albumTag]);
+      }
+      setMessage(`“${target.name}” added to album “${name}”.`);
+    },
+    [persistPhotoTags, savedPhotos, selectedPhotoId],
+  );
 
   const render = useCallback(
     (next: Adjustments, showOriginal = false) => {
@@ -605,7 +700,7 @@ export default function Home(): React.JSX.Element {
     // Coalesce rapid slider/state changes into one canvas render per animation frame.
     const frame = window.requestAnimationFrame(() => render(adjustments, compare));
     return () => window.cancelAnimationFrame(frame);
-  }, [adjustments, compare, render, sourceUrl, showSaved]);
+  }, [adjustments, compare, render, sourceUrl]);
   useEffect(() => {
     const canvas = maskThumbnailRef.current;
     const activeLayer = layers.find((layer) => layer.id === selectedLayerId);
@@ -1087,6 +1182,8 @@ export default function Home(): React.JSX.Element {
       }
       if (sourceUrl?.startsWith('blob:')) URL.revokeObjectURL(sourceUrl);
       imageRef.current = image;
+      setSelectedPhotoId(null);
+      setZoom(1);
       setPersonMask(null);
       setBackgroundOps(DEFAULT_BACKGROUND_OPS);
       setFaceStrengths([]);
@@ -1554,7 +1651,8 @@ export default function Home(): React.JSX.Element {
       );
       setHistoryIndex(isDefault ? 0 : 1);
       setCompare(false);
-      setShowSaved(false);
+      setSelectedPhotoId(photo.id);
+      setZoom(1);
       setMessage('Restored the saved original and its local adjustment recipe.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Could not reopen this saved photo.');
@@ -2180,32 +2278,25 @@ export default function Home(): React.JSX.Element {
   }
 
   return (
-    <div className="studio-shell" data-workspace={activeSection} data-advanced={advancedMode ? 'true' : 'false'}>
-      <header className="studio-header">
-        <a
-          className="brand"
-          href={import.meta.env.BASE_URL}
-          aria-label="Minu Studio home"
-        >
-          <span className="brand-mark">MS</span>
-          <span>
-            <strong>MINU STUDIO</strong>
-            <small>PHOTO STUDIO</small>
-          </span>
-        </a>
-        <div className="header-actions">
-          <span className="local-indicator">
-            <i /> LOCAL EDITING
-          </span>
-          <button className="button button-quiet" onClick={() => setShowSaved((v) => !v)}>
-            {showSaved
-              ? 'Close library'
-              : `Library${savedPhotos.length ? ` (${savedPhotos.length})` : ''}`}
-          </button>
-          <button className="button button-primary" onClick={() => fileInputRef.current?.click()}>
-            ＋ Add photo
-          </button>
-        </div>
+    <div
+      className="pro-shell"
+      data-workspace={activeSection}
+      data-advanced={advancedMode ? 'true' : 'false'}
+    >
+      <EditorToolbar
+        activeSection={activeSection}
+        canUndo={canUndo}
+        canRedo={canRedo}
+        hasImage={hasImage}
+        busy={busy}
+        onNavigate={navigateStudio}
+        onImport={() => fileInputRef.current?.click()}
+        onUndo={undo}
+        onRedo={redo}
+        onReset={reset}
+        onSave={saveToLibrary}
+        onExport={exportPhoto}
+      />
         <input
           ref={fileInputRef}
           className="visually-hidden"
@@ -2227,208 +2318,85 @@ export default function Home(): React.JSX.Element {
             e.target.value = '';
           }}
         />
-      </header>
 
-      <nav className="workflow-steps" aria-label="Editing workflow">
-        <button type="button" className="workflow-step" onClick={() => fileInputRef.current?.click()}>
-          <span className="workflow-step-index">1</span>
-          <span>Import</span>
-        </button>
-        <span className="workflow-step-divider" aria-hidden="true">→</span>
-        <Link to="/cull" className="workflow-step">
-          <span className="workflow-step-index">2</span>
-          <span>Cull</span>
-        </Link>
-        <span className="workflow-step-divider" aria-hidden="true">→</span>
-        <button
-          type="button"
-          className="workflow-step"
-          onClick={() => navigateStudio('editor', 'editor-canvas')}
-        >
-          <span className="workflow-step-index">3</span>
-          <span>Edit</span>
-        </button>
-        <span className="workflow-step-divider" aria-hidden="true">→</span>
-        <button
-          type="button"
-          className="workflow-step"
-          onClick={() => navigateStudio('assets', 'assets-workspace')}
-        >
-          <span className="workflow-step-index">4</span>
-          <span>Batch</span>
-        </button>
-        <span className="workflow-step-divider" aria-hidden="true">→</span>
-        <button
-          type="button"
-          className="workflow-step"
-          onClick={() => navigateStudio('export', 'export-workspace')}
-        >
-          <span className="workflow-step-index">5</span>
-          <span>Deliver</span>
-        </button>
-      </nav>
-
-      <aside className="studio-sidebar" aria-label="Studio navigation">
-        <div className="sidebar-workspace-label">STUDIO</div>
-        <button
-          className={`sidebar-link ${activeSection === 'home' || activeSection === 'editor' ? 'active' : ''}`}
-          onClick={() => navigateStudio('editor', 'editor-canvas')}
-        >
-          <span className="sidebar-icon">⌂</span>
-          <span>Home</span>
-        </button>
-        <button
-          className={`sidebar-link ${activeSection === 'retouch' ? 'active' : ''}`}
-          onClick={() => navigateStudio('retouch', 'retouch-workspace')}
-        >
-          <span className="sidebar-icon">✧</span>
-          <span>Retouch</span>
-        </button>
-        <button
-          className={`sidebar-link ${activeSection === 'effects' ? 'active' : ''}`}
-          onClick={() => navigateStudio('effects', 'effects-workspace')}
-        >
-          <span className="sidebar-icon">✺</span>
-          <span>Effects</span>
-        </button>
-        <Link className="sidebar-link" to="/cull">
-          <span className="sidebar-icon">▧</span>
-          <span>Culling</span>
-        </Link>
-        <button
-          className={`sidebar-link ${activeSection === 'assets' ? 'active' : ''}`}
-          onClick={() => navigateStudio('assets', 'assets-workspace')}
-        >
-          <span className="sidebar-icon">▦</span>
-          <span>Batch</span>
-        </button>
-        <button
-          className={`sidebar-link ${activeSection === 'export' ? 'active' : ''}`}
-          onClick={() => navigateStudio('export', 'export-workspace')}
-        >
-          <span className="sidebar-icon">⇧</span>
-          <span>Deliver</span>
-        </button>
-        <div className="sidebar-bottom">
-          <div className="sidebar-status">
-            <i /> Local engine ready
-          </div>
-          <small>MINU STUDIO</small>
-        </div>
-      </aside>
-
-      <main className="studio-main">
-        <section className="workspace-heading" id="studio-home">
-          <div>
-            <p className="eyebrow">YOUR CREATIVE WORKSPACE</p>
-            <h1>
-              Make every frame <em>count.</em>
-            </h1>
-            <p className="subheading">A thoughtful photo editor. Your original stays untouched.</p>
-          </div>
-          {hasImage && (
-            <div className="history-actions">
-              <button className="icon-button" disabled={!canUndo} onClick={undo} aria-label="Undo">
-                ↶
+      <ImageLibrary
+        photos={savedPhotos}
+        selectedId={selectedPhotoId}
+        onOpen={(photo) => void openSavedPhoto(photo)}
+        onTogglePick={(photo) => togglePhotoTags(photo, [PICK_TAG])}
+        onToggleReject={(photo) => togglePhotoTags(photo, [REJECT_TAG])}
+        onSetRating={setPhotoRating}
+        onToggleAlbum={(photo, album) => togglePhotoTags(photo, [`${ALBUM_TAG_PREFIX}${album}`])}
+        onNewAlbum={createAlbumAndAssign}
+        onImportClick={() => fileInputRef.current?.click()}
+      />
+      <section className="preview-column pro-canvas-col" id="editor-canvas">
+          <div className="pro-canvas-toolbar">
+            <span className="pro-canvas-title" title={hasImage ? sourceName : undefined}>
+              {hasImage ? sourceName : 'PREVIEW CANVAS'}
+            </span>
+            <div className="pro-canvas-spacer" />
+            {hasImage && (
+              <button
+                className={`pro-icon-btn ${compare ? 'active' : ''}`}
+                onClick={() => setCompare((v) => !v)}
+                title="Toggle before / after"
+                aria-label="Toggle before and after"
+                aria-pressed={compare}
+              >
+                <Columns2 size={15} aria-hidden="true" />
+                <span>{compare ? 'Original' : 'Edited'}</span>
               </button>
-              <button className="icon-button" disabled={!canRedo} onClick={redo} aria-label="Redo">
-                ↷
-              </button>
-              <button className="button button-quiet" onClick={reset}>
-                Reset edits
-              </button>
-            </div>
-          )}
-        </section>
-        <section className="studio-overview-strip" aria-label="Workspace status">
-          <div className="overview-stat">
-            <span className="overview-icon">▧</span>
-            <div>
-              <small>DOCUMENT</small>
-              <strong>{hasImage ? sourceName : 'No document open'}</strong>
-              <em>
-                {hasImage
-                  ? `${sourceSize.width.toLocaleString()} × ${sourceSize.height.toLocaleString()}`
-                  : 'Import an image to begin'}
-              </em>
-            </div>
-          </div>
-          <div className="overview-stat">
-            <span className="overview-icon">◈</span>
-            <div>
-              <small>EDIT HISTORY</small>
-              <strong>{hasImage ? `${historyIndex} changes` : 'Ready for edits'}</strong>
-              <em>{canUndo ? 'Undo available' : 'No pending changes'}</em>
-            </div>
-          </div>
-          <div className="overview-stat">
-            <span className="overview-icon">▤</span>
-            <div>
-              <small>LAYERS</small>
-              <strong>{hasImage ? `${layers.length} layers` : 'Waiting for image'}</strong>
-              <em>{layers.filter((layer) => layer.visible).length} visible</em>
-            </div>
-          </div>
-          <div className="overview-stat engine-stat">
-            <span className="engine-pulse" />
-            <div>
-              <small>PROCESSING</small>
-              <strong>On-device engine</strong>
-              <em>Private · No upload required</em>
-            </div>
-          </div>
-        </section>
-
-        {showSaved ? (
-          <section className="library-panel">
-            <div className="section-title">
-              <div>
-                <p className="eyebrow">ON THIS DEVICE</p>
-                <h2>Your photo library</h2>
-              </div>
-              <span>{savedPhotos.length} saved</span>
-            </div>
-            {savedPhotos.length ? (
-              <div className="saved-grid">
-                {savedPhotos.map((photo) => (
-                  <button
-                    className="saved-card"
-                    key={photo.id}
-                    onClick={() => void openSavedPhoto(photo)}
-                  >
-                    <img src={photo.dataUrl} alt="" />
-                    <div>
-                      <strong>{photo.name}</strong>
-                      <small>
-                        {photo.dimensions.width} × {photo.dimensions.height} · Open edit
-                      </small>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <p className="empty-library">
-                Your saved photos will appear here. Save an edit to keep a local copy.
-              </p>
             )}
-          </section>
-        ) : (
-          <div className="editor-layout">
-            <section className="preview-column" id="editor-canvas">
-              <div className="preview-toolbar">
-                <span>{hasImage ? sourceName : 'PREVIEW CANVAS'}</span>
-                {hasImage && (
-                  <button
-                    className={`compare-toggle ${compare ? 'active' : ''}`}
-                    onClick={() => setCompare((v) => !v)}
-                    title="Hold or tap to compare with original"
-                  >
-                    ◐ {compare ? 'Original' : 'Compare'}
-                  </button>
-                )}
-              </div>
+            <div className="pro-zoom" aria-label="Canvas zoom">
+              <button
+                className="pro-icon-btn"
+                onClick={() => setZoom((z) => Math.max(0.25, Number((z / 1.25).toFixed(2))))}
+                disabled={!hasImage || zoom <= 0.25}
+                title="Zoom out"
+                aria-label="Zoom out"
+              >
+                <ZoomOut size={15} aria-hidden="true" />
+              </button>
+              <span className="pro-zoom-label" aria-live="polite">
+                {Math.round(zoom * 100)}%
+              </span>
+              <button
+                className="pro-icon-btn"
+                onClick={() => setZoom((z) => Math.min(2, Number((z * 1.25).toFixed(2))))}
+                disabled={!hasImage || zoom >= 2}
+                title="Zoom in"
+                aria-label="Zoom in"
+              >
+                <ZoomIn size={15} aria-hidden="true" />
+              </button>
+              <button
+                className="pro-icon-btn"
+                onClick={() => setZoom(1)}
+                disabled={!hasImage || zoom === 1}
+                title="Fit to screen"
+                aria-label="Fit to screen"
+                style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.08em' }}
+              >
+                FIT
+              </button>
+            </div>
+            <button
+              className="pro-icon-btn"
+              onClick={() => {
+                const stage = stageRef.current;
+                if (stage?.requestFullscreen) void stage.requestFullscreen();
+              }}
+              disabled={!hasImage}
+              title="Full-screen preview"
+              aria-label="Full-screen preview"
+            >
+              <Maximize2 size={15} aria-hidden="true" />
+            </button>
+          </div>
               <div
-                className={`preview-stage ${hasImage ? 'has-image' : ''}`}
+                ref={stageRef}
+                className={`preview-stage pro-stage ${hasImage ? 'has-image' : ''}`}
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={(e) => {
                   e.preventDefault();
@@ -2447,7 +2415,7 @@ export default function Home(): React.JSX.Element {
                           setRetouchMode('off');
                         }}
                       >
-                        ↖
+                        <MousePointer2 size={16} aria-hidden="true" />
                       </button>
                       <button
                         className={localTool === 'brush' ? 'active' : ''}
@@ -2458,7 +2426,7 @@ export default function Home(): React.JSX.Element {
                           setRetouchMode('off');
                         }}
                       >
-                        ◉
+                        <Brush size={16} aria-hidden="true" />
                       </button>
                       <button
                         className={localTool === 'heal' ? 'active' : ''}
@@ -2469,7 +2437,7 @@ export default function Home(): React.JSX.Element {
                           setRetouchMode('off');
                         }}
                       >
-                        ✳
+                        <Bandage size={16} aria-hidden="true" />
                       </button>
                       <button
                         className={retouchMode === 'brush' ? 'active' : ''}
@@ -2480,14 +2448,14 @@ export default function Home(): React.JSX.Element {
                           setRetouchMode('brush');
                         }}
                       >
-                        ✧
+                        <Wand2 size={16} aria-hidden="true" />
                       </button>
                       <button
                         title="Add text layer"
                         aria-label="Add text layer"
                         onClick={addTextLayer}
                       >
-                        T
+                        <Type size={16} aria-hidden="true" />
                       </button>
                       <button
                         title="Crop & transform"
@@ -2499,7 +2467,7 @@ export default function Home(): React.JSX.Element {
                             ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
                         }}
                       >
-                        ⌗
+                        <Crop size={16} aria-hidden="true" />
                       </button>
                     </nav>
                     <canvas
@@ -2512,6 +2480,7 @@ export default function Home(): React.JSX.Element {
                           ? 'retouch-brush-active'
                           : ''
                       }
+                      style={{ transform: `scale(${zoom})` }}
                       onPointerDown={startBrushStroke}
                       onPointerMove={continueBrushStroke}
                       onPointerUp={finishBrushStroke}
@@ -2520,7 +2489,9 @@ export default function Home(): React.JSX.Element {
                   </>
                 ) : (
                   <div className="upload-prompt">
-                    <div className="upload-icon">↥</div>
+                    <div className="upload-icon">
+                      <Upload size={34} strokeWidth={1.5} aria-hidden="true" />
+                    </div>
                     <h2>Start with a photograph</h2>
                     <p>Drop an image here, or choose one from your device.</p>
                     <button
@@ -2533,13 +2504,16 @@ export default function Home(): React.JSX.Element {
                   </div>
                 )}
               </div>
-              <div className="preview-footer">
-                <span>{message}</span>
+              <div className="pro-statusbar">
+                <span className="status-message">{message}</span>
+                <span className="spacer" />
                 {hasImage && (
                   <span>
                     {sourceSize.width.toLocaleString()} × {sourceSize.height.toLocaleString()}
                   </span>
                 )}
+                <span>On-device · Private</span>
+                <Link to="/privacy">Privacy</Link>
               </div>
               {hasImage && (
                 <div className="export-bar" id="export-workspace">
@@ -2555,10 +2529,12 @@ export default function Home(): React.JSX.Element {
                     </select>
                   </label>
                   <button className="button button-quiet" onClick={saveToLibrary} disabled={busy}>
+                    <Save size={14} aria-hidden="true" style={{ marginRight: 6, verticalAlign: '-2px' }} />
                     Save to library
                   </button>
                   <button className="button button-primary" onClick={exportPhoto} disabled={busy}>
-                    ↓ Export photo
+                    <Download size={14} aria-hidden="true" style={{ marginRight: 6, verticalAlign: '-2px' }} />
+                    Export photo
                   </button>
                 </div>
               )}
@@ -2607,7 +2583,7 @@ export default function Home(): React.JSX.Element {
               )}
             </section>
 
-            <aside className="tools-column">
+            <aside className="tools-column pro-tools">
               <div className="advanced-mode-row">
                 <span className="advanced-mode-label">Advanced tools</span>
                 <button
@@ -2637,21 +2613,21 @@ export default function Home(): React.JSX.Element {
                     disabled={!hasImage}
                     onClick={addLayerGroup}
                   >
-                    ＋ Group
+                    + Group
                   </button>
                   <button
                     className="button button-quiet"
                     disabled={!hasImage}
                     onClick={addAdjustmentLayer}
                   >
-                    ＋ Adjustment
+                    + Adjustment
                   </button>
                   <button
                     className="button button-quiet"
                     disabled={!hasImage}
                     onClick={addTextLayer}
                   >
-                    ＋ Text
+                    + Text
                   </button>
                 </div>
                 <div className="layer-list" role="listbox" aria-label="Document layers">
@@ -2698,7 +2674,7 @@ export default function Home(): React.JSX.Element {
                           aria-label={`${layer.visible ? 'Hide' : 'Show'} ${layer.name}`}
                           onClick={() => updateLayer(layer.id, { visible: !layer.visible })}
                         >
-                          {layer.visible ? '◉' : '○'}
+                          {layer.visible ? <Eye size={13} aria-hidden="true" /> : <EyeOff size={13} aria-hidden="true" />}
                         </button>
                         {layer.type === 'group' && (
                           <button
@@ -2706,7 +2682,7 @@ export default function Home(): React.JSX.Element {
                             aria-label={`${layer.expanded === false ? 'Expand' : 'Collapse'} ${layer.name}`}
                             onClick={() => toggleGroupExpanded(layer.id)}
                           >
-                            {layer.expanded === false ? '▸' : '▾'}
+                            {layer.expanded === false ? <ChevronRight size={13} aria-hidden="true" /> : <ChevronDown size={13} aria-hidden="true" />}
                           </button>
                         )}
                         <button
@@ -2720,13 +2696,15 @@ export default function Home(): React.JSX.Element {
                           }}
                         >
                           <span className={`layer-thumb layer-thumb-${layer.type}`}>
-                            {layer.type === 'image'
-                              ? '▧'
-                              : layer.type === 'adjustment'
-                                ? '◐'
-                                : layer.type === 'group'
-                                  ? '▣'
-                                  : 'T'}
+                            {layer.type === 'image' ? (
+                              <ImageIcon size={13} aria-hidden="true" />
+                            ) : layer.type === 'adjustment' ? (
+                              <SlidersHorizontal size={13} aria-hidden="true" />
+                            ) : layer.type === 'group' ? (
+                              <Folder size={13} aria-hidden="true" />
+                            ) : (
+                              <Type size={13} aria-hidden="true" />
+                            )}
                           </span>
                           <span>
                             <strong>{layer.name}</strong>
@@ -2747,13 +2725,13 @@ export default function Home(): React.JSX.Element {
                             aria-label={`Move ${layer.name} up`}
                             onClick={() => moveLayer(layer.id, 1)}
                           >
-                            ↑
+                            <ChevronUp size={12} aria-hidden="true" />
                           </button>
                           <button
                             aria-label={`Move ${layer.name} down`}
                             onClick={() => moveLayer(layer.id, -1)}
                           >
-                            ↓
+                            <ChevronDown size={12} aria-hidden="true" />
                           </button>
                         </span>
                       </div>
@@ -2809,7 +2787,7 @@ export default function Home(): React.JSX.Element {
                                 }
                               }}
                             >
-                              ↑
+                              <ChevronUp size={12} aria-hidden="true" />
                             </button>
                             <button
                               className="button button-quiet"
@@ -2825,7 +2803,7 @@ export default function Home(): React.JSX.Element {
                                 }
                               }}
                             >
-                              ↓
+                              <ChevronDown size={12} aria-hidden="true" />
                             </button>
                             <button
                               className="button button-quiet"
@@ -3373,10 +3351,10 @@ export default function Home(): React.JSX.Element {
                 </div>
                 <div className="history-footer">
                   <button className="button button-quiet" onClick={undo} disabled={!canUndo}>
-                    ↶ Undo
+                    <Undo2 size={13} aria-hidden="true" style={{ marginRight: 6, verticalAlign: '-2px' }} /> Undo
                   </button>
                   <button className="button button-quiet" onClick={redo} disabled={!canRedo}>
-                    ↷ Redo
+                    <Redo2 size={13} aria-hidden="true" style={{ marginRight: 6, verticalAlign: '-2px' }} /> Redo
                   </button>
                 </div>
               </section>
@@ -3579,7 +3557,7 @@ export default function Home(): React.JSX.Element {
                     onChange={(e) => setFilterCategory(e.target.value)}
                   >
                     <option value="all">All categories</option>
-                    <option value="favorites">★ Favorites ({favoriteFilterIds.length})</option>
+                    <option value="favorites">Favorites ({favoriteFilterIds.length})</option>
                     {CATEGORIES.filter((category) => category.id !== 'custom').map((category) => (
                       <option key={category.id} value={category.id}>
                         {category.label}
@@ -3601,7 +3579,11 @@ export default function Home(): React.JSX.Element {
                             <small>{filter.description}</small>
                           </span>
                           <span className="filter-apply-mark">
-                            {selectedFilterId === filter.id ? '✓' : '＋'}
+                            {selectedFilterId === filter.id ? (
+                              <Check size={12} aria-hidden="true" />
+                            ) : (
+                              <Plus size={12} aria-hidden="true" />
+                            )}
                           </span>
                         </button>
                         <button
@@ -3611,13 +3593,13 @@ export default function Home(): React.JSX.Element {
                           aria-label={`${favoriteFilterIds.includes(filter.id) ? 'Remove' : 'Add'} ${filter.name} ${favoriteFilterIds.includes(filter.id) ? 'from' : 'to'} favorites`}
                           aria-pressed={favoriteFilterIds.includes(filter.id)}
                         >
-                          {favoriteFilterIds.includes(filter.id) ? '★' : '☆'}
+                          {favoriteFilterIds.includes(filter.id) ? <Star size={12} aria-hidden="true" fill="currentColor" /> : <Star size={12} aria-hidden="true" />}
                         </button>
                       </article>
                     ))}
                     {!visibleFilters.length && (
                       <p className="tool-note">
-                        No filters match. Try another search or save a few looks with ☆.
+                        No filters match. Try another search or save a few looks with the star button.
                       </p>
                     )}
                     {visibleFilters.length > filterVisibleCount && (
@@ -3971,14 +3953,16 @@ export default function Home(): React.JSX.Element {
                       disabled={!hasImage}
                       onClick={() => rotateDocument(-90)}
                     >
-                      ↶ Rotate left
+                      <RotateCcw size={13} aria-hidden="true" style={{ marginRight: 6, verticalAlign: '-2px' }} />
+                      Rotate left
                     </button>
                     <button
                       className="button button-quiet"
                       disabled={!hasImage}
                       onClick={() => rotateDocument(90)}
                     >
-                      ↷ Rotate right
+                      <RotateCw size={13} aria-hidden="true" style={{ marginRight: 6, verticalAlign: '-2px' }} />
+                      Rotate right
                     </button>
                   </div>
                   <div className="retouch-actions">
@@ -3992,7 +3976,7 @@ export default function Home(): React.JSX.Element {
                         })
                       }
                     >
-                      ⇋ Flip horizontal
+                   <FlipHorizontal2 size={12} aria-hidden="true" style={{ marginRight: 6, verticalAlign: '-2px' }} />Flip horizontal
                     </button>
                     <button
                       className={`button ${documentTransform.flipY ? 'button-primary' : 'button-quiet'}`}
@@ -4004,7 +3988,7 @@ export default function Home(): React.JSX.Element {
                         })
                       }
                     >
-                      ⇵ Flip vertical
+                   <FlipVertical2 size={12} aria-hidden="true" style={{ marginRight: 6, verticalAlign: '-2px' }} />Flip vertical
                     </button>
                   </div>
                   {(
@@ -4199,7 +4183,7 @@ export default function Home(): React.JSX.Element {
                         setLocalSaturation(0);
                       }}
                     >
-                      ☼ Dodge
+                      <Sun size={12} aria-hidden="true" style={{ marginRight: 6, verticalAlign: '-2px' }} />Dodge
                     </button>
                     <button
                       className={
@@ -4215,7 +4199,7 @@ export default function Home(): React.JSX.Element {
                         setLocalSaturation(0);
                       }}
                     >
-                      ◐ Burn
+                      <Moon size={12} aria-hidden="true" style={{ marginRight: 6, verticalAlign: '-2px' }} />Burn
                     </button>
                   </div>
                   {tonalBrush && localTool === 'brush' && (
@@ -4328,7 +4312,7 @@ export default function Home(): React.JSX.Element {
                                 commitSnapshot(adjustments, manualAdjustments, next, healStrokes);
                               }}
                             >
-                              {mask.visible === false ? '◉̸' : '◉'}
+                              {mask.visible === false ? <EyeOff size={12} aria-hidden="true" /> : <Eye size={12} aria-hidden="true" />}
                             </button>
                             <button
                               className="icon-button"
@@ -4932,7 +4916,7 @@ export default function Home(): React.JSX.Element {
                     disabled={!hasImage || !prompt.trim()}
                     aria-label="Interpret style instruction"
                   >
-                    ↗
+                    <ArrowUpRight size={15} aria-hidden="true" />
                   </button>
                 </div>
                 {styleInterpretation && (
@@ -4966,16 +4950,6 @@ export default function Home(): React.JSX.Element {
                 </p>
               </section>
             </aside>
-          </div>
-        )}
-      </main>
-      <footer className="studio-footer">
-        <span>MINU STUDIO</span>
-        <span>Private by default · Processing stays in your browser</span>
-        <Link className="privacy-footer-link" to="/privacy">
-          Privacy
-        </Link>
-      </footer>
     </div>
   );
 }
