@@ -1,8 +1,7 @@
 rules_version = '2';
-// Minu Studio — Firestore rules (deploy in the photo-editor-rz project).
-// Client galleries live in galleryShares. Photos leave the app only through
-// share links the photographer creates; anyone holding the unguessable id can
-// read, only the owner can create/update/delete.
+// Minu Studio — Firestore rules (photo-editor-rz project).
+// Client galleries live in galleryShares. Anyone holding the unguessable share
+// link can read; only the signed-in owner can create, update, or delete.
 service cloud.firestore {
   match /databases/{database}/documents {
     match /galleryShares/{shareId} {

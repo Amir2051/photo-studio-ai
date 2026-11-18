@@ -1,6 +1,6 @@
 rules_version = '2';
-// Minu Studio — Firebase Storage rules (deploy in the photo-editor-rz project).
-// Gallery uploads: authenticated users only, images only, 25 MB cap.
+// Minu Studio — Firebase Storage rules (photo-editor-rz project).
+// Gallery uploads: signed-in users only, images only, 25 MB cap.
 // Reads are public-by-link (unguessable share id in the path); do not store
 // anything private outside gallery-shares/.
 service firebase.storage {
