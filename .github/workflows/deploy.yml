@@ -46,6 +46,8 @@ jobs:
           grep -R -q 'PRODUCER AUDIO DESK' public/video-studio/_app/immutable
       - name: Copy custom-domain CNAME into the Pages artifact
         run: cp CNAME dist/CNAME
+      - name: Add SPA fallback for client-side routes
+        run: cp dist/index.html dist/404.html
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
