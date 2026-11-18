@@ -7,7 +7,10 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   return {
-    base: './',
+    // Serve from the domain root (custom CNAME in production). Relative base
+  // './' breaks deep links such as /gallery/:shareId because assets resolve
+  // relative to the nested path instead of the root.
+  base: '/',
     plugins: [
       {
         name: 'emit-audio-static-entrypoint',

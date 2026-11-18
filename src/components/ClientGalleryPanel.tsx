@@ -103,7 +103,7 @@ export default function ClientGalleryPanel({ photos }: ClientGalleryPanelProps):
       </div>
       <p className="tool-note">
         Package saved-library photos as a private client gallery. Share links are hosted on
-        Firebase Storage/Firestore (photo-editor-rz) and expire automatically; the ZIP option
+        Supabase (free tier, no billing required) and expire automatically; the ZIP option
         produces a fully offline gallery — nothing leaves this device.
       </p>
       {!signedIn && (

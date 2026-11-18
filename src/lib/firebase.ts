@@ -1,7 +1,5 @@
 import { getApp, getApps, initializeApp } from 'firebase/app';
 import { browserLocalPersistence, getAuth, setPersistence } from 'firebase/auth';
-import { getStorage } from 'firebase/storage';
-import { getFirestore } from 'firebase/firestore';
 
 const config = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -24,10 +22,6 @@ export const firebaseConfigured = Boolean(
 const app = firebaseConfigured ? (getApps().length ? getApp() : initializeApp(config)) : null;
 
 export const auth = app ? getAuth(app) : null;
-
-export const storage = app ? getStorage(app) : null;
-
-export const db = app ? getFirestore(app) : null;
 
 export const authReady = auth ? setPersistence(auth, browserLocalPersistence) : Promise.resolve();
 

@@ -8,7 +8,7 @@ A private-by-default, browser-based photography workflow — cull, retouch, batc
 - **AI portrait retouch upgrades**: per-face smoothing controls (each detected face independently), local one-click blemish detection with auto healing strokes, glasses-glare softening (specular-highlight suppression inside eye regions), plus the existing face-aware smoothing and makeup.
 - **AI background tools**: on-device MediaPipe selfie segmentation — keep the person, blur / dim / recolor / gradient-replace the background. Works in preview, full-res export and library saves.
 - **Batch processing v2**: "Sync current edits to batch" (one-click recipe from the open photo), per-photo progress and error isolation, cancel anytime, per-item status badges, full-resolution ZIP export.
-- **Client gallery delivery** (`/deliver-workspace` panel + public `/gallery/:shareId` route): publish selected library photos to Firebase Storage/Firestore (photo-editor-rz) as a time-limited share link, or export a fully offline HTML gallery ZIP. Firestore/Storage security rules are in `firebase/firestore.rules` and `firebase/storage.rules` — deploy them in the `photo-editor-rz` project to enable sharing.
+- **Client gallery delivery** (`/deliver-workspace` panel + public `/gallery/:shareId` route): publish selected library photos as a time-limited share link hosted on the free-tier **Supabase** project (`texgwxmizyxsdzcfsjpo`) — photos go to a public `gallery-shares` Storage bucket via the `create-gallery-share` Edge Function (verifies a Firebase ID token before writing; no billing required), metadata lives in the `gallery_shares` table with read-only RLS that expires automatically. Or export a fully offline HTML gallery ZIP. Firebase is used for Auth only.
 - **Workflow shell**: Evoto-style step bar — Import → Cull → Edit → Batch → Deliver — plus an in-app `/privacy` page.
 - **Hybrid AI**: all image AI runs locally unless you explicitly opt in to cloud features through the fail-closed gateway (`server/ai-gateway.mjs`, OpenRouter image models). Cloud retouch/segment/cull-score endpoints exist as 501 stubs until a provider is configured — they never fabricate results.
 - Rebranded from "Every Frame First Studio" to **Minu Studio**. Legacy identifiers (IndexedDB `secureforge-lab-db`, localStorage keys) intentionally kept so existing local data is not orphaned.
@@ -42,14 +42,16 @@ The editor runs locally at the Vite URL printed by the dev server. Production ou
 
 For sign-in to work, `.env` needs the real Firebase web client config — the placeholder API key in `.env.example` fails authentication with `auth/api-key-not-valid`. Fetch the real values from the Firebase console (Project settings → Your apps → Web app) or via the Firebase MCP (`firebase_get_sdk_config` with `platform: "web"`), and copy them into `.env`. Client identifiers are safe to use locally; `.env` is gitignored.
 
-## Client galleries (Firebase, photo-editor-rz)
+## Client galleries (Supabase)
 
-The Deliver panel can publish selected local-library photos as a time-limited client gallery:
+The Deliver panel can publish selected local-library photos as a time-limited client gallery. Delivery runs on the free-tier Supabase project `texgwxmizyxsdzcfsjpo`; Firebase is used for sign-in only.
 
-1. Deploy the rules in `firebase/firestore.rules` (Firestore → Rules) and `firebase/storage.rules` (Storage → Rules) in the `photo-editor-rz` project. Sharing fails without them.
+1. One-time setup is already in the repo: schema + bucket in `supabase/migrations/` (`gallery_shares` table with read-only RLS that omits expired shares; public `gallery-shares` bucket, 8 MB/file), and the function in `supabase/functions/create-gallery-share/` (verifies the caller's Firebase ID token — RS256 against Google's securetoken JWKS — before writing; no client can write directly). Redeploy with the Supabase MCP/CLI when changing it.
 2. In the app, sign in, open the Deliver panel, pick photos from the saved library, set the gallery name and expiry, and choose **Create share link**.
-3. Send the `/gallery/<id>` URL to your client. Links are unguessable; expiry is enforced client-side on view. Anyone holding the link can view until expiry — treat links as semi-public by design.
+3. Send the `/gallery/<id>` URL to your client. Links are unguessable; expired rows are invisible to anonymous readers (RLS), so links effectively die at expiry. Anyone holding the link can view until then — treat links as semi-public by design.
 4. Prefer no server? **Local ZIP** produces a self-contained offline gallery (`index.html` + images) that never touches the network.
+
+Limits: 30 photos per gallery, 6 MB per photo (Set your own by editing the edge function limits).
 
 Deep links to `/gallery/:id` require the host to serve `index.html` for unknown paths (or a `404.html` copy); configure your static host accordingly.
 
@@ -64,7 +66,7 @@ Deep links to `/gallery/:id` require the host to serve `index.html` for unknown 
 ## Privacy and security boundaries
 
 - Photo editing and local photo storage run in the browser.
-- Client galleries (opt-in): the photos you select upload to Firebase Storage (photo-editor-rz) and a share document is written to Firestore; anyone holding the unguessable link can view until the expiry. The Local ZIP gallery never touches the network. See `firebase/` for the rules to deploy.
+- Client galleries (opt-in): the photos you select upload to the public `gallery-shares` bucket on Supabase via the `create-gallery-share` Edge Function (which verifies a Firebase ID token first); anyone holding the unguessable link can view until the expiry. The Local ZIP gallery never touches the network. See `supabase/` for the schema and function.
 - Culling analysis runs locally (heuristic assist scores); ratings and session data stay in this browser's IndexedDB.
 - Firebase email/password authentication is integrated in the active app. Configure the `VITE_FIREBASE_*` values before production use; Firebase Authentication's Email/Password provider must also be enabled in the Firebase console.
 - The editor's photo library remains local in browser IndexedDB. Sign-in does not upload photos or provide cross-device sync.

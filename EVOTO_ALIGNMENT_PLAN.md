@@ -47,7 +47,7 @@ keeping its local-first privacy DNA, adding optional cloud AI (hybrid model).
 - Phase 3 — DONE: `/cull` workspace, local heuristic scoring, keyboard ratings, pick/reject, filters/sort, sessions in IndexedDB (v3), keepers → library / ZIP, CSV report. Cloud cull-score endpoint stubbed (501).
 - Phase 4 — DONE (local grade): per-face smoothing, auto blemish detection + healing strokes, glasses-glare suppression. Cloud retouch endpoint stubbed (501). Frequency separation deferred.
 - Phase 5 — DONE (local grade): MediaPipe selfie segmentation (model in `public/models/selfie_multiclass.tflite`), blur/dim/color/gradient replace. Cloud segment/generative replace stubbed (501).
-- Phase 6 — DONE (needs rules deployed): Firebase galleries (Storage + Firestore, `/gallery/:shareId` public route), offline local gallery ZIP. Rules in `firebase/` — owner must deploy them in photo-editor-rz.
+- Phase 6 — DONE: Supabase galleries (`/gallery/:shareId` public route) — Edge Function `create-gallery-share` verifies Firebase ID tokens before writing; RLS-gated `gallery_shares` table hides expired shares; public `gallery-shares` bucket; plus offline local gallery ZIP. Firebase = Auth only (Firebase Storage not used — it requires Blaze).
 - Phase 7 — DONE (docs + privacy page): `/privacy`, README/PRODUCTION_READINESS updates. Credits/metering intentionally out of scope. Monolith decomposition + any E2E suite remain open.
 
 ## Phase plan
@@ -126,7 +126,7 @@ M4 (Phases 6+7): gallery delivery + hardening.
 
 ## Locked decisions (2026-11-17)
 
-1. Gallery delivery backend: **Firebase** (Storage + Firestore share links, reusing existing Firebase auth).
+1. Gallery delivery backend: **Supabase** (free tier; Firebase Auth reused for sign-in; Firebase Storage declined — requires Blaze plan).
 2. Rebrand: **"Minu Studio"** (working name — final tagline/domain TBD by owner).
 3. Cloud AI provider (opt-in): **OpenRouter image models** via the existing gateway.
 4. Credits/pricing: **out of scope** — free app, no metering or paywall.

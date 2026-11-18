@@ -1,12 +1,19 @@
-// Client gallery delivery for Minu Studio.
-// Two delivery modes:
-//  1. Firebase share link — photos uploaded to Firebase Storage (photo-editor-rz),
-//     a share document written to Firestore, returned as an unguessable URL.
-//     Anyone with the link can view until the expiry; uploads require sign-in.
-//  2. Local gallery ZIP — a fully offline, self-contained HTML gallery.
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
-import { auth, db, storage } from './firebase';
+// Client gallery delivery for Minu Studio — Supabase backend.
+// Minu Studio uses the free-tier Supabase project (texgwxmizyxsdzcfsjpo):
+//  - Photos upload to the public `gallery-shares` Storage bucket via the
+//    `create-gallery-share` Edge Function, which verifies the caller's
+//    Firebase ID token before writing (service role).
+//  - Shares live in the `gallery_shares` table. RLS lets anyone read rows
+//    whose expiry is in the future; no client can insert/update/delete.
+//  - The /gallery/:shareId route is public — anyone with the link can view
+//    an unexpired gallery.
+// The "Local ZIP" mode remains fully offline and needs no Supabase at all.
+import { getCurrentFirebaseIdToken, auth } from './firebase';
+
+export const SUPABASE_URL =
+  import.meta.env.VITE_SUPABASE_URL || 'https://texgwxmizyxsdzcfsjpo.supabase.co';
+export const SUPABASE_PUBLISHABLE_KEY =
+  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_fBFeavpYj1CI4L-lTAVj2Q_V41qHK2Z';
 
 export interface GalleryPhotoInput {
   name: string;
@@ -31,9 +38,8 @@ export interface GalleryShare {
   photos: GalleryPhotoMeta[];
 }
 
-const COLLECTION = 'galleryShares';
-const MAX_GALLERY_PHOTOS = 100;
-const MAX_ITEM_BYTES = 25 * 1024 * 1024;
+const MAX_GALLERY_PHOTOS = 30;
+const MAX_ITEM_BYTES = 6 * 1024 * 1024;
 
 function dataUrlToBlob(dataUrl: string): Blob {
   const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
@@ -56,66 +62,113 @@ function sanitizeFileName(name: string): string {
   return base.slice(0, 80);
 }
 
-/** Uploads photos and creates the share document. Returns the share id. */
+/** Uploads photos and creates the share row. Returns the share id. */
 export async function createGalleryShare(
   name: string,
   expiresInDays: number,
   photos: GalleryPhotoInput[],
 ): Promise<{ id: string; share: GalleryShare }> {
-  if (!storage || !db) {
-    throw new Error('Firebase Storage/Firestore is not configured for this build.');
-  }
   const user = auth?.currentUser;
-  if (!user) throw new Error('Sign in is required before creating a client gallery.');
+  const idToken = await getCurrentFirebaseIdToken();
+  if (!user || !idToken) throw new Error('Sign in is required before creating a client gallery.');
   if (!photos.length) throw new Error('Select at least one photo for the gallery.');
   if (photos.length > MAX_GALLERY_PHOTOS) {
     throw new Error(`A gallery can contain at most ${MAX_GALLERY_PHOTOS} photos.`);
   }
-
-  const id = crypto.randomUUID().replace(/-/g, '');
-  const createdAt = new Date();
-  const expiresAt = new Date(createdAt.getTime() + expiresInDays * 24 * 60 * 60 * 1000);
-
-  const uploaded: GalleryPhotoMeta[] = [];
-  for (const [index, photo] of photos.entries()) {
+  for (const photo of photos) {
     const blob = dataUrlToBlob(photo.dataUrl);
     if (blob.size > MAX_ITEM_BYTES) {
-      throw new Error(`“${photo.name}” exceeds the 25 MB per-photo limit.`);
+      throw new Error(`“${photo.name}” exceeds the 6 MB per-photo limit.`);
     }
-    const extension = extensionFor(blob.type);
-    const path = `gallery-shares/${id}/${String(index + 1).padStart(3, '0')}-${sanitizeFileName(photo.name)}.${extension}`;
-    await uploadBytes(ref(storage, path), blob, { contentType: blob.type });
-    uploaded.push({
-      name: photo.name,
-      url: await getDownloadURL(ref(storage, path)),
-      width: photo.width,
-      height: photo.height,
-    });
   }
 
-  const share: GalleryShare = {
-    id,
-    ownerUid: user.uid,
-    name: name.trim() || 'Client gallery',
-    createdAt: createdAt.toISOString(),
-    expiresAt: expiresAt.toISOString(),
-    photos: uploaded,
+  const response = await fetch(`${SUPABASE_URL}/functions/v1/create-gallery-share`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      apikey: SUPABASE_PUBLISHABLE_KEY,
+      authorization: `Bearer ${idToken}`,
+    },
+    body: JSON.stringify({
+      name: name.trim() || 'Client gallery',
+      expiresInDays,
+      photos: photos.map((photo) => ({
+        name: photo.name,
+        dataUrl: photo.dataUrl,
+        width: photo.width,
+        height: photo.height,
+      })),
+    }),
+  });
+
+  const body = (await response.json().catch(() => null)) as {
+    id?: string;
+    name?: string;
+    expiresAt?: string;
+    photos?: number;
+    error?: string;
+  } | null;
+  if (!response.ok || !body?.id) {
+    throw new Error(body?.error || `Gallery service failed (${response.status}).`);
+  }
+  const createdAt = new Date().toISOString();
+  return {
+    id: body.id,
+    share: {
+      id: body.id,
+      ownerUid: user.uid,
+      name: body.name ?? (name.trim() || 'Client gallery'),
+      createdAt,
+      expiresAt: body.expiresAt ?? createdAt,
+      photos: photos.map((photo) => ({
+        name: photo.name,
+        url: '',
+        width: photo.width,
+        height: photo.height,
+      })),
+    },
   };
-  await setDoc(doc(db, COLLECTION, id), share);
-  return { id, share };
 }
 
-/** Loads a share document for the public gallery route. */
+interface GalleryRow {
+  id: string;
+  name: string;
+  created_at: string;
+  expires_at: string;
+  photos: Array<GalleryPhotoMeta> | null;
+}
+
+/** Loads a share document for the public gallery route (anon read, RLS-gated by expiry). */
 export async function getGalleryShare(id: string): Promise<GalleryShare | null> {
-  if (!db) return null;
-  const snapshot = await getDoc(doc(db, COLLECTION, id));
-  if (!snapshot.exists()) return null;
-  return snapshot.data() as GalleryShare;
+  const response = await fetch(
+    `${SUPABASE_URL}/rest/v1/gallery_shares?id=eq.${encodeURIComponent(id)}&select=id,name,created_at,expires_at,photos`,
+    {
+      headers: {
+        apikey: SUPABASE_PUBLISHABLE_KEY,
+        accept: 'application/json',
+      },
+    },
+  );
+  if (!response.ok) return null;
+  const rows = (await response.json().catch(() => null)) as GalleryRow[] | null;
+  const row = rows?.[0];
+  if (!row) return null;
+  return {
+    id: row.id,
+    ownerUid: '',
+    name: row.name,
+    createdAt: row.created_at,
+    expiresAt: row.expires_at,
+    photos: Array.isArray(row.photos) ? row.photos : [],
+  };
 }
 
 export function shareUrl(id: string): string {
-  const base = import.meta.env.BASE_URL.replace(/\/$/, '');
-  return `${window.location.origin}${base}/gallery/${id}`;
+  let base = import.meta.env.BASE_URL || '/';
+  // The Pages build uses './', which would produce 'host./gallery/<id>'.
+  if (base === './' || base === '.') base = '/';
+  const normalized = base.endsWith('/') ? base.slice(0, -1) : base;
+  return `${window.location.origin}${normalized}/gallery/${id}`;
 }
 
 export function isShareExpired(share: GalleryShare): boolean {
