@@ -921,7 +921,7 @@ export default function Home(): React.JSX.Element {
     const height = Math.max(0.1, Math.min(1 - y, cropDraft.height));
     commitDocumentTransform({ ...documentTransform, crop: { x, y, width, height } });
     setMessage(
-      `Crop applied: ${Math.round(width * 100)}% Ã— ${Math.round(height * 100)}% of the source.`,
+      `Crop applied: ${Math.round(width * 100)}% × ${Math.round(height * 100)}% of the source.`,
     );
   };
 
@@ -1154,7 +1154,7 @@ export default function Home(): React.JSX.Element {
       setRetouchStrokes([]);
       setRetouchMode('off');
       setMessage(
-        `${image.naturalWidth.toLocaleString()} Ã— ${image.naturalHeight.toLocaleString()} pixels Â· original preserved`,
+        `${image.naturalWidth.toLocaleString()} × ${image.naturalHeight.toLocaleString()} pixels · original preserved`,
       );
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Unable to open this image.');
@@ -1287,7 +1287,7 @@ export default function Home(): React.JSX.Element {
       link.click();
       URL.revokeObjectURL(downloadUrl);
       setMessage(
-        `Exported ${output.width.toLocaleString()} Ã— ${output.height.toLocaleString()} pixels.`,
+        `Exported ${output.width.toLocaleString()} × ${output.height.toLocaleString()} pixels.`,
       );
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Export failed.');
@@ -1661,7 +1661,7 @@ export default function Home(): React.JSX.Element {
       setSelectedStyleRecipeId(recipe.id);
       clearBatchPreviews();
       setStyleRecipeName('');
-      setMessage(`Saved â€œ${name}â€ as a reusable Style Recipe on this device.`);
+      setMessage(`Saved “${name}” as a reusable Style Recipe on this device.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Could not save this Style Recipe.');
     }
@@ -1734,7 +1734,7 @@ export default function Home(): React.JSX.Element {
         cancelled
           ? `Batch preview cancelled after ${previews.length} photo(s).`
           : failed
-            ? `Preview ready with ${failed} failed photo(s) â€” they are marked in the grid.`
+            ? `Preview ready with ${failed} failed photo(s) — they are marked in the grid.`
             : `Preview ready: ${recipe.name} applied to ${previews.length} photo(s).`,
       );
     } catch (error) {
@@ -1798,9 +1798,9 @@ export default function Home(): React.JSX.Element {
       URL.revokeObjectURL(url);
       setMessage(
         failures.length
-          ? `Exported ${exported} photo(s); ${failures.length} failed (${failures[0]}${failures.length > 1 ? ', â€¦' : ''}).`
+          ? `Exported ${exported} photo(s); ${failures.length} failed (${failures[0]}${failures.length > 1 ? ', …' : ''}).`
           : batchCancelRef.current
-            ? `Batch cancelled â€” exported ${exported} of ${batchItems.length} photo(s).`
+            ? `Batch cancelled — exported ${exported} of ${batchItems.length} photo(s).`
             : `Exported ${exported} full-resolution photo(s) in a ZIP archive.`,
       );
     } catch (error) {
@@ -1828,7 +1828,7 @@ export default function Home(): React.JSX.Element {
       },
     );
     setCompare(false);
-    setMessage(`Loaded â€œ${recipe.name}â€ onto the reference photo.`);
+    setMessage(`Loaded “${recipe.name}” onto the reference photo.`);
   };
 
   const runBackgroundDetection = async () => {
@@ -2155,7 +2155,7 @@ export default function Home(): React.JSX.Element {
       <React.Suspense
         fallback={
           <main className="auth-screen">
-            <p className="auth-muted">Loading Creator Studioâ€¦</p>
+            <p className="auth-muted">Loading Creator Studio…</p>
           </main>
         }
       >
@@ -2169,7 +2169,7 @@ export default function Home(): React.JSX.Element {
       <React.Suspense
         fallback={
           <main className="auth-screen">
-            <p className="auth-muted">Loading private cloud syncâ€¦</p>
+            <p className="auth-muted">Loading private cloud sync…</p>
           </main>
         }
       >
@@ -2202,7 +2202,7 @@ export default function Home(): React.JSX.Element {
               : `Library${savedPhotos.length ? ` (${savedPhotos.length})` : ''}`}
           </button>
           <button className="button button-primary" onClick={() => fileInputRef.current?.click()}>
-            ï¼‹ Add photo
+            ＋ Add photo
           </button>
         </div>
         <input
@@ -2233,12 +2233,12 @@ export default function Home(): React.JSX.Element {
           <span className="workflow-step-index">1</span>
           <span>Import</span>
         </button>
-        <span className="workflow-step-divider" aria-hidden="true">â†’</span>
+        <span className="workflow-step-divider" aria-hidden="true">→</span>
         <Link to="/cull" className="workflow-step">
           <span className="workflow-step-index">2</span>
           <span>Cull</span>
         </Link>
-        <span className="workflow-step-divider" aria-hidden="true">â†’</span>
+        <span className="workflow-step-divider" aria-hidden="true">→</span>
         <button
           type="button"
           className="workflow-step"
@@ -2247,7 +2247,7 @@ export default function Home(): React.JSX.Element {
           <span className="workflow-step-index">3</span>
           <span>Edit</span>
         </button>
-        <span className="workflow-step-divider" aria-hidden="true">â†’</span>
+        <span className="workflow-step-divider" aria-hidden="true">→</span>
         <button
           type="button"
           className="workflow-step"
@@ -2256,7 +2256,7 @@ export default function Home(): React.JSX.Element {
           <span className="workflow-step-index">4</span>
           <span>Batch</span>
         </button>
-        <span className="workflow-step-divider" aria-hidden="true">â†’</span>
+        <span className="workflow-step-divider" aria-hidden="true">→</span>
         <button
           type="button"
           className="workflow-step"
@@ -2273,19 +2273,19 @@ export default function Home(): React.JSX.Element {
           className={`sidebar-link ${activeSection === 'home' ? 'active' : ''}`}
           onClick={() => navigateStudio('home', 'studio-home')}
         >
-          <span className="sidebar-icon">âŒ‚</span>
+          <span className="sidebar-icon">⌂</span>
           <span>Overview</span>
           <kbd>H</kbd>
         </button>
         <Link className="sidebar-link" to="/cull">
-          <span className="sidebar-icon">â–§</span>
+          <span className="sidebar-icon">▧</span>
           <span>Culling</span>
         </Link>
         <button
           className={`sidebar-link ${activeSection === 'editor' ? 'active' : ''}`}
           onClick={() => navigateStudio('editor', 'editor-canvas')}
         >
-          <span className="sidebar-icon">â–§</span>
+          <span className="sidebar-icon">▧</span>
           <span>Photo editor</span>
           <kbd>1</kbd>
         </button>
@@ -2295,35 +2295,35 @@ export default function Home(): React.JSX.Element {
           className={`sidebar-link ${activeSection === 'retouch' ? 'active' : ''}`}
           onClick={() => navigateStudio('retouch', 'retouch-workspace')}
         >
-          <span className="sidebar-icon">âœ§</span>
+          <span className="sidebar-icon">✧</span>
           <span>Retouch studio</span>
         </button>
         <button
           className={`sidebar-link ${activeSection === 'color' ? 'active' : ''}`}
           onClick={() => navigateStudio('color', 'color-workspace')}
         >
-          <span className="sidebar-icon">â—‰</span>
+          <span className="sidebar-icon">◉</span>
           <span>Color lab</span>
         </button>
         <button
           className={`sidebar-link ${activeSection === 'compositing' ? 'active' : ''}`}
           onClick={() => navigateStudio('compositing', 'layers-workspace')}
         >
-          <span className="sidebar-icon">â–¤</span>
+          <span className="sidebar-icon">▤</span>
           <span>Compositing</span>
         </button>
         <button
           className={`sidebar-link ${activeSection === 'effects' ? 'active' : ''}`}
           onClick={() => navigateStudio('effects', 'effects-workspace')}
         >
-          <span className="sidebar-icon">âœº</span>
+          <span className="sidebar-icon">✺</span>
           <span>Effects</span>
         </button>
         <button
           className={`sidebar-link ${activeSection === 'creator' ? 'active' : ''}`}
           onClick={() => setActiveSection('creator')}
         >
-          <span className="sidebar-icon">â–¶</span>
+          <span className="sidebar-icon">▶</span>
           <span>Video Studio</span>
         </button>
         <div className="sidebar-divider" />
@@ -2332,14 +2332,14 @@ export default function Home(): React.JSX.Element {
           className={`sidebar-link ${activeSection === 'assets' ? 'active' : ''}`}
           onClick={() => navigateStudio('assets', 'assets-workspace')}
         >
-          <span className="sidebar-icon">â–¦</span>
+          <span className="sidebar-icon">▦</span>
           <span>Assets & presets</span>
         </button>
         <button
           className={`sidebar-link ${activeSection === 'history' ? 'active' : ''}`}
           onClick={() => navigateStudio('history', 'history-workspace')}
         >
-          <span className="sidebar-icon">â—·</span>
+          <span className="sidebar-icon">◷</span>
           <span>History</span>
           <span className="sidebar-count">{Math.max(0, history.length - 1)}</span>
         </button>
@@ -2347,26 +2347,26 @@ export default function Home(): React.JSX.Element {
           className={`sidebar-link ${activeSection === 'library' ? 'active' : ''}`}
           onClick={() => navigateStudio('library', 'studio-home')}
         >
-          <span className="sidebar-icon">â–£</span>
+          <span className="sidebar-icon">▣</span>
           <span>Photo library</span>
           <span className="sidebar-count">{savedPhotos.length}</span>
         </button>
         <Link className="sidebar-link" to="/audio">
-          <span className="sidebar-icon">â™«</span>
+          <span className="sidebar-icon">♫</span>
           <span>Podcast studio</span>
         </Link>
         <button
           className={`sidebar-link ${activeSection === 'cloud-sync' ? 'active' : ''}`}
           onClick={() => setActiveSection('cloud-sync')}
         >
-          <span className="sidebar-icon">â‡„</span>
+          <span className="sidebar-icon">⇄</span>
           <span>Cloud sync</span>
         </button>
         <button
           className={`sidebar-link ${activeSection === 'export' ? 'active' : ''}`}
           onClick={() => navigateStudio('export', 'export-workspace')}
         >
-          <span className="sidebar-icon">â‡§</span>
+          <span className="sidebar-icon">⇧</span>
           <span>Export center</span>
         </button>
         <div className="sidebar-bottom">
@@ -2380,12 +2380,12 @@ export default function Home(): React.JSX.Element {
       <main className="studio-main">
         <section className="video-first-launch" aria-labelledby="video-first-title">
           <div className="video-first-copy">
-            <p className="eyebrow">PRIMARY WORKSPACE Â· VIDEO PRODUCTION</p>
+            <p className="eyebrow">PRIMARY WORKSPACE · VIDEO PRODUCTION</p>
             <h2 id="video-first-title">Professional Video Studio</h2>
             <p>Import footage, edit a real multitrack timeline, mix sound, finish color and export your film.</p>
           </div>
           <button className="button button-primary video-first-launch-button" type="button" onClick={() => setActiveSection('creator')}>
-            Open Video Studio <span aria-hidden="true">â†’</span>
+            Open Video Studio <span aria-hidden="true">→</span>
           </button>
         </section>
         <section className="workspace-heading" id="studio-home">
@@ -2399,10 +2399,10 @@ export default function Home(): React.JSX.Element {
           {hasImage && (
             <div className="history-actions">
               <button className="icon-button" disabled={!canUndo} onClick={undo} aria-label="Undo">
-                â†¶
+                ↶
               </button>
               <button className="icon-button" disabled={!canRedo} onClick={redo} aria-label="Redo">
-                â†·
+                ↷
               </button>
               <button className="button button-quiet" onClick={reset}>
                 Reset edits
@@ -2412,19 +2412,19 @@ export default function Home(): React.JSX.Element {
         </section>
         <section className="studio-overview-strip" aria-label="Workspace status">
           <div className="overview-stat">
-            <span className="overview-icon">â–§</span>
+            <span className="overview-icon">▧</span>
             <div>
               <small>DOCUMENT</small>
               <strong>{hasImage ? sourceName : 'No document open'}</strong>
               <em>
                 {hasImage
-                  ? `${sourceSize.width.toLocaleString()} Ã— ${sourceSize.height.toLocaleString()}`
+                  ? `${sourceSize.width.toLocaleString()} × ${sourceSize.height.toLocaleString()}`
                   : 'Import an image to begin'}
               </em>
             </div>
           </div>
           <div className="overview-stat">
-            <span className="overview-icon">â—ˆ</span>
+            <span className="overview-icon">◈</span>
             <div>
               <small>EDIT HISTORY</small>
               <strong>{hasImage ? `${historyIndex} changes` : 'Ready for edits'}</strong>
@@ -2432,7 +2432,7 @@ export default function Home(): React.JSX.Element {
             </div>
           </div>
           <div className="overview-stat">
-            <span className="overview-icon">â–¤</span>
+            <span className="overview-icon">▤</span>
             <div>
               <small>LAYERS</small>
               <strong>{hasImage ? `${layers.length} layers` : 'Waiting for image'}</strong>
@@ -2444,7 +2444,7 @@ export default function Home(): React.JSX.Element {
             <div>
               <small>PROCESSING</small>
               <strong>On-device engine</strong>
-              <em>Private Â· No upload required</em>
+              <em>Private · No upload required</em>
             </div>
           </div>
         </section>
@@ -2470,7 +2470,7 @@ export default function Home(): React.JSX.Element {
                     <div>
                       <strong>{photo.name}</strong>
                       <small>
-                        {photo.dimensions.width} Ã— {photo.dimensions.height} Â· Open edit
+                        {photo.dimensions.width} × {photo.dimensions.height} · Open edit
                       </small>
                     </div>
                   </button>
@@ -2493,7 +2493,7 @@ export default function Home(): React.JSX.Element {
                     onClick={() => setCompare((v) => !v)}
                     title="Hold or tap to compare with original"
                   >
-                    â— {compare ? 'Original' : 'Compare'}
+                    ◐ {compare ? 'Original' : 'Compare'}
                   </button>
                 )}
               </div>
@@ -2517,7 +2517,7 @@ export default function Home(): React.JSX.Element {
                           setRetouchMode('off');
                         }}
                       >
-                        â†–
+                        ↖
                       </button>
                       <button
                         className={localTool === 'brush' ? 'active' : ''}
@@ -2528,7 +2528,7 @@ export default function Home(): React.JSX.Element {
                           setRetouchMode('off');
                         }}
                       >
-                        â—‰
+                        ◉
                       </button>
                       <button
                         className={localTool === 'heal' ? 'active' : ''}
@@ -2539,7 +2539,7 @@ export default function Home(): React.JSX.Element {
                           setRetouchMode('off');
                         }}
                       >
-                        âœ³
+                        ✳
                       </button>
                       <button
                         className={retouchMode === 'brush' ? 'active' : ''}
@@ -2550,7 +2550,7 @@ export default function Home(): React.JSX.Element {
                           setRetouchMode('brush');
                         }}
                       >
-                        âœ§
+                        ✧
                       </button>
                       <button
                         title="Add text layer"
@@ -2569,7 +2569,7 @@ export default function Home(): React.JSX.Element {
                             ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
                         }}
                       >
-                        âŒ—
+                        ⌗
                       </button>
                     </nav>
                     <canvas
@@ -2590,16 +2590,16 @@ export default function Home(): React.JSX.Element {
                   </>
                 ) : (
                   <div className="upload-prompt">
-                    <div className="upload-icon">â†¥</div>
+                    <div className="upload-icon">↥</div>
                     <h2>Start with a photograph</h2>
                     <p>Drop an image here, or choose one from your device.</p>
                     <button
                       className="button button-primary button-large"
                       onClick={() => fileInputRef.current?.click()}
                     >
-                      {busy ? 'Openingâ€¦' : 'Choose a photo'}
+                      {busy ? 'Opening…' : 'Choose a photo'}
                     </button>
-                    <small>JPEG Â· PNG Â· WebP Â· Up to 40 MB Â· 24 MP maximum</small>
+                    <small>JPEG · PNG · WebP · Up to 40 MB · 24 MP maximum</small>
                   </div>
                 )}
               </div>
@@ -2607,7 +2607,7 @@ export default function Home(): React.JSX.Element {
                 <span>{message}</span>
                 {hasImage && (
                   <span>
-                    {sourceSize.width.toLocaleString()} Ã— {sourceSize.height.toLocaleString()}
+                    {sourceSize.width.toLocaleString()} × {sourceSize.height.toLocaleString()}
                   </span>
                 )}
               </div>
@@ -2619,22 +2619,22 @@ export default function Home(): React.JSX.Element {
                       value={exportFormat}
                       onChange={(e) => setExportFormat(e.target.value as typeof exportFormat)}
                     >
-                      <option value="image/jpeg">JPEG Â· High quality</option>
-                      <option value="image/png">PNG Â· Lossless</option>
-                      <option value="image/webp">WebP Â· Compact</option>
+                      <option value="image/jpeg">JPEG · High quality</option>
+                      <option value="image/png">PNG · Lossless</option>
+                      <option value="image/webp">WebP · Compact</option>
                     </select>
                   </label>
                   <button className="button button-quiet" onClick={saveToLibrary} disabled={busy}>
                     Save to library
                   </button>
                   <button className="button button-primary" onClick={exportPhoto} disabled={busy}>
-                    â†“ Export photo
+                    ↓ Export photo
                   </button>
                 </div>
               )}
               {hasImage && sourceUrl && (
                 <React.Suspense
-                  fallback={<p className="auth-muted">Loading advanced editor toolsâ€¦</p>}
+                  fallback={<p className="auth-muted">Loading advanced editor tools…</p>}
                 >
                   <LibraryToolsPanel
                     sourceUrl={sourceUrl}
@@ -2670,7 +2670,7 @@ export default function Home(): React.JSX.Element {
               )}
               {savedPhotos.length > 0 && (
                 <React.Suspense
-                  fallback={<p className="auth-muted">Loading client gallery toolsâ€¦</p>}
+                  fallback={<p className="auth-muted">Loading client gallery tools…</p>}
                 >
                   <ClientGalleryPanel photos={savedPhotos} />
                 </React.Suspense>
@@ -2714,21 +2714,21 @@ export default function Home(): React.JSX.Element {
                     disabled={!hasImage}
                     onClick={addLayerGroup}
                   >
-                    ï¼‹ Group
+                    ＋ Group
                   </button>
                   <button
                     className="button button-quiet"
                     disabled={!hasImage}
                     onClick={addAdjustmentLayer}
                   >
-                    ï¼‹ Adjustment
+                    ＋ Adjustment
                   </button>
                   <button
                     className="button button-quiet"
                     disabled={!hasImage}
                     onClick={addTextLayer}
                   >
-                    ï¼‹ Text
+                    ＋ Text
                   </button>
                 </div>
                 <div className="layer-list" role="listbox" aria-label="Document layers">
@@ -2775,7 +2775,7 @@ export default function Home(): React.JSX.Element {
                           aria-label={`${layer.visible ? 'Hide' : 'Show'} ${layer.name}`}
                           onClick={() => updateLayer(layer.id, { visible: !layer.visible })}
                         >
-                          {layer.visible ? 'â—‰' : 'â—‹'}
+                          {layer.visible ? '◉' : '○'}
                         </button>
                         {layer.type === 'group' && (
                           <button
@@ -2783,7 +2783,7 @@ export default function Home(): React.JSX.Element {
                             aria-label={`${layer.expanded === false ? 'Expand' : 'Collapse'} ${layer.name}`}
                             onClick={() => toggleGroupExpanded(layer.id)}
                           >
-                            {layer.expanded === false ? 'â–¸' : 'â–¾'}
+                            {layer.expanded === false ? '▸' : '▾'}
                           </button>
                         )}
                         <button
@@ -2798,11 +2798,11 @@ export default function Home(): React.JSX.Element {
                         >
                           <span className={`layer-thumb layer-thumb-${layer.type}`}>
                             {layer.type === 'image'
-                              ? 'â–§'
+                              ? '▧'
                               : layer.type === 'adjustment'
-                                ? 'â—'
+                                ? '◐'
                                 : layer.type === 'group'
-                                  ? 'â–£'
+                                  ? '▣'
                                   : 'T'}
                           </span>
                           <span>
@@ -2824,13 +2824,13 @@ export default function Home(): React.JSX.Element {
                             aria-label={`Move ${layer.name} up`}
                             onClick={() => moveLayer(layer.id, 1)}
                           >
-                            â†‘
+                            ↑
                           </button>
                           <button
                             aria-label={`Move ${layer.name} down`}
                             onClick={() => moveLayer(layer.id, -1)}
                           >
-                            â†“
+                            ↓
                           </button>
                         </span>
                       </div>
@@ -2886,7 +2886,7 @@ export default function Home(): React.JSX.Element {
                                 }
                               }}
                             >
-                              â†‘
+                              ↑
                             </button>
                             <button
                               className="button button-quiet"
@@ -2902,7 +2902,7 @@ export default function Home(): React.JSX.Element {
                                 }
                               }}
                             >
-                              â†“
+                              ↓
                             </button>
                             <button
                               className="button button-quiet"
@@ -2961,7 +2961,7 @@ export default function Home(): React.JSX.Element {
                                 selectedLayer.mask?.kind ||
                                 'brush'
                               ).toUpperCase()}{' '}
-                              Â· {selectedLayerMask?.strokes.length || 0} stroke(s)
+                              · {selectedLayerMask?.strokes.length || 0} stroke(s)
                             </span>
                           </>
                         ) : (
@@ -3450,17 +3450,17 @@ export default function Home(): React.JSX.Element {
                 </div>
                 <div className="history-footer">
                   <button className="button button-quiet" onClick={undo} disabled={!canUndo}>
-                    â†¶ Undo
+                    ↶ Undo
                   </button>
                   <button className="button button-quiet" onClick={redo} disabled={!canRedo}>
-                    â†· Redo
+                    ↷ Redo
                   </button>
                 </div>
               </section>
               <section className="tool-panel style-workflow-panel" id="assets-workspace">
                 <div className="section-title">
                   <div>
-                    <p className="eyebrow">REFERENCE â†’ REPEAT</p>
+                    <p className="eyebrow">REFERENCE → REPEAT</p>
                     <h2>Style Recipes</h2>
                   </div>
                   <span>{styleRecipes.length} saved</span>
@@ -3505,7 +3505,7 @@ export default function Home(): React.JSX.Element {
                     disabled={!selectedStyleRecipeId}
                     onClick={() => {
                       const recipe = styleRecipes.find((item) => item.id === selectedStyleRecipeId);
-                      if (recipe && window.confirm(`Delete â€œ${recipe.name}â€?`))
+                      if (recipe && window.confirm(`Delete “${recipe.name}”?`))
                         void deleteStyleRecipe(recipe.id).then(() =>
                           getStyleRecipes().then(setStyleRecipes),
                         );
@@ -3539,7 +3539,7 @@ export default function Home(): React.JSX.Element {
                   </button>
                 </div>
                 <p className="tool-note">
-                  Batch source: {selectedBatchRecipe?.name ?? 'none chosen â€” pick a recipe or sync current edits'}
+                  Batch source: {selectedBatchRecipe?.name ?? 'none chosen — pick a recipe or sync current edits'}
                   {adHocBatchRecipe && (
                     <>
                       {' '}
@@ -3583,7 +3583,7 @@ export default function Home(): React.JSX.Element {
                             onClick={() => removeBatchPhoto(item.id)}
                             aria-label={`Remove ${item.file.name}`}
                           >
-                            Ã—
+                            ×
                           </button>
                         </div>
                       ))}
@@ -3594,7 +3594,7 @@ export default function Home(): React.JSX.Element {
                         onClick={() => void previewBatch()}
                         disabled={batchBusy || !selectedBatchRecipe}
                       >
-                        {batchBusy ? 'Workingâ€¦' : 'Preview on all'}
+                        {batchBusy ? 'Working…' : 'Preview on all'}
                       </button>
                     </div>
                     <label className="format-select batch-format-select">
@@ -3614,7 +3614,7 @@ export default function Home(): React.JSX.Element {
                       disabled={batchBusy || !selectedBatchRecipe}
                     >
                       {batchBusy
-                        ? `Processing ${batchProgress?.current ?? 0}/${batchProgress?.total ?? batchItems.length}â€¦`
+                        ? `Processing ${batchProgress?.current ?? 0}/${batchProgress?.total ?? batchItems.length}…`
                         : `Export ${batchItems.length} edited photos (.zip)`}
                     </button>
                     {batchBusy && (
@@ -3649,7 +3649,7 @@ export default function Home(): React.JSX.Element {
                     type="search"
                     value={filterQuery}
                     onChange={(e) => setFilterQuery(e.target.value)}
-                    placeholder="Search portraits, film, cinematicâ€¦"
+                    placeholder="Search portraits, film, cinematic…"
                   />
                   <select
                     className="filter-category-select"
@@ -3657,7 +3657,7 @@ export default function Home(): React.JSX.Element {
                     onChange={(e) => setFilterCategory(e.target.value)}
                   >
                     <option value="all">All categories</option>
-                    <option value="favorites">â˜… Favorites ({favoriteFilterIds.length})</option>
+                    <option value="favorites">★ Favorites ({favoriteFilterIds.length})</option>
                     {CATEGORIES.filter((category) => category.id !== 'custom').map((category) => (
                       <option key={category.id} value={category.id}>
                         {category.label}
@@ -3679,7 +3679,7 @@ export default function Home(): React.JSX.Element {
                             <small>{filter.description}</small>
                           </span>
                           <span className="filter-apply-mark">
-                            {selectedFilterId === filter.id ? 'âœ“' : 'ï¼‹'}
+                            {selectedFilterId === filter.id ? '✓' : '＋'}
                           </span>
                         </button>
                         <button
@@ -3689,13 +3689,13 @@ export default function Home(): React.JSX.Element {
                           aria-label={`${favoriteFilterIds.includes(filter.id) ? 'Remove' : 'Add'} ${filter.name} ${favoriteFilterIds.includes(filter.id) ? 'from' : 'to'} favorites`}
                           aria-pressed={favoriteFilterIds.includes(filter.id)}
                         >
-                          {favoriteFilterIds.includes(filter.id) ? 'â˜…' : 'â˜†'}
+                          {favoriteFilterIds.includes(filter.id) ? '★' : '☆'}
                         </button>
                       </article>
                     ))}
                     {!visibleFilters.length && (
                       <p className="tool-note">
-                        No filters match. Try another search or save a few looks with â˜†.
+                        No filters match. Try another search or save a few looks with ☆.
                       </p>
                     )}
                     {visibleFilters.length > filterVisibleCount && (
@@ -3704,7 +3704,7 @@ export default function Home(): React.JSX.Element {
                         className="button button-quiet filter-load-more"
                         onClick={() => setFilterVisibleCount((count) => count + 24)}
                       >
-                        Load 24 more looks Â· {visibleFilters.length - filterVisibleCount} remaining
+                        Load 24 more looks · {visibleFilters.length - filterVisibleCount} remaining
                       </button>
                     )}
                   </div>
@@ -3830,7 +3830,7 @@ export default function Home(): React.JSX.Element {
                       [
                         ['tint', 'Tint', -100, 100, ''],
                         ['vibrance', 'Vibrance', -100, 100, '%'],
-                        ['hue', 'Hue', -180, 180, 'Â°'],
+                        ['hue', 'Hue', -180, 180, '°'],
                       ] as const
                     ).map(([key, label, min, max, unit]) => (
                       <label className="range-control" key={key}>
@@ -3955,7 +3955,7 @@ export default function Home(): React.JSX.Element {
                     </label>
                     {(
                       [
-                        ['Hue', 'Hue', -100, 100, 'Â°'],
+                        ['Hue', 'Hue', -100, 100, '°'],
                         ['Saturation', 'Saturation', -100, 100, '%'],
                         ['Luminance', 'Luminance', -100, 100, '%'],
                       ] as const
@@ -4055,14 +4055,14 @@ export default function Home(): React.JSX.Element {
                       disabled={!hasImage}
                       onClick={() => rotateDocument(-90)}
                     >
-                      â†¶ Rotate left
+                      ↶ Rotate left
                     </button>
                     <button
                       className="button button-quiet"
                       disabled={!hasImage}
                       onClick={() => rotateDocument(90)}
                     >
-                      â†· Rotate right
+                      ↷ Rotate right
                     </button>
                   </div>
                   <div className="retouch-actions">
@@ -4076,7 +4076,7 @@ export default function Home(): React.JSX.Element {
                         })
                       }
                     >
-                      â‡‹ Flip horizontal
+                      ⇋ Flip horizontal
                     </button>
                     <button
                       className={`button ${documentTransform.flipY ? 'button-primary' : 'button-quiet'}`}
@@ -4088,7 +4088,7 @@ export default function Home(): React.JSX.Element {
                         })
                       }
                     >
-                      â‡µ Flip vertical
+                      ⇵ Flip vertical
                     </button>
                   </div>
                   {(
@@ -4266,7 +4266,7 @@ export default function Home(): React.JSX.Element {
                     </label>
                     <span className="tool-note">
                       {selection
-                        ? `${selection.strokes.length} selection stroke(s) Â· ${selection.inverted ? 'inverted' : 'normal'}`
+                        ? `${selection.strokes.length} selection stroke(s) · ${selection.inverted ? 'inverted' : 'normal'}`
                         : 'No active selection'}
                     </span>
                   </div>
@@ -4285,7 +4285,7 @@ export default function Home(): React.JSX.Element {
                         setLocalSaturation(0);
                       }}
                     >
-                      â˜¼ Dodge
+                      ☼ Dodge
                     </button>
                     <button
                       className={
@@ -4301,7 +4301,7 @@ export default function Home(): React.JSX.Element {
                         setLocalSaturation(0);
                       }}
                     >
-                      â— Burn
+                      ◐ Burn
                     </button>
                   </div>
                   {tonalBrush && localTool === 'brush' && (
@@ -4395,7 +4395,7 @@ export default function Home(): React.JSX.Element {
                             >
                               <span>{mask.name || `${mask.kind} mask ${index + 1}`}</span>
                               <small>
-                                {mask.kind} Â· {mask.exposure > 0 ? '+' : ''}
+                                {mask.kind} · {mask.exposure > 0 ? '+' : ''}
                                 {mask.exposure} EV
                               </small>
                             </button>
@@ -4414,7 +4414,7 @@ export default function Home(): React.JSX.Element {
                                 commitSnapshot(adjustments, manualAdjustments, next, healStrokes);
                               }}
                             >
-                              {mask.visible === false ? 'â—‰Ì¸' : 'â—‰'}
+                              {mask.visible === false ? '◉̸' : '◉'}
                             </button>
                             <button
                               className="icon-button"
@@ -4426,7 +4426,7 @@ export default function Home(): React.JSX.Element {
                                 commitSnapshot(adjustments, manualAdjustments, next, healStrokes);
                               }}
                             >
-                              Ã—
+                              ×
                             </button>
                           </div>
                         ))}
@@ -4509,7 +4509,7 @@ export default function Home(): React.JSX.Element {
                     disabled={!hasImage || backgroundBusy}
                   >
                     {backgroundBusy
-                      ? 'Detectingâ€¦'
+                      ? 'Detecting…'
                       : personMask
                         ? 'Re-detect person'
                         : 'Detect person'}
@@ -4665,7 +4665,7 @@ export default function Home(): React.JSX.Element {
                       onClick={() => void runFaceDetection()}
                       disabled={!hasImage || detectingFaces || busy}
                     >
-                      {detectingFaces ? 'Detectingâ€¦' : 'Auto face detect'}
+                      {detectingFaces ? 'Detecting…' : 'Auto face detect'}
                     </button>
                     <button
                       className={`button ${retouchMode === 'brush' ? 'button-primary' : 'button-quiet'}`}
@@ -4894,7 +4894,7 @@ export default function Home(): React.JSX.Element {
                             ['scale', 'Size', 50, 160, '%'],
                             ['offsetX', 'Horizontal position', -50, 50, ''],
                             ['offsetY', 'Vertical position', -50, 50, ''],
-                            ['rotation', 'Rotation', -45, 45, 'Â°'],
+                            ['rotation', 'Rotation', -45, 45, '°'],
                             ['opacity', 'Opacity', 0, 100, '%'],
                           ] as const
                         ).map(([key, label, min, max, suffix]) => (
@@ -5021,7 +5021,7 @@ export default function Home(): React.JSX.Element {
                     disabled={!hasImage || !prompt.trim()}
                     aria-label="Interpret style instruction"
                   >
-                    â†—
+                    ↗
                   </button>
                 </div>
                 {styleInterpretation && (
@@ -5060,7 +5060,7 @@ export default function Home(): React.JSX.Element {
       </main>
       <footer className="studio-footer">
         <span>MINU STUDIO</span>
-        <span>Private by default Â· Processing stays in your browser</span>
+        <span>Private by default · Processing stays in your browser</span>
         <Link className="privacy-footer-link" to="/privacy">
           Privacy
         </Link>

@@ -40,9 +40,9 @@ export default function VideoStudioFrame({ onBack }: VideoStudioFrameProps): Rea
     <main className="video-studio-frame-shell">
       <header className="video-studio-frame-bar">
         <button className="button button-quiet" type="button" onClick={onBack}>
-          â† Photo workspace
+← Photo workspace
         </button>
-        <span className="video-studio-frame-brand">EVERY FRAME FIRST <i>/</i> VIDEO STUDIO</span>
+        <span className="video-studio-frame-brand">MINU STUDIO <i>/</i> VIDEO STUDIO</span>
         <span className="video-studio-frame-local"><i /> LOCAL MEDIA</span>
       </header>
       <iframe

@@ -40,6 +40,8 @@ Requires Node.js 22.12+ (Node 24 is used in CI).
 
 The editor runs locally at the Vite URL printed by the dev server. Production output is generated in dist/.
 
+For sign-in to work, `.env` needs the real Firebase web client config — the placeholder API key in `.env.example` fails authentication with `auth/api-key-not-valid`. Fetch the real values from the Firebase console (Project settings → Your apps → Web app) or via the Firebase MCP (`firebase_get_sdk_config` with `platform: "web"`), and copy them into `.env`. Client identifiers are safe to use locally; `.env` is gitignored.
+
 ## Client galleries (Firebase, photo-editor-rz)
 
 The Deliver panel can publish selected local-library photos as a time-limited client gallery:

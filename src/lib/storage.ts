@@ -64,7 +64,7 @@ function openDB(): Promise<IDBDatabase> {
   });
 }
 
-// â”€â”€ Photo CRUD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Photo CRUD ────────────────────────────────────────────────────────
 export async function savePhoto(photo: Photo): Promise<Photo> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
@@ -109,7 +109,7 @@ export async function deletePhoto(id: string): Promise<void> {
   });
 }
 
-// â”€â”€ Filter Library CRUD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Filter Library CRUD ───────────────────────────────────────────────
 export async function saveFilterPreset(preset: FilterPreset): Promise<FilterPreset> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
@@ -147,7 +147,7 @@ export async function deleteFilterPreset(id: string): Promise<void> {
   });
 }
 
-// â”€â”€ User Preferences â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── User Preferences ──────────────────────────────────────────────────
 const DEFAULT_PREFERENCES: UserPreferences = {
   aiProvider: 'offline',
   aiModel: 'offline-fallback',
@@ -191,7 +191,7 @@ export async function getUserPreferences(): Promise<UserPreferences> {
   });
 }
 
-// â”€â”€ AI Messages â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── AI Messages ───────────────────────────────────────────────────────
 export async function saveAiMessage(message: AiMessage): Promise<AiMessage> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
@@ -214,7 +214,7 @@ export async function getAiMessages(): Promise<AiMessage[]> {
   });
 }
 
-// â”€â”€ Scene Prompts â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Scene Prompts ─────────────────────────────────────────────────────
 export async function saveScenePrompt(
   prompt: Omit<ScenePrompt, 'id' | 'createdAt'>,
 ): Promise<ScenePrompt> {
@@ -244,7 +244,7 @@ export async function getScenePrompts(): Promise<ScenePrompt[]> {
   });
 }
 
-// â”€â”€ Batch Edits â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Batch Edits ───────────────────────────────────────────────────────
 export async function saveBatchEdit(edit: Omit<BatchEdit, 'id' | 'appliedAt'>): Promise<BatchEdit> {
   const db = await openDB();
   const full = {
@@ -272,7 +272,7 @@ export async function getBatchEdits(): Promise<BatchEdit[]> {
   });
 }
 
-// â”€â”€ Reusable Style Recipes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Reusable Style Recipes ───────────────────────────────────────────
 export async function saveStyleRecipe(recipe: StyleRecipe): Promise<StyleRecipe> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
@@ -310,8 +310,8 @@ export async function deleteStyleRecipe(id: string): Promise<void> {
   });
 }
 
-// â”€â”€ Export â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// ─── Cull sessions ──────────────────────────────────────────────────────────
+// ── Export ────────────────────────────────────────────────────────────
+// --- Cull sessions ----------------------------------------------------------
 export interface CullSession {
   id: string;
   name: string;
@@ -395,7 +395,7 @@ export async function exportPhotosToZip(photoIds: string[]): Promise<Blob> {
   });
 }
 
-// â”€â”€ Initialization â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Initialization ────────────────────────────────────────────────────
 export async function initStorage(): Promise<void> {
   try {
     await openDB();

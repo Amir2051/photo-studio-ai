@@ -9,11 +9,11 @@ export default function CloudSyncPanel({ onBack }: { onBack: () => void }): Reac
 
   const sync = async () => {
     setBusy(true);
-    setMessage('Syncing saved Style Recipesâ€¦');
+    setMessage('Syncing saved Style Recipes…');
     try {
       const result = await syncStyleRecipesToCloud();
       setMessage(
-        `Sync complete Â· ${result.uploaded} uploaded Â· ${result.downloaded} downloaded Â· ${result.total} available on this device.`,
+        `Sync complete · ${result.uploaded} uploaded · ${result.downloaded} downloaded · ${result.total} available on this device.`,
       );
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Cloud sync could not be completed.');
@@ -26,7 +26,7 @@ export default function CloudSyncPanel({ onBack }: { onBack: () => void }): Reac
     <section className="cloud-sync-page">
       <div className="cloud-sync-toolbar">
         <button className="button button-quiet" onClick={onBack} type="button">
-          â† Back to studio
+          ← Back to studio
         </button>
         <span className="cloud-sync-private"><i /> PRIVATE CLOUD WORKSPACE</span>
       </div>
@@ -42,7 +42,7 @@ export default function CloudSyncPanel({ onBack }: { onBack: () => void }): Reac
           <strong>{email || 'Sign in to your studio account first'}</strong>
         </div>
         <button className="button button-primary cloud-sync-action" onClick={() => void sync()} disabled={!email || busy} type="button">
-          {busy ? 'Syncingâ€¦' : 'Sync Style Recipes'}
+          {busy ? 'Syncing…' : 'Sync Style Recipes'}
         </button>
         <p className="cloud-sync-message" role="status" aria-live="polite">{message}</p>
         <div className="cloud-sync-privacy">

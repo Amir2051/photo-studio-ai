@@ -113,7 +113,7 @@ export default function AuthBoundary({ children }: Props): React.JSX.Element {
     return (
       <main className="auth-screen">
         <section className="auth-card" role="alert">
-          <p className="auth-eyebrow">EVERY FRAME FIRST STUDIO</p>
+          <p className="auth-eyebrow">MINU STUDIO</p>
           <h1>Authentication setup required</h1>
           <p>{getFirebaseConfigError()}</p>
           <p>Sign-in is fail-closed in production until the Firebase configuration is supplied.</p>
@@ -149,7 +149,7 @@ export default function AuthBoundary({ children }: Props): React.JSX.Element {
   return (
     <main className="auth-screen">
       <section className="auth-card">
-        <p className="auth-eyebrow">EVERY FRAME FIRST STUDIO</p>
+        <p className="auth-eyebrow">MINU STUDIO</p>
         <h1>{mode === 'signin' ? 'Welcome back' : 'Create your account'}</h1>
         <p className="auth-muted">Private access for your in-house photo studio.</p>
         <form onSubmit={submit} className="auth-form">
