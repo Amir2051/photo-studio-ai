@@ -185,7 +185,7 @@ export default function AudioStudio(): React.JSX.Element {
   const [message, setMessage] = useState('Import audio files to start a real multitrack session. Your files stay in this browser.');
   const [playingId, setPlayingId] = useState('');
   const [playerUrl, setPlayerUrl] = useState('');
-  const [exportName, setExportName] = useState('every-frame-first-mix.wav');
+  const [exportName, setExportName] = useState('minu-studio-mix.wav');
 
   useEffect(() => {
     let alive = true;
@@ -306,7 +306,7 @@ export default function AudioStudio(): React.JSX.Element {
   const exportMix = async () => {
     if (!tracks.length) return;
     setBusy(true);
-    setMessage('Rendering the actual audio tracks into a WAV mix…');
+    setMessage('Rendering the actual audio tracks into a WAV mixâ€¦');
     let context: OfflineAudioContext | null = null;
     try {
       const duration = Math.max(...tracks.map((track) => track.offset + track.trimEnd - track.trimStart));
@@ -365,7 +365,7 @@ export default function AudioStudio(): React.JSX.Element {
         <div className="audio-header-actions">
           <span className="audio-local-badge"><i /> LOCAL PROJECT</span>
           <Link className="audio-back-link" to="/">Photo Studio</Link>
-          <button className="audio-primary" onClick={() => inputRef.current?.click()} disabled={busy}>＋ Import audio</button>
+          <button className="audio-primary" onClick={() => inputRef.current?.click()} disabled={busy}>ï¼‹ Import audio</button>
         </div>
         <input ref={inputRef} hidden type="file" accept="audio/*" multiple onChange={(event) => { if (event.target.files) void importFiles(event.target.files); }} />
       </header>
@@ -386,11 +386,11 @@ export default function AudioStudio(): React.JSX.Element {
         <section className="audio-workspace">
           <div className="audio-workspace-head">
             <div><span className="audio-eyebrow">SESSION TIMELINE</span><h2>Multitrack editor</h2></div>
-            <span className="audio-file-count">{loading ? 'Loading saved files…' : tracks.length + ' saved source file(s)'}</span>
+            <span className="audio-file-count">{loading ? 'Loading saved filesâ€¦' : tracks.length + ' saved source file(s)'}</span>
           </div>
           {tracks.length === 0 ? (
             <div className="audio-empty">
-              <div className="audio-empty-icon">♫</div>
+              <div className="audio-empty-icon">â™«</div>
               <h3>{loading ? 'Opening your audio library' : 'Start with your own recordings'}</h3>
               <p>{loading ? 'Reading saved audio files from this browser.' : 'Import WAV, MP3, M4A, AAC, OGG or other browser-supported audio files. Your imported files become the actual tracks in this session.'}</p>
               {!loading && <button className="audio-primary" onClick={() => inputRef.current?.click()} disabled={busy}>Choose audio files</button>}
@@ -402,11 +402,11 @@ export default function AudioStudio(): React.JSX.Element {
                   <div className="audio-track-top">
                     <button className="audio-track-select" onClick={() => setSelectedId(track.id)} aria-pressed={track.id === selectedId}>
                       <span className="audio-track-number">{String(index + 1).padStart(2, '0')}</span>
-                      <span className="audio-track-name">{track.name}<small>{formatTime(track.duration)} · {formatBytes(track.size)} · {track.mime}</small></span>
+                      <span className="audio-track-name">{track.name}<small>{formatTime(track.duration)} Â· {formatBytes(track.size)} Â· {track.mime}</small></span>
                     </button>
                     <div className="audio-track-actions">
-                      <button onClick={() => void playTrack(track)} disabled={track.id !== selectedId} title={playingId === track.id ? 'Pause' : 'Play from trim start'}>{playingId === track.id ? 'Ⅱ' : '▶'}</button>
-                      <button onClick={() => void deleteSelected(track)} title="Remove track">×</button>
+                      <button onClick={() => void playTrack(track)} disabled={track.id !== selectedId} title={playingId === track.id ? 'Pause' : 'Play from trim start'}>{playingId === track.id ? 'â…¡' : 'â–¶'}</button>
+                      <button onClick={() => void deleteSelected(track)} title="Remove track">Ã—</button>
                     </div>
                   </div>
                   <Waveform track={track} />
@@ -427,7 +427,7 @@ export default function AudioStudio(): React.JSX.Element {
           <div><p className="audio-eyebrow">REAL RENDER / WAV</p><h2>Export your mix</h2><p>Mixes the imported audio files using each track's trim, gain and start offset, then renders a downloadable stereo WAV file in your browser.</p></div>
           <div className="audio-export-controls">
             <label>Output filename<input value={exportName} onChange={(event) => setExportName(event.target.value)} /></label>
-            <button className="audio-primary" onClick={() => void exportMix()} disabled={busy || tracks.length === 0}>{busy ? 'Processing…' : 'Render and export WAV'}</button>
+            <button className="audio-primary" onClick={() => void exportMix()} disabled={busy || tracks.length === 0}>{busy ? 'Processingâ€¦' : 'Render and export WAV'}</button>
           </div>
         </section>
         <p className="audio-privacy-note">Privacy: source audio and edit settings are saved in this browser's IndexedDB. Export rendering happens on this device. Clearing browser site data removes this local project.</p>

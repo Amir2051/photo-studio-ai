@@ -111,9 +111,18 @@ export function createAiGatewayServer({
     res.setHeader('referrer-policy', 'no-referrer');
 
     if (req.method === 'GET' && req.url === '/health') {
-      return sendJson(res, 200, { status: 'ok', service: 'every-frame-ai-gateway' });
+      return sendJson(res, 200, { status: 'ok', service: 'minu-studio-ai-gateway' });
     }
-    if (req.method !== 'POST' || !['/api/ai/chat', '/api/ai/scene'].includes(req.url)) {
+    if (
+      req.method !== 'POST' ||
+      ![
+        '/api/ai/chat',
+        '/api/ai/scene',
+        '/api/ai/segment',
+        '/api/ai/retouch',
+        '/api/ai/cull-score',
+      ].includes(req.url)
+    ) {
       return sendJson(res, 404, { error: 'Not found.', requestId });
     }
 
@@ -207,6 +216,24 @@ export function createAiGatewayServer({
         requestId,
       });
     }
+    if (req.url === '/api/ai/segment') {
+      return sendJson(res, 501, {
+        error: 'Background segmentation is not enabled. No image was uploaded.',
+        requestId,
+      });
+    }
+    if (req.url === '/api/ai/retouch') {
+      return sendJson(res, 501, {
+        error: 'Cloud retouching is not enabled. No image was uploaded.',
+        requestId,
+      });
+    }
+    if (req.url === '/api/ai/cull-score') {
+      return sendJson(res, 501, {
+        error: 'Cloud cull scoring is not enabled. No image was uploaded.',
+        requestId,
+      });
+    }
 
     try {
       const body = await readJson(req);
@@ -220,7 +247,7 @@ export function createAiGatewayServer({
             authorization: `Bearer ${config.openRouterApiKey}`,
             'content-type': 'application/json',
             'http-referer': config.appUrl || 'http://localhost',
-            'x-title': 'Every Frame First Studio',
+            'x-title': 'Minu Studio',
           },
           body: JSON.stringify({
             model: config.defaultModel,

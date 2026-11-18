@@ -1,4 +1,4 @@
-const CACHE_NAME = 'every-frame-first-shell-v1';
+const CACHE_NAME = 'minu-studio-shell-v1';
 const APP_SHELL = ['./', './index.html', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', (event) => {
@@ -15,7 +15,15 @@ self.addEventListener('activate', (event) => {
     caches
       .keys()
       .then((keys) =>
-        Promise.all(keys.filter((key) => key.startsWith('every-frame-first-shell-') && key !== CACHE_NAME).map((key) => caches.delete(key))),
+        Promise.all(
+          keys
+            .filter(
+              (key) =>
+                (key.startsWith('minu-studio-shell-') || key.startsWith('every-frame-first-shell-')) &&
+                key !== CACHE_NAME,
+            )
+            .map((key) => caches.delete(key)),
+        ),
       )
       .then(() => self.clients.claim()),
   );

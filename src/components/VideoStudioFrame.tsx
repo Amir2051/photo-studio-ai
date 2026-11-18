@@ -40,7 +40,7 @@ export default function VideoStudioFrame({ onBack }: VideoStudioFrameProps): Rea
     <main className="video-studio-frame-shell">
       <header className="video-studio-frame-bar">
         <button className="button button-quiet" type="button" onClick={onBack}>
-          ← Photo workspace
+          â† Photo workspace
         </button>
         <span className="video-studio-frame-brand">EVERY FRAME FIRST <i>/</i> VIDEO STUDIO</span>
         <span className="video-studio-frame-local"><i /> LOCAL MEDIA</span>
@@ -49,7 +49,7 @@ export default function VideoStudioFrame({ onBack }: VideoStudioFrameProps): Rea
         ref={frameRef}
         className="video-studio-frame"
         src="/video-studio/"
-        title="Every Frame First professional video editor"
+        title="Minu Studio professional video editor"
         allow="clipboard-read; clipboard-write; fullscreen"
         allowFullScreen
         referrerPolicy="same-origin"

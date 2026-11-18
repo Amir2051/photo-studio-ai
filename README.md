@@ -1,8 +1,19 @@
-# Every Frame First Studio
+# Minu Studio
 
-A private-by-default, browser-based photo editor. The active application is intentionally local-first: uploaded photographs are decoded, previewed, adjusted, saved in the browser IndexedDB, and exported without sending image data to a cloud service.
+A private-by-default, browser-based photography workflow — cull, retouch, batch, and deliver. The active application is intentionally local-first: uploaded photographs are decoded, previewed, adjusted, saved in the browser IndexedDB, and exported without sending image data to a cloud service.
 
-## Working in this branch
+## What's new in the Evoto-style rebuild
+
+- **Culling workspace** (`/cull`): import a whole shoot, local heuristic assist scores (sharpness/exposure/contrast/faces), keyboard rating (1–5), pick/reject, filters, loupe view, sortable grid, save keepers to the library, keeper ZIP export, CSV report, and named sessions persisted in IndexedDB.
+- **AI portrait retouch upgrades**: per-face smoothing controls (each detected face independently), local one-click blemish detection with auto healing strokes, glasses-glare softening (specular-highlight suppression inside eye regions), plus the existing face-aware smoothing and makeup.
+- **AI background tools**: on-device MediaPipe selfie segmentation — keep the person, blur / dim / recolor / gradient-replace the background. Works in preview, full-res export and library saves.
+- **Batch processing v2**: "Sync current edits to batch" (one-click recipe from the open photo), per-photo progress and error isolation, cancel anytime, per-item status badges, full-resolution ZIP export.
+- **Client gallery delivery** (`/deliver-workspace` panel + public `/gallery/:shareId` route): publish selected library photos to Firebase Storage/Firestore (photo-editor-rz) as a time-limited share link, or export a fully offline HTML gallery ZIP. Firestore/Storage security rules are in `firebase/firestore.rules` and `firebase/storage.rules` — deploy them in the `photo-editor-rz` project to enable sharing.
+- **Workflow shell**: Evoto-style step bar — Import → Cull → Edit → Batch → Deliver — plus an in-app `/privacy` page.
+- **Hybrid AI**: all image AI runs locally unless you explicitly opt in to cloud features through the fail-closed gateway (`server/ai-gateway.mjs`, OpenRouter image models). Cloud retouch/segment/cull-score endpoints exist as 501 stubs until a provider is configured — they never fabricate results.
+- Rebranded from "Every Frame First Studio" to **Minu Studio**. Legacy identifiers (IndexedDB `secureforge-lab-db`, localStorage keys) intentionally kept so existing local data is not orphaned.
+
+## Feature overview
 
 - JPEG, PNG, and WebP import (40 MB file-size and 24-megapixel safety limits).
 - Non-destructive brightness, contrast, saturation, and warmth adjustments.
@@ -29,9 +40,30 @@ Requires Node.js 22.12+ (Node 24 is used in CI).
 
 The editor runs locally at the Vite URL printed by the dev server. Production output is generated in dist/.
 
+## Client galleries (Firebase, photo-editor-rz)
+
+The Deliver panel can publish selected local-library photos as a time-limited client gallery:
+
+1. Deploy the rules in `firebase/firestore.rules` (Firestore → Rules) and `firebase/storage.rules` (Storage → Rules) in the `photo-editor-rz` project. Sharing fails without them.
+2. In the app, sign in, open the Deliver panel, pick photos from the saved library, set the gallery name and expiry, and choose **Create share link**.
+3. Send the `/gallery/<id>` URL to your client. Links are unguessable; expiry is enforced client-side on view. Anyone holding the link can view until expiry — treat links as semi-public by design.
+4. Prefer no server? **Local ZIP** produces a self-contained offline gallery (`index.html` + images) that never touches the network.
+
+Deep links to `/gallery/:id` require the host to serve `index.html` for unknown paths (or a `404.html` copy); configure your static host accordingly.
+
+## Routes
+
+- `/` — the studio (photo editor, cull entry, batch, deliver panel)
+- `/cull` — culling workspace
+- `/gallery/:shareId` — public client gallery (no sign-in required to view)
+- `/audio` — Podcast Studio
+- `/privacy` — privacy and data-handling summary
+
 ## Privacy and security boundaries
 
 - Photo editing and local photo storage run in the browser.
+- Client galleries (opt-in): the photos you select upload to Firebase Storage (photo-editor-rz) and a share document is written to Firestore; anyone holding the unguessable link can view until the expiry. The Local ZIP gallery never touches the network. See `firebase/` for the rules to deploy.
+- Culling analysis runs locally (heuristic assist scores); ratings and session data stay in this browser's IndexedDB.
 - Firebase email/password authentication is integrated in the active app. Configure the `VITE_FIREBASE_*` values before production use; Firebase Authentication's Email/Password provider must also be enabled in the Firebase console.
 - The editor's photo library remains local in browser IndexedDB. Sign-in does not upload photos or provide cross-device sync.
 - The editor's local prompt helper maps a few natural-language words to deterministic slider adjustments. It is not a connected AI model.

@@ -1,4 +1,4 @@
-name: Build and deploy Every Frame First Studio
+name: Build and deploy Minu Studio
 
 on:
   pull_request:

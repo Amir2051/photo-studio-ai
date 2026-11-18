@@ -1,0 +1,15 @@
+.privacy-shell {
+  min-height: 100vh;
+  background: #090d14;
+  color: #e8e6df;
+  font-family: Inter, system-ui, sans-serif;
+  padding: 3rem clamp(1.25rem, 6vw, 6rem);
+  max-width: 920px;
+  margin: 0 auto;
+}
+.privacy-brand { color: #d4a94e; letter-spacing: 0.18em; font-size: 0.72rem; margin: 0 0 0.5rem; }
+.privacy-shell h1 { font-size: 2rem; margin: 0 0 0.5rem; }
+.privacy-lede { color: #9aa7b8; font-size: 1.05rem; margin-bottom: 2rem; }
+.privacy-shell h2 { font-size: 1.05rem; color: #f4d98a; margin-top: 1.75rem; border-bottom: 1px solid #1b2433; padding-bottom: 0.35rem; }
+.privacy-shell li { margin: 0.35rem 0; color: #cfd6e0; }
+.privacy-back { display: inline-block; margin-top: 2.5rem; color: #d4a94e; text-decoration: none; }

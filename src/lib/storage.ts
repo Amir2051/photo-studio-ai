@@ -14,7 +14,7 @@ import {
 } from './types';
 
 const DB_NAME = 'secureforge-lab-db';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const STORE_PHOTOS = 'photos';
 const STORE_FILTER_LIBRARY = 'filter_library';
 const STORE_USER_PREFERENCES = 'user_preferences';
@@ -22,6 +22,7 @@ const STORE_AI_MESSAGES = 'ai_messages';
 const STORE_SCENE_PROMPTS = 'scene_prompts';
 const STORE_BATCH_EDITS = 'batch_edits';
 const STORE_STYLE_RECIPES = 'style_recipes';
+const STORE_CULL_SESSIONS = 'cull_sessions';
 
 interface IDBRequests {
   request: IDBRequest<unknown>;
@@ -54,13 +55,16 @@ function openDB(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(STORE_STYLE_RECIPES)) {
         db.createObjectStore(STORE_STYLE_RECIPES, { keyPath: 'id' });
       }
+      if (!db.objectStoreNames.contains(STORE_CULL_SESSIONS)) {
+        db.createObjectStore(STORE_CULL_SESSIONS, { keyPath: 'id' });
+      }
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
 }
 
-// ── Photo CRUD ────────────────────────────────────────────────────────
+// â”€â”€ Photo CRUD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export async function savePhoto(photo: Photo): Promise<Photo> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
@@ -105,7 +109,7 @@ export async function deletePhoto(id: string): Promise<void> {
   });
 }
 
-// ── Filter Library CRUD ───────────────────────────────────────────────
+// â”€â”€ Filter Library CRUD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export async function saveFilterPreset(preset: FilterPreset): Promise<FilterPreset> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
@@ -143,7 +147,7 @@ export async function deleteFilterPreset(id: string): Promise<void> {
   });
 }
 
-// ── User Preferences ──────────────────────────────────────────────────
+// â”€â”€ User Preferences â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const DEFAULT_PREFERENCES: UserPreferences = {
   aiProvider: 'offline',
   aiModel: 'offline-fallback',
@@ -187,7 +191,7 @@ export async function getUserPreferences(): Promise<UserPreferences> {
   });
 }
 
-// ── AI Messages ───────────────────────────────────────────────────────
+// â”€â”€ AI Messages â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export async function saveAiMessage(message: AiMessage): Promise<AiMessage> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
@@ -210,7 +214,7 @@ export async function getAiMessages(): Promise<AiMessage[]> {
   });
 }
 
-// ── Scene Prompts ─────────────────────────────────────────────────────
+// â”€â”€ Scene Prompts â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export async function saveScenePrompt(
   prompt: Omit<ScenePrompt, 'id' | 'createdAt'>,
 ): Promise<ScenePrompt> {
@@ -240,7 +244,7 @@ export async function getScenePrompts(): Promise<ScenePrompt[]> {
   });
 }
 
-// ── Batch Edits ───────────────────────────────────────────────────────
+// â”€â”€ Batch Edits â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export async function saveBatchEdit(edit: Omit<BatchEdit, 'id' | 'appliedAt'>): Promise<BatchEdit> {
   const db = await openDB();
   const full = {
@@ -268,7 +272,7 @@ export async function getBatchEdits(): Promise<BatchEdit[]> {
   });
 }
 
-// ── Reusable Style Recipes ───────────────────────────────────────────
+// â”€â”€ Reusable Style Recipes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export async function saveStyleRecipe(recipe: StyleRecipe): Promise<StyleRecipe> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
@@ -306,14 +310,74 @@ export async function deleteStyleRecipe(id: string): Promise<void> {
   });
 }
 
-// ── Export ────────────────────────────────────────────────────────────
+// â”€â”€ Export â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Cull sessions ──────────────────────────────────────────────────────────
+export interface CullSession {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+  items: import('./cull').CullItem[];
+}
+
+export async function saveCullSession(session: CullSession): Promise<CullSession> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_CULL_SESSIONS, 'readwrite');
+    const request = tx.objectStore(STORE_CULL_SESSIONS).put(session);
+    request.onsuccess = () => resolve(session);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+export async function getCullSessions(): Promise<CullSession[]> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const request = db
+      .transaction(STORE_CULL_SESSIONS, 'readonly')
+      .objectStore(STORE_CULL_SESSIONS)
+      .getAll();
+    request.onsuccess = () =>
+      resolve(
+        (request.result as CullSession[]).sort((a, b) =>
+          b.updatedAt.localeCompare(a.updatedAt),
+        ),
+      );
+    request.onerror = () => reject(request.error);
+  });
+}
+
+export async function getCullSession(id: string): Promise<CullSession | null> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const request = db
+      .transaction(STORE_CULL_SESSIONS, 'readonly')
+      .objectStore(STORE_CULL_SESSIONS)
+      .get(id);
+    request.onsuccess = () => resolve((request.result as CullSession) ?? null);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+export async function deleteCullSession(id: string): Promise<void> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const request = db
+      .transaction(STORE_CULL_SESSIONS, 'readwrite')
+      .objectStore(STORE_CULL_SESSIONS)
+      .delete(id);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+}
+
 export async function exportPhotosToZip(photoIds: string[]): Promise<Blob> {
   const photos = await getAllPhotos();
   const selected = photos.filter((photo) => photoIds.includes(photo.id));
   if (!selected.length) throw new Error('No saved photos matched the requested export.');
   const { default: JSZip } = await import('jszip');
   const zip = new JSZip();
-  const folder = zip.folder('every-frame-first-photos');
+  const folder = zip.folder('minu-studio-photos');
   if (!folder) throw new Error('Could not create the photo export archive.');
   for (const photo of selected) {
     const source = photo.dataUrlHigh || photo.dataUrl;
@@ -331,7 +395,7 @@ export async function exportPhotosToZip(photoIds: string[]): Promise<Blob> {
   });
 }
 
-// ── Initialization ────────────────────────────────────────────────────
+// â”€â”€ Initialization â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export async function initStorage(): Promise<void> {
   try {
     await openDB();

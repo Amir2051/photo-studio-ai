@@ -48,7 +48,7 @@ describe('server-side AI gateway', () => {
     await withServer({}, async (base) => {
       const response = await fetch(base + '/health');
       expect(response.status).toBe(200);
-      expect(await response.json()).toEqual({ status: 'ok', service: 'every-frame-ai-gateway' });
+      expect(await response.json()).toEqual({ status: 'ok', service: 'minu-studio-ai-gateway' });
     });
   });
 
@@ -195,4 +195,19 @@ describe('server-side AI gateway', () => {
       expect((await response.json()).error).toMatch(/No image was uploaded/i);
     });
   });
+
+  it.each(['/api/ai/segment', '/api/ai/retouch', '/api/ai/cull-score'])(
+    'keeps %s disabled until a real provider is implemented',
+    async (path) => {
+      await withServer({}, async (base) => {
+        const response = await fetch(base + path, {
+          method: 'POST',
+          headers: { authorization: 'Bearer valid-test-token', 'content-type': 'application/json' },
+          body: JSON.stringify({ image: 'private-image-data' }),
+        });
+        expect(response.status).toBe(501);
+        expect((await response.json()).error).toMatch(/No image was uploaded/i);
+      });
+    },
+  );
 });

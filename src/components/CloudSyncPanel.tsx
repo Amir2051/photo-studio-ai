@@ -9,11 +9,11 @@ export default function CloudSyncPanel({ onBack }: { onBack: () => void }): Reac
 
   const sync = async () => {
     setBusy(true);
-    setMessage('Syncing saved Style Recipes…');
+    setMessage('Syncing saved Style Recipesâ€¦');
     try {
       const result = await syncStyleRecipesToCloud();
       setMessage(
-        `Sync complete · ${result.uploaded} uploaded · ${result.downloaded} downloaded · ${result.total} available on this device.`,
+        `Sync complete Â· ${result.uploaded} uploaded Â· ${result.downloaded} downloaded Â· ${result.total} available on this device.`,
       );
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Cloud sync could not be completed.');
@@ -26,7 +26,7 @@ export default function CloudSyncPanel({ onBack }: { onBack: () => void }): Reac
     <section className="cloud-sync-page">
       <div className="cloud-sync-toolbar">
         <button className="button button-quiet" onClick={onBack} type="button">
-          ← Back to studio
+          â† Back to studio
         </button>
         <span className="cloud-sync-private"><i /> PRIVATE CLOUD WORKSPACE</span>
       </div>
@@ -34,7 +34,7 @@ export default function CloudSyncPanel({ onBack }: { onBack: () => void }): Reac
         <p className="eyebrow">CROSS-DEVICE WORKFLOW</p>
         <h1>Keep your creative recipes in sync.</h1>
         <p className="cloud-sync-intro">
-          Back up reusable Style Recipes to your private Every Frame First workspace and bring
+          Back up reusable Style Recipes to your private Minu Studio workspace and bring
           recipes from another device into this library.
         </p>
         <div className="cloud-sync-account">
@@ -42,7 +42,7 @@ export default function CloudSyncPanel({ onBack }: { onBack: () => void }): Reac
           <strong>{email || 'Sign in to your studio account first'}</strong>
         </div>
         <button className="button button-primary cloud-sync-action" onClick={() => void sync()} disabled={!email || busy} type="button">
-          {busy ? 'Syncing…' : 'Sync Style Recipes'}
+          {busy ? 'Syncingâ€¦' : 'Sync Style Recipes'}
         </button>
         <p className="cloud-sync-message" role="status" aria-live="polite">{message}</p>
         <div className="cloud-sync-privacy">

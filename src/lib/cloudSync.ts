@@ -41,7 +41,7 @@ export async function syncStyleRecipesToCloud(): Promise<StyleRecipeSyncResult> 
         local_recipe_id: recipe.id,
         recipe_name: recipe.name,
         category: 'custom',
-        description: 'Saved in Every Frame First Studio',
+        description: 'Saved in Minu Studio',
         recipe_json: JSON.stringify(recipe),
         updated_at_local: recipe.createdAt,
       },

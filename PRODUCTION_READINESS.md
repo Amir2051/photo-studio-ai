@@ -1,4 +1,17 @@
-# Every Frame First production readiness
+# Minu Studio production readiness
+
+Updated 2026-11-17 after the Evoto-style rebuild (rebrand, cull, background AI, batch v2, galleries).
+
+## Minu Studio release notes (2026-11-17)
+
+- Client galleries ship behind Firebase Security Rules in `firebase/firestore.rules` and `firebase/storage.rules`. **They must be deployed in the `photo-editor-rz` project before sharing works**; until then, use Local ZIP delivery.
+- `/gallery/:shareId` needs SPA fallback on the static host (or a `404.html` copy of `index.html`) for deep links.
+- The background-segmentation model (`public/models/selfie_multiclass.tflite`, ~16 MB) loads on first use; first detection may take a few seconds on slow connections.
+- Cull assist scores are heuristics, not AI judgment — the UI labels them as such.
+- Service-worker cache namespace changed to `minu-studio-shell-*`; legacy `every-frame-first-shell-*` caches are purged on activate (existing user data in IndexedDB is untouched).
+- Cloud retouch/segment/cull endpoints remain fail-closed 501 stubs by design.
+
+## Previously verified live
 
 Updated 2026-11-10 after the GitHub Pages deployment.
 
@@ -25,7 +38,7 @@ The Render static deployment is currently a duplicate. Once the canonical host i
 - Protect `fix/photo-studio-core-repair`: require pull requests and a passing `build` check before merge.
 - Protect the `github-pages` environment and allow deployments only from the approved production branch(es). This repository currently uses a manual workflow on `main` that checks out the integration branch, so include both approved paths deliberately.
 - Keep production secrets in Actions/Render secret stores. Never expose private provider keys through `VITE_*` variables; browser-prefixed values are shipped to visitors.
-- The repository has no Firebase rules file. Verify Firebase Authentication, Firestore, and Storage rules in Firebase Console before launch, including per-user access and abuse limits.
+- Firebase rules files now live in `firebase/` (`firestore.rules`, `storage.rules`). Deploy them in the `photo-editor-rz` project (writes gated to authenticated image uploads ≤ 25 MB; reads public-by-link for `gallery-shares/`; everything else denied). Verify in the Firebase Console before launch, including per-user access and abuse limits.
 
 ### Guest contribution reliability
 

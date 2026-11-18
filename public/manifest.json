@@ -1,8 +1,8 @@
 {
   "id": "./",
-  "name": "Every Frame First Studio",
-  "short_name": "Every Frame",
-  "description": "A thoughtful, private-by-default photo editor.",
+  "name": "Minu Studio",
+  "short_name": "Minu Studio",
+  "description": "An AI-powered, private-by-default photo studio for professional workflows.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

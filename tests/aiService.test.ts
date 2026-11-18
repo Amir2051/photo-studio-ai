@@ -87,4 +87,35 @@ describe('AI service security boundary', () => {
     const provider = new OpenRouterProvider(undefined, undefined, async () => 'session-token');
     await expect(provider.chat([message])).rejects.toThrow(/503/);
   });
+
+  it('fails closed for cloud retouch/segment/cull without uploading anything', async () => {
+    const offline = new OfflineProvider();
+    await expect(offline.segmentImage()).rejects.toThrow(/not configured|unavailable/i);
+    await expect(offline.retouchImage()).rejects.toThrow(/not configured|unavailable/i);
+    await expect(offline.scoreCull()).rejects.toThrow(/not configured|unavailable/i);
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ error: 'not enabled' }), { status: 501 })),
+    );
+    const cloud = new OpenRouterProvider(undefined, undefined, async () => 'session-token');
+    await expect(cloud.segmentImage('aGVsbG8=')).rejects.toThrow(/not enabled/i);
+    await expect(cloud.retouchImage('aGVsbG8=')).rejects.toThrow(/not enabled/i);
+    await expect(cloud.scoreCull('aGVsbG8=')).rejects.toThrow(/not enabled/i);
+  });
+
+  it('advertises capability flags so the UI can gate AI affordances honestly', () => {
+    expect(new OfflineProvider().capabilities).toEqual({
+      chat: true,
+      retouch: false,
+      segment: false,
+      cullScore: false,
+    });
+    expect(new OpenRouterProvider().capabilities).toEqual({
+      chat: true,
+      retouch: false,
+      segment: false,
+      cullScore: false,
+    });
+  });
 });

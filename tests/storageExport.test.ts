@@ -26,7 +26,7 @@ describe('photo archive export', () => {
     const archive = await exportPhotosToZip([id]);
     expect(archive.type).toBe('application/zip');
     const zip = await JSZip.loadAsync(archive);
-    const entry = zip.file('every-frame-first-photos/test portrait.png');
+    const entry = zip.file('minu-studio-photos/test portrait.png');
     expect(entry).not.toBeNull();
     await expect(entry!.async('string')).resolves.toBe('hello');
   });

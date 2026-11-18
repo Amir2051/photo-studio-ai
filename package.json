@@ -1,8 +1,8 @@
 {
-  "name": "every-frame-first-studio",
+  "name": "minu-studio",
   "version": "1.0.0",
   "private": true,
-  "description": "Every Frame First Studio — private-by-default photo editing",
+  "description": "Minu Studio — AI-powered, private-by-default photo editing",
   "type": "module",
   "engines": {
     "node": ">=22.17"
