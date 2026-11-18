@@ -102,7 +102,7 @@ export default function ClientGalleryPanel({ photos }: ClientGalleryPanelProps):
   };
 
   return (
-    <section className="tool-panel gallery-panel" id="deliver-workspace">
+    <section className="tool-panel gallery-panel" id="deliver-workspace" data-panel="deliver">
       <div className="section-title">
         <div>
           <p className="eyebrow">DELIVER</p>

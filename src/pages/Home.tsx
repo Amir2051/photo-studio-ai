@@ -452,7 +452,7 @@ export default function Home(): React.JSX.Element {
   const [prompt, setPrompt] = useState('');
   const [styleInterpretation, setStyleInterpretation] = useState<StyleInterpretation | null>(null);
   const [showSaved, setShowSaved] = useState(false);
-  const [activeSection, setActiveSection] = useState('creator');
+  const [activeSection, setActiveSection] = useState('editor');
   const [retouchMode, setRetouchMode] = useState<'off' | 'brush'>('off');
   const [retouchStrength, setRetouchStrength] = useState(55);
   const [backgroundOps, setBackgroundOps] = useState<BackgroundOps>(DEFAULT_BACKGROUND_OPS);
@@ -3332,7 +3332,7 @@ export default function Home(): React.JSX.Element {
                   </div>
                 )}
               </section>
-              <section className="tool-panel history-panel" id="history-workspace">
+              <section className="tool-panel history-panel" id="history-workspace" data-panel="adjust">
                 <div className="section-title">
                   <div>
                     <p className="eyebrow">NON-DESTRUCTIVE WORKFLOW</p>
@@ -3380,7 +3380,7 @@ export default function Home(): React.JSX.Element {
                   </button>
                 </div>
               </section>
-              <section className="tool-panel style-workflow-panel" id="assets-workspace">
+              <section className="tool-panel style-workflow-panel" id="assets-workspace" data-panel="batch">
                 <div className="section-title">
                   <div>
                     <p className="eyebrow">REFERENCE → REPEAT</p>
@@ -3558,7 +3558,7 @@ export default function Home(): React.JSX.Element {
                   the reference and are not copied.
                 </p>
               </section>
-                <section className="tool-panel filter-library-panel" id="effects-workspace">
+                <section className="tool-panel filter-library-panel" id="effects-workspace" data-panel="effects">
                   <div className="section-title">
                     <div>
                       <p className="eyebrow">FILTER LIBRARY</p>
@@ -3676,7 +3676,7 @@ export default function Home(): React.JSX.Element {
                     ))}
                   </div>
                 </section>
-                <section className="tool-panel" id="color-workspace">
+                <section className="tool-panel" id="color-workspace" data-panel="adjust">
                   <div className="section-title">
                     <div>
                       <p className="eyebrow">FINE TUNING</p>
@@ -3957,7 +3957,7 @@ export default function Home(): React.JSX.Element {
                     tint, vibrance, hue, grain and vignette are processed locally.
                   </p>
                 </section>
-                <section className="tool-panel" id="transform-workspace">
+                <section className="tool-panel" id="transform-workspace" data-panel="adjust">
                   <div className="section-title">
                     <div>
                       <p className="eyebrow">DOCUMENT GEOMETRY</p>
@@ -4403,7 +4403,7 @@ export default function Home(): React.JSX.Element {
                     <span className="tool-note">{healStrokes.length} healing stroke(s)</span>
                   </div>
                 </section>
-              <section className="tool-panel background-panel" id="background-workspace">
+              <section className="tool-panel background-panel" id="background-workspace" data-panel="retouch">
                 <div className="section-title">
                   <div>
                     <p className="eyebrow">AI BACKGROUND</p>
@@ -4519,7 +4519,7 @@ export default function Home(): React.JSX.Element {
                   </>
                 )}
               </section>
-                <section className="tool-panel retouch-panel" id="retouch-workspace">
+                <section className="tool-panel retouch-panel" id="retouch-workspace" data-panel="retouch">
                   <div className="section-title">
                     <div>
                       <p className="eyebrow">PORTRAIT TOOLS</p>
@@ -4906,7 +4906,7 @@ export default function Home(): React.JSX.Element {
                     </p>
                   )}
                 </section>
-              <section className="tool-panel assistant-panel">
+              <section className="tool-panel assistant-panel" data-panel="adjust">
                 <div className="section-title">
                   <div>
                     <p className="eyebrow">LOCAL EDITING HELPER</p>

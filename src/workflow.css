@@ -105,7 +105,6 @@
 .studio-shell[data-advanced="true"] .tool-panel[data-panel~="advanced"] {
   display: block;
 }
-.studio-shell .gallery-panel { display: none; }
 .studio-shell[data-workspace="export"] .gallery-panel { display: block; }
 
 /* Advanced toggle */
