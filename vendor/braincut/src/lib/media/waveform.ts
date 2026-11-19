@@ -7,9 +7,76 @@ import type { WorkerRequest, WorkerResponse } from './workers/waveform.worker';
 // bucket i, peaks[2i + 1] the highest, both in -1..1
 
 export const DEFAULT_PEAKS_PER_SECOND = 50;
+// how many computed peak sets are kept in memory before the least recently
+// used one is dropped. one set is perSecond buckets of min/max pairs, so a
+// single long clip at 50/s for ~3 hours is still a few hundred kilobytes and
+// the bound is about how many sources a session is likely to hold at once
+export const DEFAULT_MAX_PEAKS_ENTRIES = 64;
+// hard ceiling on retained peak memory in bytes, independent of the entry
+// count, so many mid-length clips cannot drift past a sane total
+const DEFAULT_MAX_PEAKS_BYTES = 64 * 1024 * 1024;
+
+export interface PeaksCacheOptions {
+  maxEntries?: number;
+  maxBytes?: number;
+}
+
+// in-memory least-recently-used cache over computed waveform peaks. eviction
+// is memory-only: the persisted sets in IndexedDB are untouched, a clip that
+// gets evicted just regenerates on its next miss
+export class PeaksCache {
+  private readonly maxEntries: number;
+  private readonly maxBytes: number;
+  private readonly entries = new Map<string, { peaks: Float32Array; bytes: number }>();
+
+  constructor(opts: PeaksCacheOptions = {}) {
+    this.maxEntries = Math.max(1, opts.maxEntries ?? DEFAULT_MAX_PEAKS_ENTRIES);
+    this.maxBytes = opts.maxBytes ?? DEFAULT_MAX_PEAKS_BYTES;
+  }
+
+  get size(): number {
+    return this.entries.size;
+  }
+
+  get bytes(): number {
+    let total = 0;
+    for (const entry of this.entries.values()) total += entry.bytes;
+    return total;
+  }
+
+  get(mediaId: string): Float32Array | null {
+    const entry = this.entries.get(mediaId);
+    if (!entry) return null;
+    // re-insert so iteration order tracks recency, oldest first
+    this.entries.delete(mediaId);
+    this.entries.set(mediaId, entry);
+    return entry.peaks;
+  }
+
+  // false when the entry would not fit the budget, true when it is retained
+  set(mediaId: string, peaks: Float32Array): boolean {
+    const bytes = peaks.byteLength;
+    if (bytes > this.maxBytes) return false;
+    while (this.entries.size >= this.maxEntries || this.bytes + bytes > this.maxBytes) {
+      const oldest = this.entries.keys().next().value;
+      if (oldest === undefined) break;
+      this.entries.delete(oldest);
+    }
+    this.entries.set(mediaId, { peaks, bytes });
+    return true;
+  }
+
+  delete(mediaId: string): void {
+    this.entries.delete(mediaId);
+  }
+
+  clear(): void {
+    this.entries.clear();
+  }
+}
 
 const store = createStore('braincut-peaks', 'peaks');
-const cache = new Map<string, Float32Array>();
+const cache = new PeaksCache();
 const inflight = new Map<string, Promise<Float32Array>>();
 
 // bumps whenever new peaks arrive, so clips subscribed to it redraw

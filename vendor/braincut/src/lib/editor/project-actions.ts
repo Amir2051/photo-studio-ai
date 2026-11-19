@@ -36,9 +36,20 @@ type SavePicker = (opts: {
   id?: string;
 }) => Promise<FileSystemFileHandle>;
 
+type OpenPicker = (opts: {
+  multiple?: boolean;
+  types?: FilePickerAcceptType[];
+  id?: string;
+}) => Promise<FileSystemFileHandle[]>;
+
 function savePicker(): SavePicker | null {
   const w = window as Window & { showSaveFilePicker?: SavePicker };
   return typeof w.showSaveFilePicker === 'function' ? w.showSaveFilePicker.bind(w) : null;
+}
+
+function openPicker(): OpenPicker | null {
+  const w = window as Window & { showOpenFilePicker?: OpenPicker };
+  return typeof w.showOpenFilePicker === 'function' ? w.showOpenFilePicker.bind(w) : null;
 }
 
 function aborted(e: unknown): boolean {
@@ -222,15 +233,21 @@ export async function openProjectFile(): Promise<void> {
   // The selected file determines whether this is a project replacement or
   // media import; only project replacement should ask about discarding work.
   try {
-    if ('showOpenFilePicker' in window) {
-      const [handle] = await window.showOpenFilePicker({
-        multiple: false,
-        types: PICKER_TYPES,
-        id: 'braincut-project',
-      });
-      if (!handle) return;
-      await openSelectedFile(await handle.getFile(), handle);
-      return;
+    const picker = openPicker();
+    if (picker) {
+      try {
+        const [handle] = await picker({
+          multiple: false,
+          types: PICKER_TYPES,
+          id: 'braincut-project',
+        });
+        if (!handle) return;
+        await openSelectedFile(await handle.getFile(), handle);
+        return;
+      } catch (e) {
+        if (aborted(e)) return;
+        // a denied or unusable picker must not prevent reopening a project
+      }
     }
     const file = await inputFallback();
     if (file) await openSelectedFile(file, null);
