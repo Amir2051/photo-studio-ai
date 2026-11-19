@@ -12,7 +12,7 @@
   import { id as newId } from '#lib/project/ids.ts';
   import { addToast, contextMenu, dialog, dragPayload, importProgress, leftPanelTab, playhead, sourceMedia, type MenuItem } from '#lib/stores/app.ts';
   import { preferences } from '#lib/stores/preferences.ts';
-  import { pickFiles, pickFolder } from '#lib/media/import.ts';
+  import { pickFiles, pickFolder, cancelImport } from '#lib/media/import.ts';
   import { forgetSource, getBlobForMedia, grantAccess, needsPermission, relinkMissing } from '#lib/media/sources.ts';
   import { createProxy, proxyStatus, removeProxy } from '#lib/media/proxy.ts';
   import { convertForEditing, ffmpegAvailable } from '#lib/media/transcode.ts';
@@ -679,6 +679,7 @@
       <span class="import-name">{$importProgress.name}</span>
       <span class="import-count">{$importProgress.done}/{$importProgress.total}</span>
       <span class="import-track"><span class="import-fill" style="width: {importPercent}%"></span></span>
+      <button class="import-cancel" onclick={() => cancelImport()} aria-label="Cancel import" title="Cancel import">×</button>
     </div>
   {/if}
 </div>
@@ -1157,5 +1158,25 @@
     height: 100%;
     background: var(--accent);
     transition: width 120ms linear;
+  }
+
+  .import-cancel {
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    display: grid;
+    place-items: center;
+    border: 0;
+    border-radius: 3px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .import-cancel:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
   }
 </style>

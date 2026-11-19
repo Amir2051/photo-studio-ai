@@ -79,12 +79,22 @@ async function write(p: Project, askForFile: boolean): Promise<boolean> {
     return true;
   } catch (e) {
     if (aborted(e)) return false;
-    addToast(
-      `Could not save the project: ${message(e, 'the file could not be written')}`,
-      'error',
-      6000,
-    );
-    return false;
+    // the user agent or platform denied the direct-write path — fall back to
+    // a regular browser download of the serialized project, the same
+    // strategy the Export path already uses when the save picker is blocked.
+    // nothing is reported saved until the download has actually been kicked off.
+    try {
+      downloadBlob(new Blob([text], { type: 'application/json' }), projectFileName(p));
+      addToast('Could not write to that location — downloaded a project file instead', 'info', 6000);
+      return true;
+    } catch {
+      addToast(
+        `Could not save the project: ${message(e, 'the file could not be written')}`,
+        'error',
+        6000,
+      );
+      return false;
+    }
   }
 }
 

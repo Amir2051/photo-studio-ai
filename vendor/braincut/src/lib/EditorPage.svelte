@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { requestPersistentStorage } from '#lib/storage/persist.ts';
   import TopBar from '#lib/ui/TopBar.svelte';
   import StatusBar from '#lib/ui/StatusBar.svelte';
   import PanelTabs from '#lib/ui/PanelTabs.svelte';
@@ -161,6 +162,9 @@
   });
 
   onMount(() => {
+    // ask once whether the browser will keep our derived storage (proxies,
+    // converted copies); the answer is the browser's to give
+    void requestPersistentStorage();
     // the program session mirrors the stores and redraws on every project
     // change by itself; the source session is built when a clip is opened
     program();

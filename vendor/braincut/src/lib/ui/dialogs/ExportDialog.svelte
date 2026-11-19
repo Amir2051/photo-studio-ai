@@ -199,17 +199,49 @@
         types: { description: string; accept: Record<string, string[]> }[];
       }) => Promise<FileSystemFileHandle>;
     }).showSaveFilePicker;
-    if (!picker) return { kind: 'download', fileName: name };
+    const fallback: ExportTarget = { kind: 'download', fileName: name };
+    if (!picker) return fallback;
+    const started = performance.now();
     try {
-      const handle = await picker({
-        suggestedName: name,
-        types: [{ description: `${container.toUpperCase()} file`, accept: { [mimeTypeFor(container)]: [`.${container}`] } }]
-      });
+      // A picker that never settles (blocked/headless browsers) must not stall
+      // the export forever. Give it a generous real-user window, then take the
+      // regular browser download path instead.
+      const handle = await Promise.race([
+        picker({
+          suggestedName: name,
+          types: [{ description: `${container.toUpperCase()} file`, accept: { [mimeTypeFor(container)]: [`.${container}`] } }],
+        }),
+        new Promise<never>((_, reject) =>
+          window.setTimeout(() => reject(new Error('__PICKER_TIMEOUT__')), 30000),
+        ),
+      ]);
       return { kind: 'handle', handle };
     } catch (e) {
-      // the picker throws on cancel, that is not an error worth showing
-      if (e instanceof DOMException && e.name === 'AbortError') return null;
-      return { kind: 'download', fileName: name };
+      const elapsed = performance.now() - started;
+      if (e instanceof DOMException && e.name === 'AbortError') {
+        // Chrome uses the same AbortError for "user pressed Esc/Cancel in the
+        // save dialog" and for "the dialog could not be shown at all" (e.g.
+        // headless/background-blocked). A human cannot decide in < 500 ms,
+        // so an instant rejection means the dialog never appeared: take the
+        // regular browser download path instead of silently doing nothing.
+        if (elapsed < 500) {
+          addToast("Save dialog didn't open — downloading instead", 'info', 4000);
+          return fallback;
+        }
+        // genuine user cancellation of the save dialog — normal cancel,
+        // no error notification
+        return null;
+      }
+      // Installed watchdog timed out — the picker never responded (blocked background tab, headless etc.)
+      if (e instanceof Error && e.message === '__PICKER_TIMEOUT__') {
+        addToast('Save dialog unavailable — falling back to browser download', 'info', 4000);
+        return fallback;
+      }
+      // unexpected failure (unsupported environment, blocked dialog, etc.) —
+      // fall back to the regular browser download instead of leaving the
+      // user with a silent no-op export
+      addToast('Save dialog unavailable — falling back to browser download', 'info', 4000);
+      return fallback;
     }
   }
 
@@ -259,6 +291,7 @@
         addToast('Export cancelled', 'info');
       } else {
         error = e instanceof Error ? e.message : String(e);
+        addToast(`Export failed: ${error}`, 'error', 5000);
       }
     } finally {
       job = null;
@@ -457,7 +490,7 @@
       <button class="dialog-btn" onclick={() => controller?.abort()}>Cancel</button>
     {:else}
       <button class="dialog-btn" onclick={close}>Close</button>
-      <button class="dialog-btn accent" disabled={!settings || duration <= 0} onclick={run}>Export</button>
+      <button class="dialog-btn accent" disabled={!settings || duration <= 0 || job !== null} onclick={run}>Export</button>
     {/if}
   {/snippet}
 </Dialog>
