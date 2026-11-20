@@ -1,14 +1,18 @@
 # Video Studio — Complete Implementation Roadmap (Phase 0)
 
-**Date:** 2026-11-19 · **Status:** planning only; no implementation started
+**Date:** 2026-11-19 · **Status:** M1 foundation implemented and awaiting review; no M2+ work started
 
-## 0. Gate before any implementation (BLOCKER)
+## Status update — 2026-11-19 (Milestone 1 foundation)
+- **Completed:** shared suite contracts (`lib/suite/types.ts`), media identity/lifecycle helpers (`media.ts`), framework-neutral history (`history.ts`), versioned suite serialization (`serialize.ts`), legacy `.braincut` v1 adapter (`adapters/braincut.ts`), 20 new tests, and the three M1 reports.
+- **Verification:** vendor 343 passed (baseline 323 + 20 new), app 99 passed, typecheck 0 errors / 1 pre-existing warning, production build passed, browser smoke 0 console errors. No regressions.
+- **Not done by design:** no UI wiring, no cross-studio project manager, no editing-tool expansion, no media/performance feature work, no M2+ work.
+- **Next:** operator review of M1 reports, then the video editing foundation (slip/slide/roll, ripple insert, track grouping, shortcut configuration), then M2 media/performance.
 
-The expected freeze tag `video-studio-trial-ready-2026-11-19` does not exist locally or on `origin`, and the trial work is uncommitted. Required operator decision:
-1. Authorize committing the existing trial work on `feature/pro-editor-rebuild`, pushing it, and creating/pushing the freeze tag — then verify remote refs; **or**
-2. Confirm a different existing baseline/tag to freeze.
+## 0. Gate before any implementation — RESOLVED
+The freeze now exists: `feature/pro-editor-rebuild` and annotated tag `video-studio-trial-ready-2026-11-19` both resolved at `cdb1238e…` locally and remotely before the development branch was created. `feature/pro-editor-professional-suite` was created from that commit and pushed normally.
 
-Only after that: create `feature/pro-editor-professional-suite` from the verified frozen commit, push it, and work there. Never rewrite history. No work has been done on any branch.
+## 0. Gate before any implementation (RESOLVED — see status update above)
+Freeze tag and remote branch were verified at `cdb1238e…`; the professional-suite branch was created from that commit. Historical note: before the freeze operation, the tag did not exist and the operation was blocked until operator authorization.
 
 ## 1. Safe implementation boundaries
 
@@ -20,8 +24,8 @@ Only after that: create `feature/pro-editor-professional-suite` from the verifie
 
 | Phase | Outcome | Affected modules | Complexity | Key dependencies |
 |---|---|---|---|---|
-| **P1 Suite foundation** | Shared project/media/undo/service contracts (no UI rewrite) | new `suite/` interfaces; adapters over existing `project/*`, `media/*`, `engine/*` | Medium | Freeze resolution; compatibility tests |
-| **M1 Video editing foundation** | Slip/slide/roll, track groups, nested sequences where feasible, shortcut config, workspaces | `lib/editor/*`, `ui/timeline/*`, `stores/preferences` | High | P1; 200+ vendor tests green |
+| **P1 Suite foundation** — DONE (2026-11-19) | Shared project/media/undo/service contracts (no UI rewrite) | new `suite/` interfaces; adapters over existing `project/*`, `media/*`, `engine/*` | Medium | Freeze resolution; compatibility tests |
+| **M1a Video editing foundation** — NEXT | Slip/slide/roll, track groups, nested sequences where feasible, shortcut config, workspaces | `lib/editor/*`, `ui/timeline/*`, `stores/preferences` | High | P1; 200+ vendor tests green |
 | **M2 Media & performance** | Bins/tags/search, background thumbs/peaks, archives, measured long-form behavior | `lib/media/*`, `project/persistence`, `storage/*` | High | Real long media fixtures |
 | **M3 Color grading** | Full primary/secondary controls + scopes affecting render/export | `engine/compositor`, `engine/effects`, new grade model | High | P1; engine filter pipeline |
 | **M4 Audio/Podcast** | Mixer, EQ/comp/limiter/denoise/ducking, transcription hook | `src/pages/AudioStudio.tsx`, `lib/media/waveform`, optional local STT | High | Audio DSP choice |
