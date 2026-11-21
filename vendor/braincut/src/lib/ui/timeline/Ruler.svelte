@@ -6,6 +6,7 @@
   import { formatTimecode } from '#lib/project/time.ts';
   import { frameTime, rulerTicks, timeToX, xToTime } from '#lib/editor/timeline-interactions.ts';
   import MarkerFlag from './MarkerFlag.svelte';
+  import QuietRegionOverlay from './QuietRegionOverlay.svelte';
 
   let {
     seq,
@@ -158,6 +159,7 @@
   onpointercancel={onpointerup}
   {ondblclick}>
   <canvas bind:this={canvas} style="width: {width}px; height: 28px"></canvas>
+  <QuietRegionOverlay {zoom} {scroll} {width} {fps} />
   {#if inX !== null && outX !== null}
     <div class="range" style="transform: translateX({inX}px); width: {Math.max(1, outX - inX)}px"></div>
   {/if}

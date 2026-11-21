@@ -3,6 +3,7 @@ import { get } from 'svelte/store';
 import {
   bandValueToY,
   clampZoom,
+  clipsInRange,
   cutNear,
   edgeZone,
   editPointsOfClip,
@@ -138,6 +139,63 @@ describe('rows', () => {
     const a1 = s.tracks.filter((t) => t.kind === 'audio')[0];
     expect(trackOffsetRange(s, [v1.id, a1.id])).toEqual({ min: 0, max: 2 });
     expect(trackOffsetRange(s, [])).toEqual({ min: 0, max: 0 });
+  });
+});
+
+describe('clips in range', () => {
+  it('returns no clips when the timeline is empty', () => {
+    expect(clipsInRange([], 0, 10)).toEqual([]);
+  });
+
+  it('returns only the clips that overlap the window', () => {
+    const track = seq().tracks[0];
+    // three title clips: 0-2, 2-5 and 8-9
+    expect(clipsInRange(track.clips, 0, 10)).toHaveLength(3);
+    expect(clipsInRange(track.clips, 100, 200)).toEqual([]);
+  });
+
+  it('applies an end-exclusive boundary so nothing leaks past the window', () => {
+    const track = seq().tracks[0];
+    // the first clip ends exactly at 2, the third starts at 8 and ends at 9
+    expect(clipsInRange(track.clips, 2, 5).map((c) => c.duration)).toEqual([3]);
+    expect(clipsInRange(track.clips, 9, 20)).toEqual([]);
+  });
+
+  it('accepts windows before the start of the sequence', () => {
+    const track = seq().tracks[0];
+    expect(clipsInRange(track.clips, -5, 1).map((c) => c.duration)).toEqual([2]);
+  });
+
+  it('handles fractional times and very large offsets', () => {
+    const track = seq().tracks[0];
+    expect(clipsInRange(track.clips, 1.5, 9.5).map((c) => c.duration)).toEqual([2, 3, 1]);
+    expect(clipsInRange(track.clips, 1e6, 1e6 + 10)).toEqual([]);
+  });
+
+  it('treats an overscanned window as the visible range plus margin', () => {
+    const track = seq().tracks[0];
+    const viewStart = 2;
+    const viewEnd = 5;
+    const margin = (viewEnd - viewStart) * 0.25;
+    const from = viewStart - margin;
+    const to = viewEnd + margin;
+    const visible = clipsInRange(track.clips, from, to);
+    // the clip at 0-2 reaches into the overscan, the one at 8-9 does not
+    expect(visible.map((c) => c.duration)).toEqual([2, 3]);
+  });
+
+  it('returns a bounded slice for a long sequence', () => {
+    const track = seq().tracks[0];
+    for (let i = 0; i < 100; i++) track.clips.push(createTitleClip(i, 1, `t${i}`));
+    expect(clipsInRange(track.clips, 10, 11)).toHaveLength(1);
+    expect(clipsInRange(track.clips, 10, 12)).toHaveLength(2);
+  });
+
+  it('is stable for repeated evaluations of the same window', () => {
+    const track = seq().tracks[0];
+    const first = clipsInRange(track.clips, 0, 10);
+    const second = clipsInRange(track.clips, 0, 10);
+    expect(second).toEqual(first);
   });
 });
 

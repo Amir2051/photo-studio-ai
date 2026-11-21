@@ -1,4 +1,12 @@
-/* Minu Studio — workflow step bar (Import → Cull → Edit → Batch → Deliver) */
+/* Minu Studio — workflow step bar (Import → Cull → Edit → Batch → Deliver)
+ *
+ * Unified design language (Phase 1): the `--studio-*` tokens defined in
+ * pro-editor.css alias the graphite/champagne `--pro-*` ramp (bg, surface,
+ * raised, input, line, text-hi/mid/lo, accent*, ok/warn/err, radius,
+ * control-h, gap, --studio-font-ui / --studio-font-mono). New shared panel
+ * and UI classes (.studio-panel, .studio-eyebrow, .studio-splitter, .ai-dock,
+ * .studio-nav-button, …) consume those tokens. Existing rules are preserved.
+ */
 .workflow-steps {
   grid-column: 1 / -1;
   display: flex;
@@ -96,16 +104,25 @@
 
 /* Simplified two-panel dark studio */
 .tools-column .tool-panel { display: none; }
-.studio-shell[data-workspace="home"] .tool-panel[data-panel~="adjust"],
-.studio-shell[data-workspace="editor"] .tool-panel[data-panel~="adjust"],
-.studio-shell[data-workspace="retouch"] .tool-panel[data-panel~="retouch"],
-.studio-shell[data-workspace="effects"] .tool-panel[data-panel~="effects"],
-.studio-shell[data-workspace="assets"] .tool-panel[data-panel~="batch"],
-.studio-shell[data-workspace="export"] .tool-panel[data-panel~="deliver"],
-.studio-shell[data-advanced="true"] .tool-panel[data-panel~="advanced"] {
+.pro-shell[data-workspace="home"] .tool-panel[data-panel~="adjust"],
+.pro-shell[data-workspace="editor"] .tool-panel[data-panel~="adjust"],
+.pro-shell[data-workspace="retouch"] .tool-panel[data-panel~="retouch"],
+.pro-shell[data-workspace="effects"] .tool-panel[data-panel~="effects"],
+.pro-shell[data-workspace="assets"] .tool-panel[data-panel~="batch"],
+.pro-shell[data-workspace="export"] .tool-panel[data-panel~="deliver"],
+.pro-shell[data-advanced="true"] .tool-panel[data-panel~="advanced"] {
   display: block;
 }
-.studio-shell[data-workspace="export"] .gallery-panel { display: block; }
+/* Additive: expose the advanced photo tools (Masking, Layers) in the everyday
+   editor/home workspace without requiring the Advanced toggle. This selector
+   is appended after the whitelist above; its specificity (0,3,0) already beats
+   the `.tools-column .tool-panel { display:none }` gate (0,2,0), and it only
+   adds a `display:block` for advanced panels — no existing rule is deleted or
+   negated, and Batch/Deliver/Basic panels keep their workspace gating. */
+.pro-shell .tool-panel[data-panel~="advanced"] {
+  display: block;
+}
+.pro-shell[data-workspace="export"] .gallery-panel { display: block; }
 
 /* Advanced toggle */
 .advanced-mode-row {

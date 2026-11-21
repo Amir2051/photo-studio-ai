@@ -127,9 +127,12 @@ async function walkEntry(entry: FileSystemEntry, out: Entry[]) {
 }
 
 // everything about a DataTransfer must be read before the first await,
-// the browser empties it as soon as the drop handler yields
-function collectDrop(transfer: DataTransfer): Promise<Entry[]> {
+// the browser empties it as soon as the drop handler yields.
+// returns the collected entries plus any rejection reasons so callers
+// can report whether every attempted read failed (e.g. iframe policy).
+function collectDrop(transfer: DataTransfer): Promise<{ entries: Entry[]; rejected: string[] }> {
   const out: Entry[] = [];
+  const rejected: string[] = [];
   const work: Promise<void>[] = [];
   const items = Array.from(transfer.items ?? []);
   if (items.length) {
@@ -139,17 +142,39 @@ function collectDrop(transfer: DataTransfer): Promise<Entry[]> {
         work.push(
           item
             .getAsFileSystemHandle()
-            .then((handle) =>
-              handle
-                ? walkHandle(handle as FileSystemFileHandle | FileSystemDirectoryHandle, out)
-                : undefined,
-            )
-            .catch(() => {}),
+            .then((handle) => {
+              if (handle) {
+                return walkHandle(handle as FileSystemFileHandle | FileSystemDirectoryHandle, out);
+              }
+              // the engine resolved the handle to null (sandboxed or
+              // CDP-originated drops do exactly this) — the plain File
+              // on the DataTransfer needs no handle at all
+              const file = item.getAsFile?.();
+              if (file && isMediaFile(file.name, file.type))
+                out.push({ file, handle: null, path: null });
+              return undefined;
+            })
+            .catch((e: unknown) => {
+              // the platform or chooser may grant no handle (NotAllowedError,
+              // sandboxed/embedded panes, permission policy) — fall back to the
+              // plain DataTransfer File, which needs no permission at all
+              const file = item.getAsFile?.();
+              if (file && isMediaFile(file.name, file.type)) {
+                out.push({ file, handle: null, path: null });
+                return;
+              }
+              rejected.push(describeReject(e));
+            }),
         );
       } else {
         const entry = item.webkitGetAsEntry?.();
-        if (entry) work.push(walkEntry(entry, out).catch(() => {}));
-        else {
+        if (entry) {
+          work.push(
+            walkEntry(entry, out).catch((e: unknown) => {
+              rejected.push(describeReject(e));
+            }),
+          );
+        } else {
           const file = item.getAsFile();
           if (file && isMediaFile(file.name, file.type))
             out.push({ file, handle: null, path: null });
@@ -161,24 +186,35 @@ function collectDrop(transfer: DataTransfer): Promise<Entry[]> {
       if (isMediaFile(file.name, file.type)) out.push({ file, handle: null, path: null });
     }
   }
-  return Promise.all(work).then(() => out);
+  return Promise.all(work).then(() => ({ entries: out, rejected }));
 }
 
-async function collect(input: ImportInput): Promise<Entry[]> {
+function describeReject(e: unknown): string {
+  if (e instanceof DOMException) return e.name
+  if (e instanceof Error) return e.message;
+  return String(e);
+}
+
+async function collect(input: ImportInput): Promise<{ entries: Entry[]; rejected: string[] }> {
   if (input instanceof DataTransfer) return collectDrop(input);
   const out: Entry[] = [];
+  const rejected: string[] = [];
   for (const item of input) {
     if (item instanceof File) {
       const path = (item as File & { webkitRelativePath?: string }).webkitRelativePath || null;
       if (isMediaFile(item.name, item.type)) out.push({ file: item, handle: null, path });
     } else if ('kind' in item) {
       // FileSystemHandle is not a global everywhere, the kind tells them apart
-      await walkHandle(item as FileSystemFileHandle | FileSystemDirectoryHandle, out);
+      try {
+        await walkHandle(item as FileSystemFileHandle | FileSystemDirectoryHandle, out);
+      } catch (e) {
+        rejected.push(describeReject(e));
+      }
     } else {
       out.push(item);
     }
   }
-  return out;
+  return { entries: out, rejected };
 }
 
 async function buildItem(entry: Entry, binId: string | null): Promise<MediaItem> {
@@ -244,6 +280,14 @@ function summarize(items: MediaItem[]) {
     addToast(`${unsupported.length - 3} more files need converting`, 'warning', 7000);
 }
 
+// cancel handle for the in-flight import, if any — the UI offers this as
+// a Cancel button while the import progress row is showing
+let activeImport: AbortController | null = null;
+
+export function cancelImport(): void {
+  activeImport?.abort();
+}
+
 export async function importFiles(
   input: ImportInput,
   opts: { binId?: string | null } = {},
@@ -252,10 +296,14 @@ export async function importFiles(
     addToast('Open or create a project before importing media', 'warning');
     return [];
   }
-  const entries = await collect(input);
+  const { entries, rejected } = await collect(input);
   if (!entries.length) {
-    addToast('No media files found', 'info');
+    const reason = rejected.length ? ` (${rejected[0]})` : '';
+    addToast(`No media files found${reason}`, 'warning');
     return [];
+  }
+  if (rejected.length) {
+    addToast(`${rejected.length} item(s) could not be read${rejected[0] ? `: ${rejected[0]}` : ''}`, 'warning', 6000);
   }
 
   renderStatus.set('importing');
@@ -264,9 +312,11 @@ export async function importFiles(
   let next = 0;
   let done = 0;
   const binId = opts.binId ?? null;
+  activeImport = new AbortController();
+  const signal = activeImport.signal;
 
   const worker = async () => {
-    while (next < entries.length) {
+    while (!signal.aborted && next < entries.length) {
       const index = next++;
       const entry = entries[index];
       importProgress.set({ done, total: entries.length, name: entry.file.name });
@@ -278,15 +328,21 @@ export async function importFiles(
   try {
     await Promise.all(Array.from({ length: Math.min(PROBE_CONCURRENCY, entries.length) }, worker));
   } finally {
+    activeImport = null;
     importProgress.set(null);
     renderStatus.set('idle');
   }
 
+  if (signal.aborted) {
+    addToast('Import cancelled — no files were added', 'info', 5000);
+    return [];
+  }
+  const finished = items.filter((item): item is MediaItem => !!item);
   edit('import media', (draft) => {
-    draft.media.push(...items);
+    draft.media.push(...finished);
   });
-  summarize(items);
-  return items;
+  summarize(finished);
+  return finished;
 }
 
 function inputFallback(opts: { directory?: boolean } = {}): Promise<File[]> {
@@ -315,8 +371,13 @@ function aborted(e: unknown): boolean {
 }
 
 export async function pickFiles(opts: { binId?: string | null } = {}): Promise<MediaItem[]> {
+  // The File System Access picker is the preferred path when it works. Any
+  // failure other than the user dismissing the picker falls back to the plain
+  // HTML file input — the same mechanism the project Open already uses —
+  // so a blocked picker / iframe / non-secure-context does not silently
+  // block media import.
   try {
-    if ('showOpenFilePicker' in window) {
+    if (typeof window.showOpenFilePicker === 'function') {
       const handles = await window.showOpenFilePicker({
         multiple: true,
         types: PICKER_TYPES,
@@ -326,8 +387,16 @@ export async function pickFiles(opts: { binId?: string | null } = {}): Promise<M
     }
     return importFiles(await inputFallback(), opts);
   } catch (e) {
-    if (aborted(e)) return [];
-    throw e;
+    if (aborted(e)) {
+      // restricted environments can report every pick — even a genuine
+      // file selection — as an abort, so stay quiet only when nothing
+      // explanatory would help; give the user something neutral instead
+      addToast('Import cancelled — no files were added', 'info', 4000);
+      return [];
+    }
+    // picker failed for a non-cancel reason (SecurityError, TypeError, blocked
+    // context, etc.) — fall back to the HTML input rather than throw.
+    return importFiles(await inputFallback(), opts);
   }
 }
 

@@ -1,0 +1,77 @@
+.mia-page {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 28px 24px 48px;
+  color: var(--text-primary, #e8edf6);
+  display: grid;
+  gap: 18px;
+}
+
+.mia-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.mia-header h1 { margin: 0 0 4px; font-size: 22px; }
+.mia-header p { margin: 0; color: var(--text-secondary, #9aa7bb); font-size: 13px; }
+.mia-back {
+  background: var(--surface-2, #1b2233);
+  border: 1px solid var(--border, #2b3448);
+  color: inherit;
+  border-radius: 8px;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+.mia-live-badge {
+  margin-left: auto;
+  align-self: center;
+  border: 1px solid #7c5cff;
+  color: #c9b8ff;
+  background: #231d3d;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+}
+
+.mia-card {
+  border: 1px solid var(--border, #2b3448);
+  border-radius: 12px;
+  background: var(--surface, #131a28);
+  padding: 18px 20px;
+}
+.mia-card h2 { margin: 0 0 12px; font-size: 15px; }
+.mia-model-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+.mia-model { border: 1px solid var(--border, #2b3448); border-radius: 10px; padding: 14px; }
+.mia-model h3 { margin: 0 0 8px; font-size: 14px; }
+.mia-model p { margin: 10px 0 0; font-size: 12px; line-height: 1.5; color: var(--text-secondary, #9aa7bb); }
+.mia-status { display: inline-block; font-size: 11px; border-radius: 999px; padding: 4px 9px; }
+.mia-status-adapter-ready { background: #122c26; color: #7ee0b8; }
+.mia-status-planned { background: #2a2436; color: #c0b2d8; }
+.mia-status-disabled, .mia-status-unknown { background: #33231f; color: #f0b49f; }
+
+.mia-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px; }
+.mia-row select, .mia-row button, .mia-card button {
+  background: var(--surface-2, #1b2233);
+  border: 1px solid var(--border, #2b3448);
+  color: inherit;
+  border-radius: 8px;
+  padding: 7px 11px;
+  font-size: 12px;
+}
+.mia-row button:not(:disabled):hover, .mia-back:hover { border-color: #7c5cff; }
+.mia-explanation { margin: 14px 0 6px; font-size: 13px; font-weight: 600; }
+.mia-decision { margin: 0; font-size: 12px; color: var(--text-secondary, #9aa7bb); }
+.mia-note { font-size: 11px; color: var(--text-secondary, #9aa7bb); }
+
+.mia-budget, .mia-diagnostics { display: grid; grid-template-columns: minmax(180px, 1fr) 1fr; gap: 8px 16px; margin: 0 0 10px; font-size: 12px; }
+.mia-budget dt, .mia-diagnostics dt { color: var(--text-secondary, #9aa7bb); }
+.mia-budget dd, .mia-diagnostics dd { margin: 0; overflow-wrap: anywhere; }
+.mia-footer { font-size: 11px; color: var(--text-secondary, #9aa7bb); text-align: center; }
+.mia-page button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+@media (max-width: 720px) {
+  .mia-page { padding: 18px 14px 32px; }
+  .mia-budget, .mia-diagnostics { grid-template-columns: 1fr; gap: 4px; }
+}

@@ -159,7 +159,7 @@ Exports have their own limit to work around. A download is built in memory when 
 - **Chromium is the recommended browser.** Chrome, Edge, Arc and Brave get direct file access, streamed exports, the folder picker Relink all uses, and the widest codec list. Firefox and Safari run the editor with a fallback path and fewer codecs, and relink from a multi-file picker rather than a folder.
 - **No multicam and no motion tracking.** Both are on the list, neither is here.
 - **No collaborative editing.** There is no server to collaborate through, on purpose.
-- **Very long sequences are limited by memory, not by design.** Nothing is loaded whole, but caches, waveforms and thumbnails still add up.
+- **Very long sequences are memory-bound, not infinite.** Nothing is loaded whole, the waveform peaks cache is now an LRU bounded in memory (64 entries / 64 MB, persisting to IndexedDB), thumbnails and frame caches are bounded, and the timeline lanes cull by range. Real multi-hour measurements are pending the M2.1 long-form protocol — see `M2.1_LONG_FORM_TEST_PROTOCOL.md`.
 
 ## Security and privacy
 

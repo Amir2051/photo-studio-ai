@@ -70,7 +70,7 @@
       <Icon name="importIcon" size={14} />
       <span>Add media</span>
     </button>
-    <button class="action-btn" onclick={onsave} title="Save the project (Ctrl+S)">
+    <button class="action-btn" onclick={onsave} title="Save the project file (Ctrl+S)">
       <Icon name="save" size={14} />
       <span>Save</span>
     </button>
@@ -106,7 +106,7 @@
       aria-label="Preferences">
       <Icon name="settings" size={14} />
     </button>
-    <button class="action-btn accent" onclick={onexport} title="Export the sequence (Ctrl+M)">
+    <button class="action-btn accent" onclick={onexport} title="Export video (Ctrl+M)">
       <Icon name="export" size={14} />
       <span>Export</span>
     </button>

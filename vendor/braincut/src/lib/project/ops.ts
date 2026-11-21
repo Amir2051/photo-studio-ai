@@ -215,6 +215,8 @@ interface RippleOptions {
   // insert edits cut through clips that span the point, trims just push
   split?: boolean;
   ignoreIds?: ReadonlySet<Id>;
+  // when present, ripple is strictly confined to these tracks
+  onlyTrackIds?: ReadonlySet<Id>;
 }
 
 // shift everything at or after time by delta on every unlocked track. a
@@ -224,7 +226,7 @@ function ripple(seq: Sequence, time: number, delta: number, opts: RippleOptions 
   if (Math.abs(delta) <= TOL) return;
   const ignore = opts.ignoreIds ?? new Set<Id>();
   for (const track of seq.tracks) {
-    if (track.locked) continue;
+    if (track.locked || (opts.onlyTrackIds && !opts.onlyTrackIds.has(track.id))) continue;
     const forced = opts.forceTrackIds?.has(track.id) ?? false;
     if (delta < 0 && !forced && !rangeEmpty(track, time + delta, time, ignore)) continue;
     if (opts.split && delta > 0) {
@@ -615,7 +617,11 @@ export function extractRange(seq: Sequence, inPoint: number, outPoint: number, t
   if (to - from <= TOL) return;
   const tracks = targetTracks(seq, trackIds);
   for (const track of tracks) clearRange(seq, track, from, to);
-  ripple(seq, to, from - to, { forceTrackIds: new Set(tracks.map((t) => t.id)) });
+  const trackSet = new Set(tracks.map((track) => track.id));
+  ripple(seq, to, from - to, {
+    forceTrackIds: trackSet,
+    ...(trackIds ? { onlyTrackIds: trackSet } : {}),
+  });
 }
 
 export function linkClips(seq: Sequence, clipIds: Id[]): Id | null {

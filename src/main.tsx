@@ -4,6 +4,8 @@ import App from './App';
 import { initStorage } from './lib/storage';
 import './index.css';
 import './workflow.css';
+import './pro-editor.css';
+import './studio-shell.css';
 
 void initStorage();
 

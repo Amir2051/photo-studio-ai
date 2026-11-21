@@ -1,0 +1,247 @@
+/* Minu Studio — additive shell extensions.
+   Loaded after pro-editor.css / workflow.css. Adds two column splitters,
+   collapse states, a contextual inspector bar and the non-live AI dock.
+   No existing rule is removed or negated. */
+
+.pro-shell {
+  --studio-splitter-w: 6px;
+  --pro-left-effective: var(--pro-left);
+  --pro-right-effective: var(--pro-right);
+  grid-template-columns:
+    var(--pro-left-effective)
+    var(--studio-splitter-w)
+    minmax(0, 1fr)
+    var(--studio-splitter-w)
+    var(--pro-right-effective);
+  grid-template-areas:
+    'topbar topbar topbar topbar topbar'
+    'library lib-split canvas tools-split tools';
+}
+
+.pro-shell[data-library-collapsed='true'] {
+  --pro-left-effective: 0px;
+}
+.pro-shell[data-tools-collapsed='true'] {
+  --pro-right-effective: 0px;
+}
+.pro-shell[data-library-collapsed='true'] .pro-library {
+  display: none;
+}
+.pro-shell[data-tools-collapsed='true'] .pro-tools {
+  display: none;
+}
+
+/* ── Column resize handles ─────────────────────────────────────────────── */
+.pro-shell [data-studio-splitter='left'] {
+  grid-area: lib-split;
+}
+.pro-shell [data-studio-splitter='right'] {
+  grid-area: tools-split;
+}
+.studio-splitter {
+  position: relative;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  min-height: 0;
+  background: var(--pro-panel-2);
+  border-left: 1px solid var(--pro-line);
+  border-right: 1px solid var(--pro-line);
+  cursor: col-resize;
+  touch-action: none;
+}
+.studio-splitter:hover,
+.studio-splitter:focus-visible {
+  background: var(--pro-accent-lo);
+}
+.studio-splitter-grip {
+  width: 2px;
+  height: 28px;
+  border-radius: 2px;
+  background: var(--pro-line-strong);
+}
+.studio-splitter:hover .studio-splitter-grip,
+.studio-splitter:focus-visible .studio-splitter-grip {
+  background: var(--pro-accent);
+}
+
+/* ── Contextual inspector ──────────────────────────────────────────────── */
+.studio-inspector {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  min-height: 34px;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--pro-line);
+  background: var(--pro-panel);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.studio-inspector::-webkit-scrollbar {
+  display: none;
+}
+.studio-inspector-label {
+  flex: 0 0 auto;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--pro-text-lo);
+  white-space: nowrap;
+}
+.studio-inspector-workspace {
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--pro-accent-hi);
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+.studio-inspector-divider {
+  flex: 0 0 auto;
+  width: 1px;
+  height: 16px;
+  background: var(--pro-line);
+}
+.studio-inspector-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.studio-inspector-chip {
+  flex: 0 0 auto;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 999px;
+  border: 1px solid var(--pro-line);
+  background: var(--pro-panel-2);
+  color: var(--pro-text-mid);
+  font-size: 10px;
+  font-weight: 650;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.studio-inspector-chip:hover {
+  color: var(--pro-text-hi);
+  border-color: var(--pro-accent);
+  background: var(--pro-accent-lo);
+}
+.studio-inspector-spacer {
+  flex: 1 1 auto;
+}
+.studio-collapse-btn {
+  flex: 0 0 auto;
+  height: 22px;
+  padding: 0 7px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 6px;
+  border: 1px solid var(--pro-line);
+  background: var(--pro-panel-2);
+  color: var(--pro-text-mid);
+  font-size: 10px;
+  font-weight: 650;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.studio-collapse-btn:hover {
+  color: var(--pro-text-hi);
+  border-color: var(--pro-line-strong);
+}
+
+/* ── Non-live AI dock ──────────────────────────────────────────────────── */
+.studio-ai-dock {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  flex: 0 0 auto;
+  margin-top: auto;
+  padding: 8px 10px;
+  border-top: 1px solid var(--pro-line);
+  background: var(--pro-panel-2);
+}
+.studio-ai-dock-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.studio-ai-dock-badge {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--pro-ok);
+  color: var(--pro-ok);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+.studio-ai-dock-title {
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--pro-text-hi);
+}
+.studio-ai-dock-state {
+  margin-left: auto;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: var(--pro-warn);
+  white-space: nowrap;
+}
+.studio-ai-dock-text {
+  margin: 6px 0;
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--pro-text-lo);
+}
+.studio-ai-dock-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--pro-accent-hi);
+  font-size: 10px;
+  font-weight: 650;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* ── Responsive fallbacks (match the three-column shell breakpoints) ──── */
+@media (max-width: 1180px) {
+  .pro-shell {
+    grid-template-columns: minmax(0, 1fr) var(--studio-splitter-w) var(--pro-right-effective);
+    grid-template-areas:
+      'topbar topbar topbar'
+      'canvas tools-split tools';
+  }
+  .pro-shell [data-studio-splitter='left'],
+  .pro-shell .pro-library {
+    display: none;
+  }
+  .pro-shell[data-library-collapsed='true'] {
+    --pro-left-effective: 0px;
+  }
+}
+
+@media (max-width: 860px) {
+  .pro-shell {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'topbar'
+      'canvas'
+      'tools';
+    grid-template-rows: 44px minmax(0, 1fr) auto;
+  }
+  .pro-shell [data-studio-splitter] {
+    display: none;
+  }
+  .pro-shell .pro-tools {
+    height: 280px;
+  }
+}
