@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { availabilityOf, duplicateGroups, identityOf, mediaIdentity, unavailableRefs } from './media';
+import { availabilityOf, duplicateGroups, duplicateMediaGroups, identityKeyOf, identityOf, mediaIdentity, unavailableRefs } from './media';
 import type { SuiteMediaRef } from './types';
 
 function ref(id: string, fileName: string, bytes: number, lastModified: number | null = 100): SuiteMediaRef {
@@ -49,5 +49,22 @@ describe('media identity and lifecycle', () => {
     expect(availabilityOf(true, true)).toBe('ready');
     expect(availabilityOf(false, true)).toBe('missing');
     expect(availabilityOf(false, false)).toBe('unknown');
+  });
+
+  it('detects duplicates on legacy MediaItem-shaped inputs', () => {
+    const legacy = [
+      { name: 'clip.mp4', fileSize: 500, lastModified: 7 },
+      { name: 'CLIP.mp4', fileSize: 500, lastModified: 7, fileName: 'clip.mp4' },
+      { name: 'other.mp4', fileSize: 500, lastModified: 7 },
+    ];
+    const groups = duplicateMediaGroups(legacy);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toHaveLength(2);
+    expect(groups[0][0].name).toBe('clip.mp4');
+  });
+
+  it('treats missing legacy timestamps as zero', () => {
+    expect(identityKeyOf({ name: 'old.mp4', fileSize: 42 })).toBe('old.mp4|42|0');
+    expect(identityKeyOf({ name: 'old.mp4', fileSize: 42, lastModified: null })).toBe('old.mp4|42|0');
   });
 });

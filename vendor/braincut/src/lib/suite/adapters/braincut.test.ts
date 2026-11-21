@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createSequence, createTitleClip } from '#lib/project/defaults.ts';
 import { parseProject, serializeProject } from '#lib/project/serialize.ts';
 import type { MediaItem, Project } from '#lib/project/types.ts';
-import { legacyBraincutToSuiteDocument, projectToSuiteDocument, suiteDocumentToProject } from './braincut';
+import { checkLegacyCompatibility, legacyBraincutToSuiteDocument, projectToSuiteDocument, suiteDocumentToProject } from './braincut';
 import { mediaIdentity } from '../media';
 
 function item(over: Partial<MediaItem> = {}): MediaItem {
@@ -108,5 +108,34 @@ describe('braincut <-> suite adapter', () => {
     const doc = projectToSuiteDocument(project());
     doc.payload = { name: 'broken' };
     expect(() => suiteDocumentToProject(doc)).toThrow();
+  });
+
+  it('reports a passing compatibility checkpoint for a valid legacy file', () => {
+    const original = project();
+    const check = checkLegacyCompatibility(serializeProject(original));
+    expect(check.ok).toBe(true);
+    expect(check.reason).toBeNull();
+    expect(check.documentId).toBe(original.id);
+    expect(check.documentName).toBe(original.name);
+    expect(check.mediaCount).toBe(1);
+  });
+
+  it('reports malformed input without throwing', () => {
+    const check = checkLegacyCompatibility('{not a project');
+    expect(check.ok).toBe(false);
+    expect(check.reason).toBeTruthy();
+    expect(check.mediaCount).toBe(0);
+  });
+
+  it('keeps unknown legacy fields out of the checkpoint verdict without dropping native data', () => {
+    const raw = JSON.parse(serializeProject(project())) as Record<string, unknown>;
+    raw.futureEditorNote = { keep: 'me' };
+    const text = JSON.stringify(raw);
+    const check = checkLegacyCompatibility(text);
+    // both canonical forms come from the same strict v1 parser, so the
+    // checkpoint stays green; the native parser (not the adapter) decides what
+    // is preserved on save
+    expect(check.ok).toBe(true);
+    expect(parseProject(text).name).toBe('Trial project');
   });
 });

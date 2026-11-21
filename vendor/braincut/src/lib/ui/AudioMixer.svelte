@@ -13,12 +13,13 @@
   import { isAnimated, setKeyframe, valueAt } from '#lib/project/keyframes.ts';
   import { fadeKeyframes } from '#lib/engine/effects/registry.ts';
   import { findClipById } from '#lib/project/ops.ts';
-  import { activeSequence, commitPreview, editSequence, preview } from '#lib/project/store.ts';
+  import { activeSequence, commitPreview, editSequence, preview, project } from '#lib/project/store.ts';
   import type { Project } from '#lib/project/types.ts';
   import { playhead, selection } from '#lib/stores/app.ts';
   import Fader from './Fader.svelte';
   import Meter from './Meter.svelte';
   import NumberField from './NumberField.svelte';
+  import LocalAudioAnalysis from './LocalAudioAnalysis.svelte';
 
   let session = $state<Session | null>(null);
   let levels = $state<Levels>({});
@@ -31,6 +32,11 @@
 
   const SILENT: [number, number] = [-60, -60];
   const audioTracks = $derived($activeSequence?.tracks.filter((t) => t.kind === 'audio') ?? []);
+  const audioClips = $derived(
+    audioTracks
+      .flatMap((track) => track.clips)
+      .filter((clip) => clip.kind === 'audio' && clip.enabled !== false && !!clip.mediaId)
+  );
 
   async function addRecording(file: File, requestedTrackId: string) {
     const imported = await importFiles([file]);
@@ -201,6 +207,9 @@
         {/if}
       </div>
     </div>
+  {/if}
+  {#if $activeSequence}
+    <LocalAudioAnalysis clips={audioClips} media={$project?.media ?? []} fps={$activeSequence?.fps ?? 30} />
   {/if}
 </div>
 

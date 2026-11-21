@@ -17,6 +17,7 @@
   import { createProxy, proxyStatus, removeProxy } from '#lib/media/proxy.ts';
   import { convertForEditing, ffmpegAvailable } from '#lib/media/transcode.ts';
   import { endDrag, readDrag, startDrag } from '#lib/editor/drag.ts';
+  import { duplicateMediaGroups } from '#lib/suite/media.ts';
 
   type View = 'icons' | 'list';
   type SortKey = 'name' | 'duration' | 'added';
@@ -175,6 +176,8 @@
   }
 
   const missing = $derived(media.filter((m) => m.status === 'missing'));
+  // shared Suite identity: read-only duplicate candidates, no registry, no auto-merge
+  const duplicateRefs = $derived(duplicateMediaGroups(media));
 
   // one click for every handle the browser wants permission for again
   async function grant() {
@@ -578,6 +581,13 @@
         <button class="missing-btn" onclick={grant}>Grant access</button>
       {/if}
       <button class="missing-btn" onclick={() => void relinkMissing()}>Relink all…</button>
+    </div>
+  {/if}
+
+  {#if duplicateRefs.length > 0}
+    <div class="missing-bar" title="Detected with the shared Suite media identity helper">
+      <Icon name="warning" size={12} />
+      <span class="missing-text">{duplicateRefs.length} possible duplicate media reference{duplicateRefs.length === 1 ? '' : 's'}</span>
     </div>
   {/if}
 

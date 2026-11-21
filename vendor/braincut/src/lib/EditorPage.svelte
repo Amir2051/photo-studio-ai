@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { get } from 'svelte/store';
   import { requestPersistentStorage } from '#lib/storage/persist.ts';
   import TopBar from '#lib/ui/TopBar.svelte';
   import StatusBar from '#lib/ui/StatusBar.svelte';
@@ -17,6 +18,11 @@
   import AudioMixer from '#lib/ui/AudioMixer.svelte';
   import ColorPanel from '#lib/ui/ColorPanel.svelte';
   import MulticamEditor from '#lib/ui/MulticamEditor.svelte';
+  import MicrophoneRecorder from '#lib/ui/MicrophoneRecorder.svelte';
+  import LiveCameraCapture from '#lib/ui/LiveCameraCapture.svelte';
+  import MultiCameraStudio from '#lib/ui/MultiCameraStudio.svelte';
+  import LocalAudioAnalysis from '#lib/ui/LocalAudioAnalysis.svelte';
+  import ScopesPanel from '#lib/ui/ScopesPanel.svelte';
   import ProgramMonitor from '#lib/ui/ProgramMonitor.svelte';
   import ProjectPanel from '#lib/ui/ProjectPanel.svelte';
   import EffectsPanel from '#lib/ui/EffectsPanel.svelte';
@@ -28,7 +34,10 @@
   import VisualFrameReview from '#lib/ui/VisualFrameReview.svelte';
   import Timeline from '#lib/ui/timeline/Timeline.svelte';
 
-  import { activeSequence, cancelPreview, isPreviewing, project, projectSession } from '#lib/project/store.ts';
+  import { importFiles } from '#lib/media/import.ts';
+  import { createClipFromMedia } from '#lib/project/defaults.ts';
+  import { addTrack, canPlace, placeClips } from '#lib/project/ops.ts';
+  import { activeSequence, cancelPreview, editSequence, isPreviewing, project, projectSession } from '#lib/project/store.ts';
   import type { RecentProject } from '#lib/project/persistence.ts';
   import { destroySessions, program } from '#lib/engine/session.ts';
   import { pickFiles } from '#lib/media/import.ts';
@@ -51,6 +60,7 @@
     bottomPanelTab,
     panelSizes,
     dialog,
+    addToast,
     selection,
     playhead,
     workspace,
@@ -70,9 +80,21 @@
     { id: 'source', label: 'Source' },
     { id: 'effect-controls', label: 'Adjust' },
     { id: 'color', label: 'Color' },
-    { id: 'audio-mixer', label: 'Audio' },
-    { id: 'multicam', label: 'Multicam' }
+    { id: 'scopes', label: 'Scopes' },
+    { id: 'audio-mixer', label: 'Audio Mixer' },
+    { id: 'record', label: 'Record' },
+    { id: 'capture', label: 'Capture' },
+    { id: 'analysis', label: 'Analysis' },
+    { id: 'multicam', label: 'Multicam' },
+    { id: 'production', label: 'Production' }
   ];
+
+  // Tools opened deliberately stay put when a timeline clip is selected.
+  // 'multicam' was already protected; the dedicated tool tabs follow the
+  // same rule so a selection cannot yank the user out of them.
+  const stickyLeftTabs = new Set<LeftPanelTab>([
+    'multicam', 'scopes', 'record', 'capture', 'analysis', 'production'
+  ]);
 
   const bottomTabs = $derived([
     { id: 'project', label: 'Media' },
@@ -90,8 +112,50 @@
     edit: { left: 'effect-controls', bottom: 'project' },
     color: { left: 'color', bottom: 'project' },
     effects: { left: 'effect-controls', bottom: 'effects' },
-    audio: { left: 'audio-mixer', bottom: 'project' }
+    audio: { left: 'audio-mixer', bottom: 'project' },
+    record: { left: 'record', bottom: 'project' }
   };
+
+  // The Record / Analysis tabs mount the same AudioMixer children with the
+  // same inputs and recording handler, so the tool behaves identically no
+  // matter which tab it is reached from.
+  const audioTracks = $derived($activeSequence?.tracks.filter((t) => t.kind === 'audio') ?? []);
+  const analysisClips = $derived(
+    audioTracks
+      .flatMap((track) => track.clips)
+      .filter((clip) => clip.kind === 'audio' && clip.enabled !== false && !!clip.mediaId)
+  );
+
+  async function addRecording(file: File, requestedTrackId: string) {
+    const imported = await importFiles([file]);
+    const media = imported.find((item) => item.kind === 'audio' && item.status === 'ready');
+    if (!media) throw new Error('The recording was captured, but the editor could not decode it as audio.');
+    const seq = get(activeSequence);
+    if (!seq) throw new Error('Open a sequence before recording audio.');
+    const clip = createClipFromMedia(media, get(playhead), { kind: 'audio', fps: seq.fps }).audio;
+    if (!clip) throw new Error('The captured file did not contain a usable audio stream.');
+    let placedTrackId: string | null = null;
+    editSequence('record microphone audio', (draftSeq) => {
+      let target = draftSeq.tracks.find((track) => track.id === requestedTrackId && track.kind === 'audio' && !track.locked);
+      if (!target || !canPlace(draftSeq, target.id, clip.start, clip.duration)) {
+        target = draftSeq.tracks.find((track) => track.kind === 'audio' && !track.locked && canPlace(draftSeq, track.id, clip.start, clip.duration));
+      }
+      if (!target) {
+        const newTrackId = addTrack(draftSeq, 'audio');
+        target = draftSeq.tracks.find((track) => track.id === newTrackId);
+      }
+      if (!target) return;
+      const placed = placeClips(draftSeq, [{ trackId: target.id, clip }], 'overwrite');
+      if (placed.includes(clip.id)) placedTrackId = target.id;
+    });
+    if (!placedTrackId) throw new Error('No audio track was available for the new recording.');
+    selection.set([clip.id]);
+    addToast(`Recorded audio added to ${draftSeqTrackName(get(activeSequence), placedTrackId)}.`, 'success');
+  }
+
+  function draftSeqTrackName(seq: import('#lib/project/types.ts').Sequence | null, id: string): string {
+    return seq?.tracks.find((track) => track.id === id)?.name ?? 'the timeline';
+  }
 
   function resizeLeft(delta: number) {
     const limit = (main?.clientWidth ?? 1200) - 320;
@@ -128,7 +192,7 @@
     if (ids && ids !== lastSelection) {
       const seq = $activeSequence;
       const picked = seq?.tracks.flatMap((track) => track.clips).filter((clip) => $selection.includes(clip.id)) ?? [];
-      if ($leftPanelTab !== 'multicam') {
+      if (!stickyLeftTabs.has($leftPanelTab)) {
         if (picked.length && picked.every((clip) => clip.kind === 'audio')) leftPanelTab.set('audio-mixer');
         else if (picked.length) leftPanelTab.set('effect-controls');
       }
@@ -221,6 +285,16 @@
             <EffectControls />
           {:else if $leftPanelTab === 'color'}
             <ColorPanel />
+          {:else if $leftPanelTab === 'scopes'}
+            <ScopesPanel />
+          {:else if $leftPanelTab === 'record'}
+            <MicrophoneRecorder tracks={audioTracks} onrecord={addRecording} />
+          {:else if $leftPanelTab === 'capture'}
+            <LiveCameraCapture />
+          {:else if $leftPanelTab === 'analysis'}
+            <LocalAudioAnalysis clips={analysisClips} media={$project?.media ?? []} fps={$activeSequence?.fps ?? 30} />
+          {:else if $leftPanelTab === 'production'}
+            <MultiCameraStudio />
           {:else if $leftPanelTab === 'multicam'}
             <MulticamEditor />
           {:else}

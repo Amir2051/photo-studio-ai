@@ -4,7 +4,13 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 const LibraryToolsPanel = React.lazy(() => import('../components/LibraryToolsPanel'));
 const VideoStudioFrame = React.lazy(() => import('../components/VideoStudioFrame'));
 const CloudSyncPanel = React.lazy(() => import('../components/CloudSyncPanel'));
+const MiaControlCenter = React.lazy(() => import('../components/MiaControlCenter'));
 const ClientGalleryPanel = React.lazy(() => import('../components/ClientGalleryPanel'));
+import AIDock from '../components/AIDock';
+import StudioSplitter, {
+  readStudioLayout,
+  writeStudioLayout,
+} from '../components/StudioSplitter';
 import FilterThumbnail from '../components/FilterThumbnail';
 import ImageLibrary from '../editor/ImageLibrary';
 import EditorToolbar from '../editor/EditorToolbar';
@@ -52,6 +58,10 @@ import {
   FlipVertical2,
   Sun,
   Moon,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
 } from 'lucide-react';
 import {
   savePhoto,
@@ -237,6 +247,29 @@ type BatchPhotoItem = {
   previewUrl?: string;
   status?: 'ready' | 'done' | 'error';
   error?: string;
+};
+
+/** Tools exposed by the contextual inspector for each workspace.
+ *  Every target is an existing panel id — no placeholder controls. */
+type InspectorTool = { label: string; section: string; target: string };
+const INSPECTOR_TOOLS: Record<string, InspectorTool[]> = {
+  editor: [
+    { label: 'Adjustments', section: 'editor', target: 'color-workspace' },
+    { label: 'Masking', section: 'editor', target: 'masking-workspace' },
+    { label: 'Layers', section: 'editor', target: 'layers-workspace' },
+    { label: 'History', section: 'editor', target: 'history-workspace' },
+  ],
+  retouch: [
+    { label: 'Portrait', section: 'retouch', target: 'retouch-workspace' },
+    { label: 'Background', section: 'retouch', target: 'background-workspace' },
+  ],
+  effects: [{ label: 'Looks', section: 'effects', target: 'effects-workspace' }],
+  assets: [{ label: 'Batch', section: 'assets', target: 'assets-workspace' }],
+  export: [
+    { label: 'Export', section: 'export', target: 'export-workspace' },
+    { label: 'Gallery', section: 'export', target: 'deliver-workspace' },
+  ],
+  mia: [{ label: 'AI Dock', section: 'mia', target: 'mia-workspace' }],
 };
 
 async function renderStyleBlob(
@@ -553,6 +586,9 @@ export default function Home(): React.JSX.Element {
   );
 
   const stageRef = useRef<HTMLDivElement | null>(null);
+  const shellRef = useRef<HTMLDivElement | null>(null);
+  const [libraryCollapsed, setLibraryCollapsed] = useState(false);
+  const [toolsCollapsed, setToolsCollapsed] = useState(false);
 
   const navigateStudio = (section: string, target: string) => {
     setActiveSection(section);
@@ -563,6 +599,29 @@ export default function Home(): React.JSX.Element {
       () => document.getElementById(target)?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
       40,
     );
+  };
+
+  // Restore saved column widths / collapsed state from `studio-layout`.
+  useEffect(() => {
+    const shell = shellRef.current;
+    if (!shell) return;
+    const layout = readStudioLayout();
+    shell.style.setProperty('--pro-left', `${layout.left}px`);
+    shell.style.setProperty('--pro-right', `${layout.right}px`);
+    setLibraryCollapsed(layout.collapsedLibrary);
+    setToolsCollapsed(layout.collapsedTools);
+  }, []);
+
+  const toggleLibraryColumn = () => {
+    const next = !libraryCollapsed;
+    setLibraryCollapsed(next);
+    writeStudioLayout({ ...readStudioLayout(), collapsedLibrary: next });
+  };
+
+  const toggleToolsColumn = () => {
+    const next = !toolsCollapsed;
+    setToolsCollapsed(next);
+    writeStudioLayout({ ...readStudioLayout(), collapsedTools: next });
   };
 
   const persistPhotoTags = useCallback(async (photo: Photo, tags: string[]) => {
@@ -2273,6 +2332,20 @@ export default function Home(): React.JSX.Element {
     );
   }
 
+  if (activeSection === 'mia') {
+    return (
+      <React.Suspense
+        fallback={
+          <main className="auth-screen">
+            <p className="auth-muted">Loading MIA Control Center…</p>
+          </main>
+        }
+      >
+        <MiaControlCenter onBack={() => setActiveSection('home')} />
+      </React.Suspense>
+    );
+  }
+
   if (activeSection === 'cloud-sync') {
     return (
       <React.Suspense
@@ -2287,11 +2360,16 @@ export default function Home(): React.JSX.Element {
     );
   }
 
+  const inspectorTools = INSPECTOR_TOOLS[activeSection] ?? INSPECTOR_TOOLS.editor;
+
   return (
     <div
+      ref={shellRef}
       className="pro-shell"
       data-workspace={activeSection}
       data-advanced={advancedMode ? 'true' : 'false'}
+      data-library-collapsed={libraryCollapsed ? 'true' : 'false'}
+      data-tools-collapsed={toolsCollapsed ? 'true' : 'false'}
     >
       <EditorToolbar
         activeSection={activeSection}
@@ -2340,7 +2418,57 @@ export default function Home(): React.JSX.Element {
         onNewAlbum={createAlbumAndAssign}
         onImportClick={() => fileInputRef.current?.click()}
       />
+      <StudioSplitter side="left" shellRef={shellRef} />
       <section className="preview-column pro-canvas-col" id="editor-canvas">
+          <div className="studio-inspector" data-testid="studio-inspector">
+            <span className="studio-inspector-label">Inspector</span>
+            <span className="studio-inspector-workspace">
+              {activeSection.replace(/-/g, ' ')}
+            </span>
+            <span className="studio-inspector-divider" aria-hidden="true" />
+            <div className="studio-inspector-tools">
+              {inspectorTools.map((tool) => (
+                <button
+                  key={tool.label}
+                  type="button"
+                  className="studio-inspector-chip"
+                  onClick={() => navigateStudio(tool.section, tool.target)}
+                  title={`Open ${tool.label}`}
+                >
+                  {tool.label}
+                </button>
+              ))}
+            </div>
+            <span className="studio-inspector-spacer" />
+            <button
+              type="button"
+              className="studio-collapse-btn"
+              onClick={toggleLibraryColumn}
+              aria-pressed={libraryCollapsed}
+              title={libraryCollapsed ? 'Show library column' : 'Hide library column'}
+            >
+              {libraryCollapsed ? (
+                <PanelLeftOpen size={13} aria-hidden="true" />
+              ) : (
+                <PanelLeftClose size={13} aria-hidden="true" />
+              )}
+              <span>Library</span>
+            </button>
+            <button
+              type="button"
+              className="studio-collapse-btn"
+              onClick={toggleToolsColumn}
+              aria-pressed={toolsCollapsed}
+              title={toolsCollapsed ? 'Show tools column' : 'Hide tools column'}
+            >
+              <span>Tools</span>
+              {toolsCollapsed ? (
+                <PanelRightOpen size={13} aria-hidden="true" />
+              ) : (
+                <PanelRightClose size={13} aria-hidden="true" />
+              )}
+            </button>
+          </div>
           <div className="pro-canvas-toolbar">
             <span className="pro-canvas-title" title={hasImage ? sourceName : undefined}>
               {hasImage ? sourceName : 'PREVIEW CANVAS'}
@@ -2579,6 +2707,7 @@ export default function Home(): React.JSX.Element {
               )}
             </section>
 
+            <StudioSplitter side="right" shellRef={shellRef} />
             <aside className="tools-column pro-tools">
               <div className="advanced-mode-row">
                 <span className="advanced-mode-label">Advanced tools</span>
@@ -2709,6 +2838,7 @@ export default function Home(): React.JSX.Element {
                 setCropDraft={setCropDraft}
                 applyCropDraft={applyCropDraft}
               />
+              <div id="masking-workspace">
               <MaskingPanel
                 hasImage={hasImage}
                 localTool={localTool}
@@ -2746,6 +2876,7 @@ export default function Home(): React.JSX.Element {
                 updateSelectedMask={updateSelectedMask}
                 setRetouchMode={setRetouchMode}
               />
+              </div>
               <BackgroundPanel
                 hasImage={hasImage}
                 backgroundBusy={backgroundBusy}
@@ -2798,6 +2929,7 @@ export default function Home(): React.JSX.Element {
                 batchBusy={batchBusy}
                 saveCurrentStyle={saveCurrentStyle}
               />
+              <AIDock onOpenMia={() => navigateStudio('mia', 'mia-workspace')} />
               </aside>
     </div>
   );

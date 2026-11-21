@@ -102,15 +102,8 @@ describe('server-side AI gateway', () => {
     });
   });
 
-  it('uses the server allowlisted model and never returns provider credentials', async () => {
-    const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
-      expect(new Headers(init.headers).get('authorization')).toBe('Bearer server-only-test-key');
-      expect(JSON.parse(String(init.body)).model).toBe('test/model');
-      return new Response(
-        JSON.stringify({ choices: [{ message: { content: 'A little warmer.' } }] }),
-        { status: 200 },
-      );
-    });
+  it('delegates through the central gateway and never returns provider credentials or sends a request', async () => {
+    const fetchImpl = vi.fn(async () => new Response('{}', { status: 200 }));
     await withServer({ fetchImpl }, async (base) => {
       const response = await fetch(base + '/api/ai/chat', {
         method: 'POST',
@@ -121,11 +114,11 @@ describe('server-side AI gateway', () => {
         }),
       });
       const body = await response.json();
-      expect(response.status).toBe(200);
-      expect(body.content).toBe('A little warmer.');
+      expect(response.status).toBe(503);
+      expect(body.error).toMatch(/not enabled|disabled/i);
       expect(JSON.stringify(body)).not.toContain('server-only-test-key');
     });
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it('rate-limits authenticated users', async () => {
@@ -136,8 +129,8 @@ describe('server-side AI gateway', () => {
           headers: { authorization: 'Bearer valid-test-token', 'content-type': 'application/json' },
           body: JSON.stringify({ messages: [{ role: 'user', content: 'hello' }] }),
         });
-      expect((await request()).status).toBe(200);
-      expect((await request()).status).toBe(200);
+      expect((await request()).status).toBe(503);
+      expect((await request()).status).toBe(503);
       expect((await request()).status).toBe(429);
     });
   });
@@ -160,11 +153,11 @@ describe('server-side AI gateway', () => {
             },
             body: JSON.stringify({ messages: [{ role: 'user', content: 'hello' }] }),
           });
-        expect((await request('user-a')).status).toBe(200);
-        expect((await request('user-b')).status).toBe(200);
+        expect((await request('user-a')).status).toBe(503);
+        expect((await request('user-b')).status).toBe(503);
         expect((await request('user-c')).status).toBe(503);
         timestamp += 60001;
-        expect((await request('user-c')).status).toBe(200);
+        expect((await request('user-c')).status).toBe(503);
       },
     );
   });

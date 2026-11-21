@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
+import { createCentralGateway } from './ai/central-gateway.mjs';
 
 const BODY_LIMIT = 128 * 1024;
 const MAX_MESSAGES = 20;
@@ -238,52 +239,34 @@ export function createAiGatewayServer({
     try {
       const body = await readJson(req);
       const messages = validateMessages(body?.messages);
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
-      try {
-        const upstream = await fetchImpl('https://openrouter.ai/api/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            authorization: `Bearer ${config.openRouterApiKey}`,
-            'content-type': 'application/json',
-            'http-referer': config.appUrl || 'http://localhost',
-            'x-title': 'Minu Studio',
-          },
-          body: JSON.stringify({
-            model: config.defaultModel,
-            messages,
-            max_tokens: 700,
-            temperature: 0.4,
-          }),
-          signal: controller.signal,
-        });
-        if (!upstream.ok)
-          return sendJson(res, upstream.status === 429 ? 503 : 502, {
-            error: 'The configured AI provider could not complete the request.',
-            requestId,
-          });
-        const result = await upstream.json();
-        const content = result?.choices?.[0]?.message?.content;
-        if (typeof content !== 'string' || !content.trim()) {
-          return sendJson(res, 502, {
-            error: 'The AI provider returned no usable text.',
-            requestId,
-          });
-        }
-        return sendJson(res, 200, { content, requestId });
-      } finally {
-        clearTimeout(timeout);
+      // All provider access now goes through the single policy-enforcing
+      // gateway. No direct provider fetch remains in this server.
+      const gateway = createCentralGateway({
+        apiKey: config.openRouterApiKey,
+        fetchImpl,
+      });
+      const result = await gateway.run({
+        task: 'chat',
+        messages,
+        consentRef: body?.consentRef ?? null,
+        userRef: userId,
+        maxTokens: 500,
+      });
+      if (!result.ok) {
+        const status =
+          result.error?.code === 'credentials_missing' ||
+          result.error?.code === 'privacy_policy_missing' ||
+          result.error?.code === 'privacy_policy_unsupported' ||
+          result.error?.code === 'live_execution_disabled'
+            ? 503
+            : 400;
+        return sendJson(res, status, { error: result.error?.message ?? 'The request was rejected.', requestId });
       }
+      return sendJson(res, 200, { content: result.content, requestId });
     } catch (error) {
       if (res.headersSent) return;
-      const status = error?.name === 'AbortError' ? 504 : error?.status || 500;
-      const message =
-        status >= 500 && status !== 504
-          ? 'The AI request could not be completed.'
-          : status === 504
-            ? 'The AI provider timed out.'
-            : error.message;
-      return sendJson(res, status, { error: message, requestId });
+      const status = error?.status || 500;
+      return sendJson(res, status, { error: status >= 500 ? 'The AI request could not be completed.' : error.message, requestId });
     }
   });
 }

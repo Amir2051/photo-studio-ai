@@ -1,4 +1,14 @@
-/* Minu Studio — Pro editor shell tokens & three-column layout */
+/* Minu Studio — Pro editor shell tokens & three-column layout
+ *
+ * Unified design language (Phase 1): the `--studio-*` aliases below expose one
+ * shared token vocabulary from the graphite/champagne `--pro-*` ramp. Both the
+ * React photo shell and the vendor Braincut editor define these names so panel
+ * surfaces, lines, text, accent and typography render consistently. Every
+ * original `--pro-*` definition is preserved unchanged (additive aliases only).
+ *   bg→--pro-bg  surface→--pro-panel  raised→--pro-panel-2  input→--pro-panel-3
+ *   line→--pro-line  text-*→--pro-text-*  accent*→--pro-accent*
+ *   ok/warn/err→--pro-ok/--pro-warn/--pro-err  radius/control-h/gap→--pro-*
+ */
 :root {
   /* Neutral ramp — graphite, not warm, not blue */
   --pro-bg: #0e0e10;          /* app well */
@@ -33,6 +43,33 @@
   --pro-right: 320px;
   --pro-toolbar-h: 42px;
   --pro-status-h: 28px;
+
+  /* ── Unified studio tokens (aliases only — see header) ─────────────────── */
+  --studio-bg: var(--pro-bg);
+  --studio-surface: var(--pro-panel);
+  --studio-raised: var(--pro-panel-2);
+  --studio-input: var(--pro-panel-3);
+  --studio-canvas: var(--pro-canvas);
+  --studio-line: var(--pro-line);
+  --studio-line-strong: var(--pro-line-strong);
+  --studio-text-hi: var(--pro-text-hi);
+  --studio-text-mid: var(--pro-text-mid);
+  --studio-text-lo: var(--pro-text-lo);
+  --studio-accent: var(--pro-accent);
+  --studio-accent-hi: var(--pro-accent-hi);
+  --studio-accent-lo: var(--pro-accent-lo);
+  --studio-focus: var(--pro-focus);
+  --studio-ok: var(--pro-ok);
+  --studio-warn: var(--pro-warn);
+  --studio-err: var(--pro-err);
+  --studio-radius: var(--pro-radius);
+  --studio-radius-sm: var(--pro-radius-sm);
+  --studio-control-h: var(--pro-control-h);
+  --studio-row-h: var(--pro-row-h);
+  --studio-panel-pad: var(--pro-panel-pad);
+  --studio-gap: var(--pro-gap);
+  --studio-font-ui: Inter, system-ui, -apple-system, sans-serif;
+  --studio-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
 }
 
 /* App shell: full-height grid */
@@ -47,7 +84,9 @@
   overflow: hidden;
   background: var(--pro-bg);
   color: var(--pro-text-hi);
-  font: 12px/1.45 Inter, system-ui, sans-serif;
+  font-family: var(--studio-font-ui);
+  font-size: 12px;
+  line-height: 1.45;
 }
 /* Session bar sits above the shell when signed in: fill remaining space exactly */
 #root:has(.pro-shell) {
@@ -179,7 +218,7 @@
 .pro-canvas-spacer { flex: 1; }
 .pro-zoom { display: flex; align-items: center; gap: 6px; }
 .pro-zoom .pro-icon-btn { min-width: 28px; height: 28px; }
-.pro-zoom-label { min-width: 42px; text-align: center; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 11px; color: var(--pro-text-mid); }
+.pro-zoom-label { min-width: 42px; text-align: center; font-family: var(--studio-font-mono); font-size: 10px; color: var(--pro-text-mid); }
 .pro-stage {
   position: relative; flex: 1 0 260px; min-height: 260px; overflow: hidden;
   display: grid; place-items: center; background:
@@ -191,7 +230,7 @@
 .pro-statusbar {
   display: flex; align-items: center; gap: 14px; height: var(--pro-status-h);
   padding: 0 12px; border-top: 1px solid var(--pro-line);
-  font-size: 10px; color: var(--pro-text-lo); font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 10px; color: var(--pro-text-lo); font-family: var(--studio-font-mono);
 }
 .pro-statusbar .spacer { flex: 1; }
 .pro-checkerboard {
@@ -225,7 +264,7 @@
 .pro-section-head {
   display: flex; align-items: center; gap: 8px; padding: 11px var(--pro-panel-pad);
   background: transparent; color: var(--pro-text-mid); border: 0; width: 100%;
-  font-size: 10px; font-weight: 750; letter-spacing: 0.14em; text-transform: uppercase; cursor: pointer;
+  font-size: 11px; font-weight: 750; letter-spacing: 0.14em; text-transform: uppercase; cursor: pointer;
 }
 .pro-section-head:hover { color: var(--pro-text-hi); background: var(--pro-panel-2); }
 .pro-section-head .chev { margin-left: auto; transition: transform 0.15s ease; }
@@ -237,8 +276,8 @@
 .pro-field input[type="range"] { -webkit-appearance: none; appearance: none; height: 3px; background: var(--pro-panel-3); border-radius: 2px; outline-offset: 4px; }
 .pro-field input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%; background: var(--pro-accent-hi); box-shadow: 0 0 0 1px #0d0d0d, 0 1px 4px rgba(0,0,0,.5); cursor: ew-resize; }
 .pro-field input[type="range"]::-moz-range-thumb { width: 12px; height: 12px; border-radius: 50%; background: var(--pro-accent-hi); border: 0; cursor: ew-resize; }
-.pro-value { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 10px; color: var(--pro-text-mid); text-align: right; }
-.pro-reset { font-size: 10px; color: var(--pro-text-lo); border: 0; background: transparent; cursor: pointer; padding: 4px 0; font-family: 'JetBrains Mono', ui-monospace, monospace; }
+.pro-value { font-family: var(--studio-font-mono); font-size: 10px; color: var(--pro-text-mid); text-align: right; }
+.pro-reset { font-size: 10px; color: var(--pro-text-lo); border: 0; background: transparent; cursor: pointer; padding: 4px 0; font-family: var(--studio-font-mono); }
 .pro-reset:hover { color: var(--pro-accent-hi); }
 
 /* Focus rings */
@@ -264,6 +303,139 @@ button:focus-visible { outline: 2px solid var(--pro-focus); outline-offset: 2px;
 .pro-shell .eyebrow { color: var(--pro-text-lo); }
 .pro-shell .section-title h2 { color: var(--pro-text-hi); }
 .pro-shell .tool-panel { background: var(--pro-panel); border: 1px solid var(--pro-line); border-radius: var(--pro-radius); padding: var(--pro-panel-pad); margin: 0 0 var(--pro-gap); }
+
+/* ── Shared studio panel vocabulary (unified card language) ─────────────── */
+/* Graphite surface, subtle border, champagne eyebrow, consistent radius/pad.
+   These class names are shared with the vendor Braincut editor so both apps
+   render the same card language from their own --studio-* token values. */
+.studio-panel {
+  background: var(--studio-surface);
+  border: 1px solid var(--studio-line);
+  border-radius: var(--studio-radius);
+  padding: var(--studio-panel-pad);
+}
+.studio-panel-title {
+  margin: 0 0 var(--studio-gap);
+  font-family: var(--studio-font-ui);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--studio-text-hi);
+}
+.studio-eyebrow {
+  font-family: var(--studio-font-ui);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--studio-accent);
+}
+.studio-section {
+  border-top: 1px solid var(--studio-line);
+  padding: var(--studio-panel-pad) 0;
+}
+.studio-section:first-child { border-top: 0; padding-top: 0; }
+
+/* Legacy gradient cleanup — scope to the pro shell, index.css left untouched. */
+.pro-shell .history-panel,
+.pro-shell .layer-panel {
+  border-color: var(--studio-line);
+  background: linear-gradient(160deg, var(--studio-surface), var(--studio-bg));
+}
+
+/* ── Additive hooks for the unified studio UI workstream ────────────────── */
+/* Draggable splitters: 4–6px hit area, hover accent, both orientations. */
+.studio-splitter {
+  position: relative;
+  flex: 0 0 auto;
+  background: transparent;
+  z-index: 2;
+  transition: background 0.15s ease;
+}
+.studio-splitter[data-orientation="vertical"],
+.studio-splitter--v { width: 5px; cursor: col-resize; }
+.studio-splitter[data-orientation="horizontal"],
+.studio-splitter--h { height: 5px; cursor: row-resize; }
+.studio-splitter:hover,
+.studio-splitter[data-active="true"] { background: var(--studio-accent-lo); }
+.studio-splitter[data-orientation="vertical"]:hover::after,
+.studio-splitter--v:hover::after {
+  content: ''; position: absolute; top: 0; bottom: 0; left: 2px; right: 2px;
+  border-radius: 2px; background: var(--studio-accent); opacity: 0.65;
+}
+.studio-splitter[data-orientation="horizontal"]:hover::after,
+.studio-splitter--h:hover::after {
+  content: ''; position: absolute; left: 0; right: 0; top: 2px; bottom: 2px;
+  border-radius: 2px; background: var(--studio-accent); opacity: 0.65;
+}
+.studio-splitter:focus-visible { outline: 2px solid var(--studio-focus); outline-offset: 1px; }
+
+/* Collapsed rail / panel state. */
+.studio-collapsed {
+  width: 0;
+  min-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition: width 0.18s ease, opacity 0.18s ease;
+}
+
+/* AI dock + badge. */
+.ai-dock {
+  position: absolute;
+  z-index: 8;
+  display: flex;
+  flex-direction: column;
+  gap: var(--studio-gap);
+  font-family: var(--studio-font-ui);
+  color: var(--studio-text-hi);
+  background: var(--studio-surface);
+  border: 1px solid var(--studio-line);
+  border-radius: var(--studio-radius);
+  padding: var(--studio-panel-pad);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+.ai-dock-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 16px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--studio-accent-lo);
+  border: 1px solid var(--studio-accent);
+  color: var(--studio-accent-hi);
+  font-family: var(--studio-font-mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+/* Consistent nav button. */
+.studio-nav-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: var(--studio-control-h);
+  min-width: var(--studio-control-h);
+  padding: 0 10px;
+  border: 1px solid var(--studio-line);
+  border-radius: var(--studio-radius-sm);
+  background: var(--studio-raised);
+  color: var(--studio-text-mid);
+  font-family: var(--studio-font-ui);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+.studio-nav-button:hover { color: var(--studio-text-hi); background: var(--studio-surface); border-color: var(--studio-accent); }
+.studio-nav-button[aria-current="page"],
+.studio-nav-button.active { color: var(--studio-accent-hi); border-color: var(--studio-accent); background: var(--studio-accent-lo); }
+.studio-nav-button:focus-visible { outline: 2px solid var(--studio-focus); outline-offset: 2px; }
+
 .pro-shell .preview-stage { background: radial-gradient(1200px 700px at 50% 40%, #131315 0%, #090909 70%); }
 .pro-busy { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(9,9,9,.45); z-index: 5; }
 .pro-spinner { width: 38px; height: 38px; border-radius: 50%; border: 3px solid rgba(255,255,255,.14); border-top-color: var(--pro-accent); animation: pro-spin 0.8s linear infinite; }

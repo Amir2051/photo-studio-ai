@@ -78,3 +78,38 @@ export function suiteDocumentToProject(doc: SuiteDocument): Project {
 export function legacyBraincutToSuiteDocument(text: string): SuiteDocument {
   return projectToSuiteDocument(parseProject(text));
 }
+
+export interface SuiteCompatibilityCheck {
+  ok: boolean;
+  documentId: string;
+  documentName: string;
+  mediaCount: number;
+  reason: string | null;
+}
+
+// Read-only checkpoint used by the editor's open/save paths. It compares the
+// canonical native serialization with the suite wrap/unwrap result, so drift
+// in the adapter is reported without ever replacing the authoritative project.
+export function checkLegacyCompatibility(text: string): SuiteCompatibilityCheck {
+  try {
+    const canonical = serializeProject(parseProject(text));
+    const doc = legacyBraincutToSuiteDocument(text);
+    const roundTripped = serializeProject(suiteDocumentToProject(doc));
+    const ok = canonical === roundTripped;
+    return {
+      ok,
+      documentId: doc.id,
+      documentName: doc.name,
+      mediaCount: doc.media.length,
+      reason: ok ? null : 'Suite round-trip differs from the native project',
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      documentId: '',
+      documentName: '',
+      mediaCount: 0,
+      reason: e instanceof Error && e.message ? e.message : String(e),
+    };
+  }
+}

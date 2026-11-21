@@ -1,6 +1,13 @@
 # Video Studio — Complete Implementation Roadmap (Phase 0)
 
-**Date:** 2026-11-19 · **Status:** M1 foundation implemented and awaiting review; no M2+ work started
+**Date:** 2026-11-19 · **Status:** M1 foundation committed (`1ecce92…`); M2a runtime integration slice implemented and awaiting review; no M2b+ work started
+
+## Status update — M2a (2026-11-19)
+- Integrated the Suite adapter as a **read-only compatibility checkpoint** in video project open/save (non-authoritative, warning-only).
+- Integrated `duplicateMediaGroups()` into the Media panel as a read-only duplicate-reference bar; no registry, no file moves.
+- History boundary unchanged; no new dependency, storage key, or `.braincut` format change.
+- Verification: suite 27 tests, vendor 350, app 99, typecheck 0 errors / 1 pre-existing warning, build passed, browser workflow 0 console errors (see M2a reports).
+- Remaining: M2b shared media registry, M2c project lifecycle, M2d editing depth, M2e evidence-gated performance, M2f sync/mobile — none started.
 
 ## Status update — 2026-11-19 (Milestone 1 foundation)
 - **Completed:** shared suite contracts (`lib/suite/types.ts`), media identity/lifecycle helpers (`media.ts`), framework-neutral history (`history.ts`), versioned suite serialization (`serialize.ts`), legacy `.braincut` v1 adapter (`adapters/braincut.ts`), 20 new tests, and the three M1 reports.
@@ -52,3 +59,16 @@ Acceptance criteria → affected modules → smallest coherent change → target
 - Treat long-form numbers as NOT VERIFIED until the M2.1 protocol is run with real 10/30 min and 4K media.
 - Keep AI proposals explicit, editable, approvable, and undoable; never silently overwrite edits.
 - Validate all imported files and project archives; no unsafe extraction paths.
+
+
+## Status update — 2026-11-20 (M2B-9A local video-first workflow integrated)
+
+- **Completed:** local quiet-region detection and non-destructive removal workflow in the real editor UI: Analyze → configure → select → Preview → Apply/Cancel → Undo/Redo → Export.
+- **Timeline integrity:** source-time to sequence-time mapping, frame snapping, padding/clamping/merge rules, fail-closed validation, linked A/V ripple edits, one History step, stale-result clearing.
+- **Synthetic end-to-end evidence:** WebM fixture imported; two quiet regions detected; preview/cancel/apply/undo/redo verified; WebM export validated with audio and video tracks and duration reduction matching the edit plan. No provider requests or uploads.
+- **Tests re-run on this worktree:** root app suite 27 files / 204 tests passed; vendor suite 41 files / 487 passed / 1 skipped; root typecheck passed; vendor Svelte check 0 errors / 1 pre-existing unused-CSS warning.
+- **Build:** full `npm run build` completed successfully, including vendor Braincut static build, sync to `public/video-studio/`, TypeScript project build, and root Vite production build. Build warnings: pre-existing unused `.signout` CSS, ineffective dynamic imports, and large chunks; no build errors.
+- **Generated bundle:** regenerated from current vendor source so the silence-removal UI and timeline overlay are included in the published static editor assets. The frozen trial tag/branch and `main` were not changed.
+- **Still not part of this milestone:** ASR/transcription, speaker diarization, provider-backed semantic video analysis, smart reframing/tracking, and cloud AI editing remain blocked/deferred pending separate model/provider/privacy review. Gemini/Vertex is not enabled. No live AI provider call was made.
+- **Next product milestone:** local audio cleanup/level normalization and unified analyze-on-import workflow; then additional multi-pattern/long-duration synthetic media verification and measured human editing-time comparison. These are not claimed complete here.
+- **Deployment:** build output is ready for staging validation; this status update does not deploy or modify production data.

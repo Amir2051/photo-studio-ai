@@ -21,6 +21,7 @@ import { restoreSources } from '#lib/media/sources.ts';
 import { createProject, createSequence } from '#lib/project/defaults.ts';
 import { presets } from '#lib/templates/sequences.ts';
 import { importFiles, isMediaFile } from '#lib/media/import.ts';
+import { checkLegacyCompatibility } from '#lib/suite/adapters/braincut.ts';
 import { downloadBlob } from '#lib/export/download.ts';
 import { addToast, dialog, projectHandle, sourceMedia } from '#lib/stores/app.ts';
 import { preferences } from '#lib/stores/preferences.ts';
@@ -70,6 +71,16 @@ async function writeToHandle(handle: FileSystemFileHandle, text: string): Promis
 // without the file system access api the browser downloads it instead
 async function write(p: Project, askForFile: boolean): Promise<boolean> {
   const text = serializeProject(p);
+  // Read-only compatibility checkpoint: the suite adapter verifies it can
+  // still wrap/unwrap this native project. It never changes the bytes written.
+  const check = checkLegacyCompatibility(text);
+  if (!check.ok) {
+    addToast(
+      `Suite compatibility warning: ${check.reason ?? 'unknown'} — the project file is unchanged`,
+      'warning',
+      6000,
+    );
+  }
   let handle = askForFile ? null : get(projectHandle);
   try {
     if (!handle) {
@@ -187,11 +198,19 @@ export async function openProjectFromFile(file: File): Promise<void> {
 
 async function openFromFile(file: File, handle: FileSystemFileHandle | null): Promise<void> {
   let p: Project;
+  let text: string;
   try {
-    p = parseProject(await file.text());
+    text = await file.text();
+    p = parseProject(text);
   } catch (e) {
     addToast(message(e, `${file.name} is not a brainCUT project`), 'error', 6000);
     return;
+  }
+  // Verify suite compatibility without migrating: the project that gets opened
+  // is the original parsed object, never an adapter reconstruction.
+  const check = checkLegacyCompatibility(text);
+  if (!check.ok) {
+    addToast(`Opened with a compatibility warning: ${check.reason ?? 'unknown'}`, 'warning', 6000);
   }
   await open(p, handle);
 }

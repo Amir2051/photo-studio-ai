@@ -12,6 +12,10 @@ import {
   Wand2,
   LayoutGrid,
   Scissors,
+  Bot,
+  Clapperboard,
+  AudioLines,
+  Cloud,
 } from 'lucide-react';
 
 export interface EditorToolbarProps {
@@ -79,6 +83,12 @@ export default function EditorToolbar({
       {tab('effects', 'effects-workspace', 'Effects', Sparkles)}
       {tab('assets', 'assets-workspace', 'Batch', LayoutGrid)}
       {tab('export', 'export-workspace', 'Deliver', Download)}
+      {tab('creator', '', 'Video Studio', Clapperboard)}
+      <Link to="/audio" className="pro-workspace-tab" aria-label="Open Audio Studio">
+        <AudioLines size={15} aria-hidden="true" /> Audio Studio
+      </Link>
+      {tab('cloud-sync', '', 'Cloud', Cloud)}
+      {tab('mia', 'mia-workspace', 'AI Dock', Bot)}
       <Link to="/cull" className="pro-workspace-tab">
         <Scissors size={15} aria-hidden="true" /> Culling
       </Link>

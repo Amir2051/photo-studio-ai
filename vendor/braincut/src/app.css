@@ -1,3 +1,10 @@
+/* Unified design language (Phase 1): the `--studio-*` aliases below expose the
+ * same token vocabulary used by the React photo shell, mapped from the vendor
+ * tokens (bg-deep/surface/elevated, border, text-*, accent, success/warning/error,
+ * radii and font stacks). All original vendor tokens are kept intact. Shared
+ * classes (.studio-panel, .studio-panel-title, .studio-eyebrow, .studio-section)
+ * give the vendor editor the same card language as the photo shell.
+ */
 @import "tailwindcss";
 
 :root {
@@ -68,6 +75,30 @@
   --label-green: #7ebc82;
   --label-brown: #aa876c;
   --label-yellow: #d1bd68;
+
+  /* ── Unified studio tokens (aliases only — see header) ──────────────────── */
+  --studio-bg: var(--bg-deep);
+  --studio-surface: var(--bg-surface);
+  --studio-raised: var(--bg-elevated);
+  --studio-input: var(--bg-elevated);
+  --studio-line: var(--border);
+  --studio-line-strong: var(--border-focus);
+  --studio-text-hi: var(--text-primary);
+  --studio-text-mid: var(--text-secondary);
+  --studio-text-lo: var(--text-muted);
+  --studio-accent: var(--accent);
+  --studio-accent-hi: var(--accent-hover);
+  --studio-accent-lo: var(--accent-dim);
+  --studio-ok: var(--success);
+  --studio-warn: var(--warning);
+  --studio-err: var(--error);
+  --studio-radius: var(--radius-lg);
+  --studio-radius-sm: var(--radius-sm);
+  --studio-control-h: var(--toolbar-h);
+  --studio-gap: var(--space);
+  --studio-font-ui: var(--font-ui);
+  --studio-font-mono: var(--font-editor);
+
   color-scheme: dark;
 }
 
@@ -80,7 +111,7 @@
 html, body {
   height: 100%;
   overflow: hidden;
-  font-family: var(--font-ui);
+  font-family: var(--studio-font-ui);
   font-size: 13px;
   color: var(--text-primary);
   background: var(--bg-deep);
@@ -120,7 +151,7 @@ a:hover {
 }
 
 button {
-  font-family: var(--font-ui);
+  font-family: var(--studio-font-ui);
   cursor: pointer;
   border: none;
   background: none;
@@ -135,7 +166,7 @@ kbd {
   min-width: 18px;
   height: 18px;
   padding: 0 4px;
-  font-family: var(--font-editor);
+  font-family: var(--studio-font-mono);
   font-size: 10px;
   color: var(--text-secondary);
   background: var(--bg-elevated);
@@ -163,3 +194,33 @@ kbd {
 button, input, select, textarea { accent-color: var(--accent); }
 button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 button:disabled { cursor: not-allowed; }
+
+/* ── Shared studio panel vocabulary (same classes as the photo shell) ───── */
+.studio-panel {
+  background: var(--studio-surface);
+  border: 1px solid var(--studio-line);
+  border-radius: var(--studio-radius);
+  padding: var(--studio-gap) var(--studio-gap);
+}
+.studio-panel-title {
+  margin: 0 0 var(--studio-gap);
+  font-family: var(--studio-font-ui);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--studio-text-hi);
+}
+.studio-eyebrow {
+  font-family: var(--studio-font-ui);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--studio-accent);
+}
+.studio-section {
+  border-top: 1px solid var(--studio-line);
+  padding: var(--studio-gap) 0;
+}
+.studio-section:first-child { border-top: 0; padding-top: 0; }

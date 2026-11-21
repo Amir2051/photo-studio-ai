@@ -18,8 +18,7 @@
 
 <script lang="ts">
   import type { MediaItem } from '#lib/project/types.ts';
-  import { formatDuration } from '#lib/project/time.ts';
-  import { formatBytes } from '#lib/media/opfs.ts';
+  import { metadataRows, normalizeMediaMetadata } from '#lib/media/media-metadata.ts';
   import Icon from './Icon.svelte';
 
   let {
@@ -49,11 +48,17 @@
     onstatus: () => void;
   } = $props();
 
+  // one normalization pass drives both the visible cells and the tooltip, so
+  // unknown fields are omitted instead of turning into 0 / "unknown"
+  const meta = $derived(normalizeMediaMetadata({ ...media }));
   const icon = $derived(media.kind === 'video' ? 'film' : media.kind === 'audio' ? 'audio' : 'image');
-  const dimensions = $derived(media.width > 0 ? `${media.width}×${media.height}` : '');
-  const fps = $derived(media.fps ? `${Number(media.fps.toFixed(3))} fps` : '');
-  const codecs = $derived([media.videoCodec, media.audioCodec].filter(Boolean).join(' / ') || media.container || '');
-  const duration = $derived(media.kind === 'image' ? 'still' : formatDuration(media.duration));
+  const dimensions = $derived(meta.dimensions ?? '');
+  const fps = $derived(meta.fps === null ? '' : `${Number(meta.fps.toFixed(3))} fps`);
+  const codecs = $derived([meta.videoCodec, meta.audioCodec].filter(Boolean).join(' / ') || meta.container || '');
+  const duration = $derived(meta.duration ?? (media.kind === 'image' ? 'still' : ''));
+  const metadataTooltip = $derived(
+    metadataRows({ ...media }).map((row) => row.label + ': ' + row.value).join('\n')
+  );
   const busy = $derived(media.status === 'converting' || progress !== null);
 
   function statusTitle(): string {
@@ -74,6 +79,7 @@
   class:missing={media.status === 'missing'}
   data-media-id={media.id}
   style="--tile-w: {size}px"
+  title={metadataTooltip}
   role="option"
   aria-selected={selected}
   tabindex="-1"
@@ -118,7 +124,7 @@
   {:else}
     <div class="meta">
       <span class="name" title={media.name}>{media.name}</span>
-      <span class="sub">{[dimensions, fps].filter(Boolean).join(' ') || codecs || formatBytes(media.fileSize)}</span>
+      <span class="sub">{[dimensions, fps].filter(Boolean).join(' ') || codecs || meta.fileSize || ''}</span>
     </div>
     {#if busy}
       <span class="progress floating" title="Converting">
