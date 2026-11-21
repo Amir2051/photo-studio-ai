@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import type { Clip, MediaItem } from '#lib/project/types.ts';
+  import type { Clip, ClipNoiseReduction, MediaItem } from '#lib/project/types.ts';
   import { program } from '#lib/engine/session.ts';
   import { getBlob } from '#lib/media/sources.ts';
   import { computePeaks, getPeaks, DEFAULT_PEAKS_PER_SECOND } from '#lib/media/waveform.ts';
@@ -30,6 +30,8 @@
   import { buildCommands } from '#lib/editor/commands.ts';
   import { addToast, renderStatus } from '#lib/stores/app.ts';
   import { calculatePeakNormalization, withPeakNormalization } from '#lib/media/audio-normalize.ts';
+  import { captureNoiseProfile } from '#lib/media/spectral-denoise.ts';
+  import { mergePieces, type AudioPiece } from '#lib/engine/audio-graph.ts';
 
   let {
     clips,
@@ -67,6 +69,23 @@
   let previewActive = $state(false);
   let successMessage = $state('');
 
+  let noiseClipId = $state('');
+  let noiseStart = $state(0);
+  let noiseEnd = $state(2);
+  let noiseStrength = $state(1);
+  let noiseFloor = $state(0.12);
+  let noiseThreshold = $state(1.15);
+  let noiseSmoothing = $state(2);
+  let noiseBusy = $state(false);
+  let noiseMessage = $state('');
+  let noiseError = $state('');
+  let noisePreviewActive = $state(false);
+  let pendingNoise = $state<ClipNoiseReduction | null>(null);
+  let originalNoise = $state<ClipNoiseReduction | null>(null);
+  let noiseController: AbortController | null = null;
+  let noiseTarget = $derived(clips.find((clip) => clip.id === noiseClipId && clip.kind === 'audio') ?? null);
+  let noiseTargetMedia = $derived(noiseTarget?.mediaId ? media.find((item) => item.id === noiseTarget.mediaId) ?? null : null);
+
   // non-destructive: recomputes on marker/selection changes, never edits media
   let plan = $derived(buildSilenceEditPlan($quietRegionMarkers, fps, true));
   let allSelected = $derived(
@@ -76,11 +95,25 @@
   // one initial pass on mount; never re-run on clips/media changes because
   // that would silently undo the user's edits and re-populate the regions
   onMount(() => {
+    const first = clips.find((clip) => clip.kind === 'audio' && clip.enabled && !!clip.mediaId);
+    if (first) {
+      noiseClipId = first.id;
+      noiseStart = first.in;
+      noiseEnd = Math.min(first.in + 2, media.find((item) => item.id === first.mediaId)?.duration ?? first.in + 2);
+      if (first.noiseReduction) {
+        noiseStrength = first.noiseReduction.strength;
+        noiseFloor = first.noiseReduction.floor;
+        noiseThreshold = first.noiseReduction.threshold;
+        noiseSmoothing = first.noiseReduction.frequencySmoothing;
+      }
+    }
     void analyze();
   });
 
   onDestroy(() => {
     controller?.abort();
+    noiseController?.abort();
+    if (noisePreviewActive) cancelPreview();
     if (previewActive) {
       cancelPreview();
       quietRegionPreviewing.set(false);
@@ -121,6 +154,7 @@
 
   async function analyze(): Promise<void> {
     // a new run supersedes the old one, including any in-flight decode
+    if (noisePreviewActive) cancelNoiseReduction();
     controller?.abort();
     if (previewActive) {
       cancelPreview();
@@ -286,6 +320,192 @@
     addToast(message, tone);
   }
 
+
+  function chooseNoiseClip(id: string): void {
+    if (noisePreviewActive) cancelNoiseReduction();
+    noiseClipId = id;
+    const clip = clips.find((item) => item.id === id);
+    const item = clip?.mediaId ? media.find((entry) => entry.id === clip.mediaId) : null;
+    noiseStart = clip?.in ?? 0;
+    noiseEnd = Math.min((clip?.in ?? 0) + 2, item?.duration ?? (clip?.in ?? 0) + 2);
+    noiseMessage = '';
+    noiseError = '';
+    noiseStrength = 1;
+    noiseFloor = 0.12;
+    noiseThreshold = 1.15;
+    noiseSmoothing = 2;
+    if (clip?.noiseReduction) {
+      noiseStrength = clip.noiseReduction.strength;
+      noiseFloor = clip.noiseReduction.floor;
+      noiseThreshold = clip.noiseReduction.threshold;
+      noiseSmoothing = clip.noiseReduction.frequencySmoothing;
+    }
+  }
+
+  function cloneNoiseSettings(settings: ClipNoiseReduction): ClipNoiseReduction {
+    return {
+      enabled: settings.enabled,
+      profile: {
+        version: settings.profile.version,
+        sampleRate: settings.profile.sampleRate,
+        fftSize: settings.profile.fftSize,
+        hopSize: settings.profile.hopSize,
+        magnitudes: Array.from(settings.profile.magnitudes),
+        capturedFrames: settings.profile.capturedFrames,
+        capturedAt: settings.profile.capturedAt,
+        sourceStart: settings.profile.sourceStart,
+        sourceEnd: settings.profile.sourceEnd,
+      },
+      strength: settings.strength,
+      floor: settings.floor,
+      threshold: settings.threshold,
+      frequencySmoothing: settings.frequencySmoothing,
+    };
+  }
+
+  function updateNoisePreview(): void {
+    if (!pendingNoise) {
+      if (!noiseTarget?.noiseReduction) return;
+      originalNoise = cloneNoiseSettings(noiseTarget.noiseReduction);
+      pendingNoise = cloneNoiseSettings(noiseTarget.noiseReduction);
+      pendingNoise.enabled = true;
+    }
+    pendingNoise = {
+      ...pendingNoise, strength: noiseStrength, floor: noiseFloor,
+      threshold: noiseThreshold, frequencySmoothing: noiseSmoothing,
+    };
+    const settings = cloneNoiseSettings(pendingNoise);
+    preview((draft) => {
+      const sequence = draft.sequences.find((seq) => seq.id === draft.activeSequenceId) ?? draft.sequences[0];
+      const found = sequence ? ops.findClipById(sequence, noiseClipId) : null;
+      if (found) found.clip.noiseReduction = settings;
+    }, { commitOnEdit: false });
+    noisePreviewActive = true;
+  }
+
+  $effect(() => {
+    const saved = noiseTarget?.noiseReduction;
+    if (saved && !noisePreviewActive) {
+      noiseStrength = saved.strength;
+      noiseFloor = saved.floor;
+      noiseThreshold = saved.threshold;
+      noiseSmoothing = saved.frequencySmoothing;
+    }
+    if (!saved && !noisePreviewActive &&
+        noiseMessage.startsWith('Spectral noise reduction applied')) {
+      noiseMessage = '';
+    }
+  });
+
+  async function captureNoiseSample(): Promise<void> {
+    if (!noiseTarget || !noiseTargetMedia || noiseBusy) return;
+    if (!Number.isFinite(noiseStart) || !Number.isFinite(noiseEnd) ||
+        noiseStart < 0 || noiseEnd <= noiseStart || noiseEnd > noiseTargetMedia.duration ||
+        noiseEnd - noiseStart < 0.1) {
+      noiseError = 'Choose a valid noise-only source range (at least 0.1 seconds).';
+      return;
+    }
+    if (noisePreviewActive) cancelNoiseReduction();
+    noiseController?.abort();
+    const current = new AbortController();
+    noiseController = current;
+    noiseBusy = true;
+    noiseError = '';
+    noiseMessage = 'Decoding the selected noise-only sample locally…';
+    try {
+      const session = program();
+      const reader = await session.cache.reader(noiseTargetMedia);
+      if (!reader || !reader.hasAudio) throw new Error('The selected media has no decodable audio track.');
+      const pieces: AudioPiece[] = [];
+      for await (const piece of reader.audio(noiseStart, noiseEnd)) {
+        if (current.signal.aborted) return;
+        pieces.push(piece);
+      }
+      if (current.signal.aborted) return;
+      const merged = mergePieces(session.audio.ctx, pieces);
+      if (!merged) throw new Error('No audio samples were decoded from that range.');
+      if (merged.buffer.numberOfChannels > 2) throw new Error('Spectral noise reduction currently supports mono and stereo sources only.');
+      const channelProfiles = Array.from({ length: Math.min(2, merged.buffer.numberOfChannels) }, (_, channel) =>
+        captureNoiseProfile(merged.buffer.getChannelData(channel), merged.buffer.sampleRate, current.signal),
+      );
+      if (current.signal.aborted) return;
+      const validProfiles = channelProfiles.filter((profile): profile is NonNullable<typeof profile> => profile !== null);
+      if (validProfiles.length === 0) throw new Error('The sample is too short or invalid. Select at least 1024 samples of steady background noise.');
+      const profile = {
+        ...validProfiles[0],
+        magnitudes: Float32Array.from(validProfiles[0].magnitudes, (_, index) =>
+          validProfiles.reduce((sum, candidate) => sum + candidate.magnitudes[index], 0) / validProfiles.length,
+        ),
+        capturedFrames: Math.min(...validProfiles.map((candidate) => candidate.capturedFrames)),
+      };
+      originalNoise = null;
+      pendingNoise = {
+        enabled: true,
+        profile: {
+          version: profile.version, sampleRate: profile.sampleRate, fftSize: profile.fftSize,
+          hopSize: profile.hopSize, magnitudes: Array.from(profile.magnitudes),
+          capturedFrames: profile.capturedFrames, capturedAt: Date.now(),
+          sourceStart: noiseStart, sourceEnd: noiseEnd,
+        },
+        strength: noiseStrength, floor: noiseFloor, threshold: noiseThreshold,
+        frequencySmoothing: noiseSmoothing,
+      };
+      const settings = cloneNoiseSettings(pendingNoise);
+      preview((draft) => {
+        const sequence = draft.sequences.find((seq) => seq.id === draft.activeSequenceId) ?? draft.sequences[0];
+        const found = sequence ? ops.findClipById(sequence, noiseClipId) : null;
+        if (found) found.clip.noiseReduction = settings;
+      }, { commitOnEdit: false });
+      noisePreviewActive = true;
+      noiseMessage = 'Noise profile captured from ' + (noiseEnd - noiseStart).toFixed(2) + 's. Preview is active; Apply to keep it or Cancel to discard.';
+    } catch (cause) {
+      if (!current.signal.aborted) noiseError = cause instanceof Error ? cause.message : 'Noise profile capture failed.';
+      noiseMessage = '';
+    } finally {
+      if (noiseController === current) noiseBusy = false;
+    }
+  }
+
+  function applyNoiseReduction(): void {
+    if (!noisePreviewActive) return;
+    commitPreview('Apply spectral noise reduction');
+    noisePreviewActive = false;
+    pendingNoise = null;
+    originalNoise = null;
+    noiseMessage = 'Spectral noise reduction applied to this clip. Use Undo to revert.';
+  }
+
+  function cancelNoiseReduction(): void {
+    if (noisePreviewActive) cancelPreview();
+    noisePreviewActive = false;
+    pendingNoise = null;
+    if (originalNoise) {
+      noiseStrength = originalNoise.strength;
+      noiseFloor = originalNoise.floor;
+      noiseThreshold = originalNoise.threshold;
+      noiseSmoothing = originalNoise.frequencySmoothing;
+    }
+    originalNoise = null;
+    noiseMessage = 'Noise reduction preview discarded.';
+  }
+
+  function toggleNoiseBypass(): void {
+    if (!noiseTarget?.noiseReduction) return;
+    editSequence('Toggle spectral noise reduction', (seq) => {
+      const found = ops.findClipById(seq, noiseClipId);
+      if (found?.clip.noiseReduction) found.clip.noiseReduction.enabled = !found.clip.noiseReduction.enabled;
+    });
+  }
+
+  function removeNoiseProfile(): void {
+    if (noisePreviewActive) cancelNoiseReduction();
+    editSequence('Clear spectral noise profile', (seq) => {
+      const found = ops.findClipById(seq, noiseClipId);
+      if (found) delete found.clip.noiseReduction;
+    });
+    noiseMessage = 'Noise profile removed from this clip.';
+  }
+
   function seekTo(time: number): void {
     // navigation only: reads a marker's sequence time, never edits the media
     program().player.seek(time);
@@ -372,6 +592,63 @@
   </header>
 
   {#if expanded}
+    <section class="denoise" aria-label="Spectral noise reduction">
+      <div class="denoise-head">
+        <strong>Spectral noise reduction</strong>
+        <small>Local DSP · original media stays untouched</small>
+      </div>
+      <div class="controls">
+        <label class="control" for="denoise-clip">Audio clip</label>
+        <select id="denoise-clip" value={noiseClipId} onchange={(event) => chooseNoiseClip(event.currentTarget.value)}>
+          {#each clips.filter((clip) => clip.kind === 'audio' && !!clip.mediaId) as clip (clip.id)}
+            <option value={clip.id}>{clip.name}</option>
+          {/each}
+        </select>
+        <label class="control" for="denoise-start">Noise sample from (s)
+          <input id="denoise-start" type="number" min="0" step="0.1" value={noiseStart}
+            onchange={(event) => (noiseStart = clampNumber(event.currentTarget.value, 0, noiseTargetMedia?.duration ?? 0, noiseStart))} />
+        </label>
+        <label class="control" for="denoise-end">to (s)
+          <input id="denoise-end" type="number" min="0" step="0.1" value={noiseEnd}
+            onchange={(event) => (noiseEnd = clampNumber(event.currentTarget.value, 0, noiseTargetMedia?.duration ?? 0, noiseEnd))} />
+        </label>
+        <button class="action primary" onclick={captureNoiseSample} disabled={noiseBusy || !noiseTarget || !noiseTargetMedia}>
+          {noiseBusy ? 'Capturing…' : 'Capture noise profile'}
+        </button>
+      </div>
+      {#if noiseTarget?.noiseReduction || pendingNoise}
+        <div class="controls">
+          <label class="control" for="denoise-strength">Strength {noiseStrength.toFixed(2)}
+            <input id="denoise-strength" type="range" min="0" max="2" step="0.05" value={noiseStrength}
+              onchange={(event) => { noiseStrength = Number(event.currentTarget.value); updateNoisePreview(); }} />
+          </label>
+          <label class="control" for="denoise-floor">Detail floor {noiseFloor.toFixed(2)}
+            <input id="denoise-floor" type="range" min="0.03" max="0.5" step="0.01" value={noiseFloor}
+              onchange={(event) => { noiseFloor = Number(event.currentTarget.value); updateNoisePreview(); }} />
+          </label>
+          <label class="control" for="denoise-threshold">Threshold {noiseThreshold.toFixed(2)}
+            <input id="denoise-threshold" type="range" min="0.5" max="3" step="0.05" value={noiseThreshold}
+              onchange={(event) => { noiseThreshold = Number(event.currentTarget.value); updateNoisePreview(); }} />
+          </label>
+          <label class="control" for="denoise-smoothing">Frequency smoothing
+            <input id="denoise-smoothing" type="number" min="0" max="4" step="1" value={noiseSmoothing}
+              onchange={(event) => { noiseSmoothing = Math.round(clampNumber(event.currentTarget.value, 0, 4, 2)); updateNoisePreview(); }} />
+          </label>
+          {#if noisePreviewActive}
+            <span class="previewing" role="status">Previewing in playback</span>
+            <button class="action primary" onclick={applyNoiseReduction}>Apply</button>
+            <button class="action" onclick={cancelNoiseReduction}>Cancel</button>
+          {:else if noiseTarget?.noiseReduction}
+            <button class="action" onclick={toggleNoiseBypass}>{noiseTarget.noiseReduction.enabled ? 'Bypass' : 'Enable'}</button>
+            <button class="action" onclick={removeNoiseProfile}>Clear profile</button>
+          {/if}
+        </div>
+      {:else}
+        <p class="hint">Select a noise-only section of the recording (room tone, fan, or hiss), capture its profile, then adjust strength while listening to the clip.</p>
+      {/if}
+      {#if noiseMessage}<p class="success" role="status">{noiseMessage}</p>{/if}
+      {#if noiseError}<p class="error" role="alert">{noiseError}</p>{/if}
+    </section>
     <div class="controls" aria-label="Analysis controls">
       <label class="control" for="qa-threshold">
         <span>Threshold</span>
@@ -590,6 +867,47 @@
   .primary {
     color: var(--accent);
     border-color: var(--accent);
+  }
+
+  .denoise {
+    margin: 7px 0;
+    padding: 7px 8px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: var(--bg-surface);
+  }
+
+  .denoise-head {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .denoise-head strong {
+    color: var(--text-primary);
+    font-size: 10px;
+    font-weight: 600;
+  }
+
+  .denoise-head small {
+    color: var(--text-muted);
+    font-size: 9px;
+  }
+
+  .denoise select {
+    max-width: 180px;
+    padding: 3px 5px;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+    font-size: 9px;
+  }
+
+  .denoise input[type='range'] {
+    width: 82px;
+    padding: 0;
   }
 
   .controls {

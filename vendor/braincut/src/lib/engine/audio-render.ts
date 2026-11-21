@@ -52,7 +52,7 @@ async function fillChunk(
       try {
         const chain = buildClipChain(ctx, clip, trackGain);
         const window = sourceWindow(clip, origin, end, media.duration);
-        for await (const piece of clipAudio(reader, clip, ctx, window)) {
+        for await (const piece of clipAudio(reader, clip, ctx, window, undefined, clip.noiseReduction)) {
           if (signal?.aborted) throw abortError();
           scheduleBuffer(ctx, chain, clip, track, piece.buffer, piece.timestamp, clock);
         }
