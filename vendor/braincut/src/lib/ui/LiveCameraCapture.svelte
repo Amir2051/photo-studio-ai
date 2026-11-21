@@ -52,6 +52,36 @@
     if (videoElement) videoElement.srcObject = null;
   }
 
+  async function waitForPreviewFrame(video: HTMLVideoElement, activeStream: MediaStream): Promise<void> {
+    const track = activeStream.getVideoTracks()[0];
+    if (!track || track.readyState !== 'live') throw new Error('The camera opened without an active video track. Check the camera privacy shutter and selected device.');
+    if (video.readyState < HTMLMediaElement.HAVE_METADATA || !video.videoWidth || !video.videoHeight) {
+      await new Promise<void>((resolve, reject) => {
+        const timeout = window.setTimeout(() => { cleanup(); reject(new Error('The camera connected but did not provide video dimensions. Check the camera shutter, device selection, and browser permission.')); }, 5000);
+        const cleanup = () => {
+          window.clearTimeout(timeout);
+          video.removeEventListener('loadedmetadata', onReady);
+          video.removeEventListener('error', onError);
+        };
+        const onReady = () => { cleanup(); resolve(); };
+        const onError = () => { cleanup(); reject(new Error('The browser could not decode the live camera preview.')); };
+        video.addEventListener('loadedmetadata', onReady, { once: true });
+        video.addEventListener('error', onError, { once: true });
+        if (video.videoWidth && video.videoHeight) { cleanup(); resolve(); }
+      });
+    }
+    if (video.paused) await video.play();
+    if (!video.videoWidth || !video.videoHeight || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+      throw new Error('The camera opened, but no picture is arriving yet. Check the privacy shutter or choose another camera.');
+    }
+    if ('requestVideoFrameCallback' in video) {
+      await new Promise<void>((resolve, reject) => {
+        const timeout = window.setTimeout(() => reject(new Error('The camera preview has dimensions but is not delivering frames. Check the physical shutter or try another camera.')), 4000);
+        video.requestVideoFrameCallback(() => { window.clearTimeout(timeout); resolve(); });
+      });
+    }
+  }
+
   onDestroy(() => {
     disposed = true;
     if (timer) clearInterval(timer);
@@ -90,13 +120,14 @@
         if (!microphoneId || !includeAudio || !(error instanceof DOMException)) throw error;
         stream = await navigator.mediaDevices.getUserMedia({ ...constraints, audio: true });
       }
-      connected = true;
-      await refreshDevices();
-      if (videoElement) {
-        videoElement.srcObject = stream;
-        await videoElement.play().catch(() => undefined);
-      }
       const activeStream = stream;
+      await refreshDevices();
+      if (!videoElement) throw new Error('The camera preview is not mounted. Close and reopen the camera panel, then try again.');
+      videoElement.srcObject = activeStream;
+      await videoElement.play();
+      await waitForPreviewFrame(videoElement, activeStream);
+      if (disposed || stream !== activeStream) return;
+      connected = true;
       const video = activeStream?.getVideoTracks()[0];
       video?.addEventListener('ended', () => {
         if (stream !== activeStream) return;
