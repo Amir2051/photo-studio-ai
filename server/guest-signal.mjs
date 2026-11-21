@@ -1,4 +1,5 @@
 import { createServer } from 'node:http';
+import { fileURLToPath } from 'node:url';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { WebSocketServer, WebSocket } from 'ws';
 
@@ -119,7 +120,7 @@ export function createGuestSignalServer({ host = '127.0.0.1', port = 18788, now 
   return { server, wss, rooms, listen: () => new Promise(resolve => server.listen(port, host, () => resolve(server.address()))), close: () => new Promise(resolve => { clearInterval(expiryTimer); for (const code of [...rooms.keys()]) closeRoom(code); wss.close(); server.close(resolve); }) };
 }
 
-if (process.argv[1] && new URL(import.meta.url).pathname === process.argv[1]) {
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const config = { host: process.env.GUEST_SIGNAL_HOST || '127.0.0.1', port: Number(process.env.PORT || process.env.GUEST_SIGNAL_PORT || 18788), allowedOrigins: (process.env.GUEST_ALLOWED_ORIGINS || '').split(',').map(v => v.trim()).filter(Boolean), turnUrls: (process.env.GUEST_TURN_URLS || '').split(',').map(v => v.trim()).filter(Boolean), turnSharedSecret: process.env.GUEST_TURN_SHARED_SECRET || '', turnCredentialTtlSeconds: Number(process.env.GUEST_TURN_CREDENTIAL_TTL || 3600) };
   const app = createGuestSignalServer(config);
   app.listen().then(address => process.stdout.write(`Guest signaling listening on ${address.address}:${address.port}\n`));

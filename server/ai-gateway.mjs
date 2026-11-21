@@ -1,4 +1,5 @@
 import { createServer } from 'node:http';
+import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { createCentralGateway } from './ai/central-gateway.mjs';
@@ -271,7 +272,7 @@ export function createAiGatewayServer({
   });
 }
 
-if (process.argv[1] && new URL(import.meta.url).pathname === process.argv[1]) {
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const config = {
     host: process.env.AI_GATEWAY_HOST || '127.0.0.1',
     port: Number(process.env.AI_GATEWAY_PORT || 18787),

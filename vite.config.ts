@@ -51,6 +51,17 @@ export default defineConfig(({ mode }) => {
       port: 5173,
       strictPort: true,
     },
+    preview: {
+      host: '127.0.0.1',
+      port: 4173,
+      strictPort: true,
+      allowedHosts: ['studio.safenestt.com'],
+      proxy: {
+        '/api/guest-rooms': { target: env.GUEST_SIGNAL_PROXY_TARGET || 'http://127.0.0.1:18788', changeOrigin: false },
+        '/guest-signal': { target: env.GUEST_SIGNAL_PROXY_TARGET || 'http://127.0.0.1:18788', changeOrigin: false, ws: true, rewrite: (path) => path.replace(/^\/guest-signal/, '') },
+        '/api/ai': { target: env.AI_GATEWAY_PROXY_TARGET || 'http://127.0.0.1:18787', changeOrigin: false },
+      },
+    },
     build: {
       outDir: 'dist',
       sourcemap: false,
