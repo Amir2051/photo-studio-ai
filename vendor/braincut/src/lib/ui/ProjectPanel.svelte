@@ -5,6 +5,7 @@
   import Icon from './Icon.svelte';
   import Menu from './Menu.svelte';
   import MediaTile, { labels, labelName } from './MediaTile.svelte';
+  import MediaAnalysisPanel from './MediaAnalysisPanel.svelte';
   import type { Bin, Id, Label, MediaItem, Sequence } from '#lib/project/types.ts';
   import { activeSequence, edit, editSequence, project, setActiveSequence } from '#lib/project/store.ts';
   import { createAdjustmentClip, createClipFromMedia, createColorClip, createSequence, createTitleClip } from '#lib/project/defaults.ts';
@@ -42,6 +43,7 @@
   let collapsed = $state<Set<Id>>(new Set());
   let dropBin = $state<Id | null | 'root'>(null);
   let converting = $state<Map<Id, number>>(new Map());
+  let localAnalysis = $state<MediaItem | null>(null);
   let list = $state<HTMLDivElement | null>(null);
   let dragGhost: HTMLElement | null = null;
 
@@ -277,6 +279,7 @@
           ...labels.map((l) => ({ label: labelName(l), checked: item.label === l, action: () => setLabel(ids, l) }))
         ]
       },
+      { label: 'Analyze locally…', action: () => { localAnalysis = item; }, disabled: many || item.status !== 'ready' },
       { label: 'New sequence from clip', action: () => sequenceFromMedia(item), disabled: many || item.status !== 'ready' },
       { separator: true, label: '' },
       item.proxy
@@ -683,6 +686,10 @@
       {/if}
     {/if}
   </div>
+
+  {#if localAnalysis}
+    <MediaAnalysisPanel media={localAnalysis} onClose={() => localAnalysis = null} />
+  {/if}
 
   {#if $importProgress}
     <div class="import-bar" title="Importing">
