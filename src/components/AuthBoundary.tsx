@@ -13,6 +13,11 @@ export default function AuthBoundary({ children }: Props): React.JSX.Element {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  // Pin production auth returns to the canonical custom domain. Local origin is
+  // used only in development so OAuth never falls back to localhost in production.
+  const authRedirectUrl = import.meta.env.PROD
+    ? 'https://studio.safenestt.com'
+    : window.location.origin;
 
   useEffect(() => {
     if (!supabase) {
@@ -45,6 +50,7 @@ export default function AuthBoundary({ children }: Props): React.JSX.Element {
         const { data, error: signUpError } = await supabase.auth.signUp({
           email: email.trim(),
           password,
+          options: { emailRedirectTo: authRedirectUrl },
         });
         if (signUpError) throw signUpError;
         if (!data.session) {
@@ -91,7 +97,7 @@ export default function AuthBoundary({ children }: Props): React.JSX.Element {
     setNotice('');
     try {
       const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-        redirectTo: window.location.origin,
+        redirectTo: authRedirectUrl,
       });
       if (resetError) throw resetError;
       setNotice('If an account exists for that email, a password reset message has been sent.');
@@ -109,7 +115,7 @@ export default function AuthBoundary({ children }: Props): React.JSX.Element {
     setNotice('');
     const { error: oauthError } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: window.location.origin },
+      options: { redirectTo: authRedirectUrl },
     });
     // On success the browser navigates to Google; this only returns on failure.
     if (oauthError) {
