@@ -153,7 +153,7 @@ async function open(p: Project, handle: FileSystemFileHandle | null): Promise<vo
 // Route footage selected through the Open dialog to the media importer instead
 // of trying to parse the binary video as a JSON project. This also makes the
 // distinction between Open project and Import video explicit to the user.
-export function ensureProjectForImport(): void {
+export function ensureProjectForImport(createdMessage = 'Video project created. Importing your footage…'): void {
   if (get(project)) return;
   const preset = presets[1] ?? presets[0];
   const next = createProject('Untitled project');
@@ -168,7 +168,7 @@ export function ensureProjectForImport(): void {
   loadProject(next);
   void touchRecent(next);
   void setLastOpenedId(next.id);
-  addToast('Video project created. Importing your footage…', 'success', 3500);
+  addToast(createdMessage, 'success', 3500);
 }
 
 async function openSelectedFile(file: File, handle: FileSystemFileHandle | null): Promise<void> {

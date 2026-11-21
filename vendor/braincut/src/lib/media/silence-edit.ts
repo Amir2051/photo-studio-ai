@@ -225,8 +225,10 @@ function mergeMarkers(
     candidates.push(marker);
   }
 
+  // Group by owning clip before merging so another track's interleaved
+  // marker cannot prevent two overlapping regions on this clip from merging.
   candidates.sort(
-    (a, b) => a.start - b.start || a.end - b.end || a.sourceStart - b.sourceStart,
+    (a, b) => a.clipId.localeCompare(b.clipId) || a.start - b.start || a.end - b.end || a.sourceStart - b.sourceStart,
   );
 
   // Adjacent means the next range starts no more than one frame after the
@@ -234,7 +236,9 @@ function mergeMarkers(
   const merged: WorkingRange[] = [];
   for (const marker of candidates) {
     const current = merged[merged.length - 1];
-    if (current !== undefined && marker.start <= current.end + frame) {
+    // Never merge markers from different clips: callers must retain the
+    // owning clip so timeline edits can be scoped to its track.
+    if (current !== undefined && current.clipId === marker.clipId && marker.start <= current.end + frame) {
       if (marker.end > current.end) current.end = marker.end;
     } else {
       merged.push({
@@ -247,6 +251,9 @@ function mergeMarkers(
       });
     }
   }
+
+  // Restore timeline order after the per-clip merge.
+  merged.sort((a, b) => a.start - b.start || a.end - b.end);
 
   const ranges: WorkingRange[] = [];
   for (const candidate of merged) {

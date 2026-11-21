@@ -77,13 +77,13 @@
   const commands = buildCommands();
 
   const topTabs = [
+    { id: 'capture', label: 'Camera' },
     { id: 'source', label: 'Source' },
     { id: 'effect-controls', label: 'Adjust' },
     { id: 'color', label: 'Color' },
     { id: 'scopes', label: 'Scopes' },
     { id: 'audio-mixer', label: 'Audio Mixer' },
     { id: 'record', label: 'Record' },
-    { id: 'capture', label: 'Capture' },
     { id: 'analysis', label: 'Analysis' },
     { id: 'multicam', label: 'Multicam' },
     { id: 'production', label: 'Production' }
@@ -182,6 +182,15 @@
   function importFootage() {
     ensureProjectForImport();
     void pickFiles();
+  }
+
+  // Camera preview is useful before footage exists, but the capture panel
+  // lives inside the project editor. Create a starter sequence and take the
+  // user directly to Camera instead of leaving the welcome screen without
+  // any way to request the browser's camera permission.
+  function openCameraFromWelcome() {
+    ensureProjectForImport('Starter video project created. Camera panel opened—connect a camera to preview or record.');
+    leftPanelTab.set('capture');
   }
 
   // selecting a clip brings its inspector into focus, like a contextual editor
@@ -363,6 +372,7 @@
       onopen={(id) => void openRecent(id)}
       onopenfile={() => void openProjectFile()}
       onimport={importFootage}
+      oncamera={openCameraFromWelcome}
     />
   {/if}
 

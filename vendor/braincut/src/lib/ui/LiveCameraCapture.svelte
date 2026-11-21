@@ -2,6 +2,7 @@
   import { onDestroy, onMount } from 'svelte';
   import { get } from 'svelte/store';
   import { recordingFile } from '#lib/media/recording.ts';
+  import { buildCameraConstraints, cameraInputErrorMessage } from '#lib/media/camera-input.ts';
   import { importFiles } from '#lib/media/import.ts';
   import { createClipFromMedia } from '#lib/project/defaults.ts';
   import { addTrack, canPlace, placeClips } from '#lib/project/ops.ts';
@@ -71,10 +72,18 @@
     releaseCamera();
     message = 'Requesting camera permission…';
     try {
-      const constraints: MediaStreamConstraints = {
-        video: cameraId ? { deviceId: { exact: cameraId }, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30, max: 60 } } : { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30, max: 60 } },
-        audio: includeAudio ? (microphoneId ? { deviceId: { exact: microphoneId }, echoCancellation: false, noiseSuppression: false, autoGainControl: false } : { echoCancellation: false, noiseSuppression: false, autoGainControl: false }) : false
-      };
+      const constraints = buildCameraConstraints({
+        deviceId: cameraId,
+        width: 1920,
+        height: 1080,
+        frameRate: 30,
+        maxFrameRate: 60,
+        audio: includeAudio
+          ? (microphoneId
+            ? { deviceId: { exact: microphoneId }, echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+            : { echoCancellation: false, noiseSuppression: false, autoGainControl: false })
+          : false,
+      });
       try {
         stream = await navigator.mediaDevices.getUserMedia(constraints);
       } catch (error) {
@@ -87,19 +96,20 @@
         videoElement.srcObject = stream;
         await videoElement.play().catch(() => undefined);
       }
-      const video = stream.getVideoTracks()[0];
+      const activeStream = stream;
+      const video = activeStream?.getVideoTracks()[0];
+      video?.addEventListener('ended', () => {
+        if (stream !== activeStream) return;
+        if (recording) stopRecording();
+        releaseCamera();
+        message = 'Camera disconnected. Any captured recording is being saved; reconnect the camera to continue.';
+        void refreshDevices();
+      }, { once: true });
       const settings = video?.getSettings();
       message = `Live preview connected${settings?.width && settings?.height ? ` · ${settings.width}×${settings.height}` : ''}${stream.getAudioTracks().length ? ' · microphone ready' : ' · video only'}.`;
     } catch (error) {
       releaseCamera();
-      const name = error instanceof DOMException ? error.name : '';
-      message = name === 'NotAllowedError' || name === 'SecurityError'
-        ? 'Camera or microphone permission was denied. Allow access for this editor and try again.'
-        : name === 'NotFoundError'
-          ? 'No camera was found. Connect a webcam and refresh the device list.'
-          : name === 'NotReadableError'
-            ? 'The camera is busy or unavailable. Close other apps using it and try again.'
-            : error instanceof Error ? error.message : 'Could not connect to the camera.';
+      message = cameraInputErrorMessage(error);
       await refreshDevices();
     }
   }

@@ -529,7 +529,11 @@
       // rightmost first: removing a later range does not move earlier times,
       // and each earlier extraction then shifts the already-trimmed tail
       const ranges = [...currentPlan.ranges].sort((a, b) => b.start - a.start);
-      for (const range of ranges) ops.extractRange(seq, range.start, range.end);
+      for (const range of ranges) {
+        const owner = ops.findClipById(seq, range.clipId);
+        if (!owner || owner.track.kind !== 'audio' || owner.track.locked) continue;
+        ops.extractRange(seq, range.start, range.end, [owner.track.id]);
+      }
     });
     previewActive = true;
     quietRegionPreviewing.set(true);

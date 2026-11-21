@@ -63,7 +63,7 @@ export type LeftPanelTab =
   | 'multicam'
   | 'production';
 export type BottomPanelTab = 'project' | 'effects' | 'markers' | 'history' | 'text' | 'ai-review' | 'mia' | 'visual-intelligence';
-export const leftPanelTab = writable<LeftPanelTab>('source');
+export const leftPanelTab = writable<LeftPanelTab>('capture');
 export const bottomPanelTab = writable<BottomPanelTab>('project');
 
 export type Dialog =

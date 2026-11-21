@@ -413,20 +413,42 @@ describe('buildSilenceEditPlan', () => {
     expect(plan.totalRemoved).toBeCloseTo(1.9);
   });
 
-  it('keeps source and clip metadata from the first range of a merged group', () => {
+  it('keeps overlapping ranges from different clips separate for track-scoped edits', () => {
     const plan = buildSilenceEditPlan([
       marker({ start: 0, end: 2, sourceStart: 10, sourceEnd: 12, clipId: 'a', mediaId: 'ma' }),
       marker({ start: 1, end: 3, sourceStart: 20, sourceEnd: 22, clipId: 'b', mediaId: 'mb' }),
     ]);
-    expect(plan.ranges).toHaveLength(1);
+    expect(plan.ranges).toHaveLength(2);
     expect(plan.ranges[0]).toMatchObject({
       start: 0,
-      end: 3,
+      end: 2,
       sourceStart: 10,
       sourceEnd: 12,
       clipId: 'a',
       mediaId: 'ma',
     });
+    expect(plan.ranges[1]).toMatchObject({
+      start: 1,
+      end: 3,
+      sourceStart: 20,
+      sourceEnd: 22,
+      clipId: 'b',
+      mediaId: 'mb',
+    });
+    expect(plan.totalRemoved).toBeCloseTo(4);
+  });
+
+  it('merges overlapping markers for one clip even when another clip is interleaved', () => {
+    const plan = buildSilenceEditPlan([
+      marker({ start: 0, end: 3, clipId: 'a', mediaId: 'ma' }),
+      marker({ start: 1, end: 2, clipId: 'b', mediaId: 'mb' }),
+      marker({ start: 2, end: 4, clipId: 'a', mediaId: 'ma' }),
+    ]);
+
+    expect(plan.ranges).toHaveLength(2);
+    expect(plan.ranges[0]).toMatchObject({ clipId: 'a', start: 0, end: 4 });
+    expect(plan.ranges[1]).toMatchObject({ clipId: 'b', start: 1, end: 2 });
+    expect(plan.totalRemoved).toBeCloseTo(5);
   });
 
   it('sorts unsorted input by sequence start', () => {

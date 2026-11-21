@@ -482,6 +482,18 @@ describe('splitting and deleting', () => {
     expect(layout(s.tracks[1])).toEqual([[0, 9]]);
   });
 
+  it('extracts only the requested track even when another track has an empty ripple gap', () => {
+    const s = seq();
+    put(s, 0, title(0, 10, 'target'));
+    put(s, 1, title(0, 2, 'unrelated-before'));
+    put(s, 1, title(6, 2, 'unrelated-after'));
+
+    ops.extractRange(s, 4, 6, [s.tracks[0].id]);
+
+    expect(layout(s.tracks[0])).toEqual([[0, 4], [4, 8]]);
+    expect(layout(s.tracks[1])).toEqual([[0, 2], [6, 8]]);
+  });
+
   it('closes a gap under the playhead', () => {
     const s = seq();
     put(s, 0, title(0, 2, 'a'));

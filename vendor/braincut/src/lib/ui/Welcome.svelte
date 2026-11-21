@@ -8,12 +8,14 @@
     recents = [],
     onopen,
     onopenfile,
-    onimport
+    onimport,
+    oncamera
   }: {
     recents?: RecentProject[];
     onopen: (id: string) => void;
     onopenfile: () => void;
     onimport: () => void;
+    oncamera: () => void;
   } = $props();
 
   function sequences(count: number): string {
@@ -42,6 +44,9 @@
       <button class="welcome-btn primary" onclick={onimport}>
         <Icon name="importIcon" size={14} />
         Import footage
+      </button>
+      <button class="welcome-btn secondary" onclick={oncamera}>
+        Connect built-in camera
       </button>
       <button class="welcome-btn secondary" onclick={() => dialog.set({ kind: 'new-project' })}>
         <Icon name="plus" size={14} />

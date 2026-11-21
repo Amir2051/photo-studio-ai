@@ -32,8 +32,10 @@
 
   const SILENT: [number, number] = [-60, -60];
   const audioTracks = $derived($activeSequence?.tracks.filter((t) => t.kind === 'audio') ?? []);
+  const hasSoloTrack = $derived(audioTracks.some((track) => track.solo));
   const audioClips = $derived(
     audioTracks
+      .filter((track) => !track.locked && !track.muted && (!hasSoloTrack || track.solo))
       .flatMap((track) => track.clips)
       .filter((clip) => clip.kind === 'audio' && clip.enabled !== false && !!clip.mediaId)
   );
