@@ -25,10 +25,11 @@
     setAllQuietRegionMarkers,
     clearQuietRegionMarkers,
   } from '#lib/stores/silence.ts';
-  import { preview, commitPreview, cancelPreview, undo, redo } from '#lib/project/store.ts';
+  import { preview, commitPreview, cancelPreview, undo, redo, editSequence } from '#lib/project/store.ts';
   import * as ops from '#lib/project/ops.ts';
   import { buildCommands } from '#lib/editor/commands.ts';
-  import { renderStatus } from '#lib/stores/app.ts';
+  import { addToast, renderStatus } from '#lib/stores/app.ts';
+  import { calculatePeakNormalization, withPeakNormalization } from '#lib/media/audio-normalize.ts';
 
   let {
     clips,
@@ -261,6 +262,30 @@
     }
   }
 
+  function normalizePeak(item: ClipAnalysis): void {
+    if (!item.stats || item.status === 'invalid' || item.status === 'unavailable' || item.status === 'empty') return;
+
+    let message = 'The clip could not be normalized.';
+    let tone: 'success' | 'warning' = 'warning';
+    editSequence('Peak normalize audio clip', (seq) => {
+      const found = ops.findClipById(seq, item.key);
+      if (!found || found.clip.kind !== 'audio') return;
+      const volume = found.clip.effects.find((effect) => effect.type === 'volume');
+      const result = calculatePeakNormalization(item.stats!.peakDb, volume);
+      if ('reason' in result) {
+        message = result.reason;
+        return;
+      }
+      if (!volume) return;
+      Object.assign(volume, withPeakNormalization(volume, result.deltaDb));
+      tone = result.status === 'limited' ? 'warning' : 'success';
+      message = result.status === 'limited'
+        ? 'Gain increased by ' + result.deltaDb.toFixed(1) + ' dB; target limited to ' + result.resultingPeakDb.toFixed(1) + ' dBFS.'
+        : 'Estimated source peak after gain: ' + result.resultingPeakDb.toFixed(1) + ' dBFS.';
+    });
+    addToast(message, tone);
+  }
+
   function seekTo(time: number): void {
     // navigation only: reads a marker's sequence time, never edits the media
     program().player.seek(time);
@@ -410,6 +435,16 @@
                 <span>RMS {db(item.stats.rmsDb)}</span>
                 <span>Range {item.stats.dynamicRangeDb.toFixed(1)} dB</span>
                 {#if item.stats.allSilent}<span class="muted">all buckets at zero amplitude</span>{/if}
+              </div>
+              <div class="clip-actions">
+                <button
+                  class="mini"
+                  onclick={() => normalizePeak(item)}
+                  disabled={item.stats.allSilent}
+                  title="Adjust clip gain non-destructively toward -1 dBFS peak">
+                  Peak normalize
+                </button>
+                <small>Local · non-destructive · max +12 dB</small>
               </div>
             {/if}
             {#if item.reason}<div class="reason">{item.reason}</div>{/if}
@@ -670,6 +705,19 @@
 
   .metrics .muted {
     color: var(--text-muted);
+  }
+
+  .clip-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 5px;
+  }
+
+  .clip-actions small {
+    color: var(--text-muted);
+    font-size: 8px;
   }
 
   .edit-plan {

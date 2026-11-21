@@ -72,3 +72,12 @@ Acceptance criteria → affected modules → smallest coherent change → target
 - **Still not part of this milestone:** ASR/transcription, speaker diarization, provider-backed semantic video analysis, smart reframing/tracking, and cloud AI editing remain blocked/deferred pending separate model/provider/privacy review. Gemini/Vertex is not enabled. No live AI provider call was made.
 - **Next product milestone:** local audio cleanup/level normalization and unified analyze-on-import workflow; then additional multi-pattern/long-duration synthetic media verification and measured human editing-time comparison. These are not claimed complete here.
 - **Deployment:** build output is ready for staging validation; this status update does not deploy or modify production data.
+
+## Status update — 2026-11-20 (M2B-9B local peak normalization)
+
+- Implemented a per-clip Peak normalize action in Local Audio Analysis.
+- Uses local waveform peak measurements; applies a non-destructive gain offset to the existing clip Volume effect and all numeric volume automation keyframes, preserving automation shape/easing.
+- Target is -1 dBFS peak; boost capped at +12 dB; clip gain stays within -60 to +12 dB. Silent, disabled, muted, or invalid cases fail closed. Limited boost is explicitly reported.
+- This is peak normalization only: not LUFS normalization, limiting, compression, or noise reduction. No provider/network/media upload.
+- Verification: focused tests 48/48; full Braincut suite 497 passed / 1 skipped; Svelte check 0 errors / 1 existing unused CSS warning; root typecheck passed; root tests 204/204; full production build passed and static video editor bundle synced.
+- Next: hands-on editor validation with synthetic known-peak audio, verify undo/redo and export playback; then separately evaluate local denoising with listening tests and reversible preview before claiming noise cleanup.
