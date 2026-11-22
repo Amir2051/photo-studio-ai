@@ -3,6 +3,8 @@
   import { resolve } from '$app/paths';
   import { get } from 'svelte/store';
   import { recordingFile } from '#lib/media/recording.ts';
+  import { buildCameraConstraints, cameraInputErrorMessage } from '#lib/media/camera-input.ts';
+  import { resolveWhipSessionUrl } from '#lib/media/whip-session.ts';
   import { importFiles } from '#lib/media/import.ts';
   import { createClipFromMedia } from '#lib/project/defaults.ts';
   import { addTrack, canPlace, placeClips } from '#lib/project/ops.ts';
@@ -46,6 +48,7 @@
   let broadcastStatus = $state('Not connected');
   let peer: RTCPeerConnection | null = null;
   let whipSessionUrl = '';
+  let whipSessionOrigin = '';
   let broadcastStream: MediaStream | null = null;
   let broadcastStartedAt = 0;
   let bitrateKbps = $state(0);
@@ -96,13 +99,27 @@
   async function addCamera(deviceId: string) {
     if (!deviceId || slots.length >= 4 || slots.some((s) => s.deviceId === deviceId)) return;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } }, audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia(buildCameraConstraints({ deviceId, width: 1920, height: 1080, frameRate: 30, audio: true }));
       const video = document.createElement('video'); video.srcObject = stream; video.muted = true; video.playsInline = true; await video.play();
       const device = cameras.find((d) => d.deviceId === deviceId);
       const source = { id: `cam-${deviceId}`, name: device?.label || `Camera ${slots.length + 1}`, deviceId, stream, video, audioEnabled: true };
+      const videoTrack = stream.getVideoTracks()[0];
+      videoTrack?.addEventListener('ended', () => {
+        const active = slots.find((item) => item.id === source.id);
+        if (!active) return;
+        release(active);
+        slots = slots.filter((item) => item.id !== source.id);
+        if (selected === source.id) selected = allSources()[0]?.id ?? '';
+        connected = allSources().length > 0;
+        status = `${source.name} disconnected. Reconnect it from Add camera.`;
+        if (connected) startPreview();
+        else { cancelAnimationFrame(frame); if (recording) stopRecording(); }
+        void refresh();
+      });
+
       slots = [...slots, source]; if (!selected) selected = source.id;
       connected = true; status = `${slots.length} camera source${slots.length === 1 ? '' : 's'} connected.`; startPreview();
-    } catch (e) { status = e instanceof Error ? e.message : 'Could not connect camera.'; }
+    } catch (e) { status = cameraInputErrorMessage(e); }
   }
   async function addScreen() {
     if (!navigator.mediaDevices?.getDisplayMedia || screen) return;
@@ -571,7 +588,9 @@
       if (!response.ok) throw new Error(`WHIP server returned HTTP ${response.status}. Check endpoint, token and CORS settings.`);
       const location = response.headers.get('Location');
       if (!location) throw new Error('WHIP server accepted the offer without a Location session URL; cannot safely manage or close the session.');
-      whipSessionUrl = new URL(location, endpoint).toString();
+      const session = resolveWhipSessionUrl(endpoint, location);
+      whipSessionOrigin = session.origin;
+      whipSessionUrl = session.url;
       const answer = await response.text();
       if (!answer.startsWith('v=0')) throw new Error('The streaming service returned an invalid SDP answer.');
       await peer.setRemoteDescription({ type: 'answer', sdp: answer });
@@ -614,11 +633,15 @@
   }
 
   function stopBroadcast(sendDelete = true) {
-    if (sendDelete && whipSessionUrl) {
-      const headers: Record<string,string> = {}; if (whipToken.trim()) headers.Authorization = `Bearer ${whipToken.trim()}`;
-      void fetch(whipSessionUrl, { method: 'DELETE', headers, keepalive: true }).catch(() => {});
+    if (sendDelete && whipSessionUrl && whipSessionOrigin) {
+      const sessionUrl = new URL(whipSessionUrl);
+      if (sessionUrl.protocol === 'https:' && sessionUrl.origin === whipSessionOrigin) {
+        const headers: Record<string,string> = {}; if (whipToken.trim()) headers.Authorization = `Bearer ${whipToken.trim()}`;
+        void fetch(sessionUrl.toString(), { method: 'DELETE', headers, keepalive: true }).catch(() => {});
+      }
     }
-    whipSessionUrl = ''; if (statsTimer) clearInterval(statsTimer); statsTimer = null; previousOutbound = null; bitrateKbps = 0; streamFps = 0; latencyMs = 0; if (peer) { peer.onconnectionstatechange = null; peer.close(); peer = null; }
+    whipSessionUrl = '';
+    whipSessionOrigin = ''; if (statsTimer) clearInterval(statsTimer); statsTimer = null; previousOutbound = null; bitrateKbps = 0; streamFps = 0; latencyMs = 0; if (peer) { peer.onconnectionstatechange = null; peer.close(); peer = null; }
     if (broadcastStream) { broadcastStream.getTracks().forEach((track) => track.stop()); broadcastStream = null; }
     releaseAudio(broadcastAudioMix); broadcastAudioMix = null; broadcasting = false;
     if (!disposed && broadcastStatus.startsWith('Live')) broadcastStatus = `Broadcast ended · ${clock(Math.floor((Date.now()-broadcastStartedAt)/1000))}`;

@@ -2,6 +2,7 @@
   import { onDestroy, onMount } from 'svelte';
   import { get } from 'svelte/store';
   import { recordingFile } from '#lib/media/recording.ts';
+  import { buildCameraConstraints, cameraInputErrorMessage } from '#lib/media/camera-input.ts';
   import { importFiles } from '#lib/media/import.ts';
   import { createClipFromMedia } from '#lib/project/defaults.ts';
   import { addTrack, canPlace, placeClips } from '#lib/project/ops.ts';
@@ -51,6 +52,36 @@
     if (videoElement) videoElement.srcObject = null;
   }
 
+  async function waitForPreviewFrame(video: HTMLVideoElement, activeStream: MediaStream): Promise<void> {
+    const track = activeStream.getVideoTracks()[0];
+    if (!track || track.readyState !== 'live') throw new Error('The camera opened without an active video track. Check the camera privacy shutter and selected device.');
+    if (video.readyState < HTMLMediaElement.HAVE_METADATA || !video.videoWidth || !video.videoHeight) {
+      await new Promise<void>((resolve, reject) => {
+        const timeout = window.setTimeout(() => { cleanup(); reject(new Error('The camera connected but did not provide video dimensions. Check the camera shutter, device selection, and browser permission.')); }, 5000);
+        const cleanup = () => {
+          window.clearTimeout(timeout);
+          video.removeEventListener('loadedmetadata', onReady);
+          video.removeEventListener('error', onError);
+        };
+        const onReady = () => { cleanup(); resolve(); };
+        const onError = () => { cleanup(); reject(new Error('The browser could not decode the live camera preview.')); };
+        video.addEventListener('loadedmetadata', onReady, { once: true });
+        video.addEventListener('error', onError, { once: true });
+        if (video.videoWidth && video.videoHeight) { cleanup(); resolve(); }
+      });
+    }
+    if (video.paused) await video.play();
+    if (!video.videoWidth || !video.videoHeight || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+      throw new Error('The camera opened, but no picture is arriving yet. Check the privacy shutter or choose another camera.');
+    }
+    if ('requestVideoFrameCallback' in video) {
+      await new Promise<void>((resolve, reject) => {
+        const timeout = window.setTimeout(() => reject(new Error('The camera preview has dimensions but is not delivering frames. Check the physical shutter or try another camera.')), 4000);
+        video.requestVideoFrameCallback(() => { window.clearTimeout(timeout); resolve(); });
+      });
+    }
+  }
+
   onDestroy(() => {
     disposed = true;
     if (timer) clearInterval(timer);
@@ -71,35 +102,45 @@
     releaseCamera();
     message = 'Requesting camera permission…';
     try {
-      const constraints: MediaStreamConstraints = {
-        video: cameraId ? { deviceId: { exact: cameraId }, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30, max: 60 } } : { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30, max: 60 } },
-        audio: includeAudio ? (microphoneId ? { deviceId: { exact: microphoneId }, echoCancellation: false, noiseSuppression: false, autoGainControl: false } : { echoCancellation: false, noiseSuppression: false, autoGainControl: false }) : false
-      };
+      const constraints = buildCameraConstraints({
+        deviceId: cameraId,
+        width: 1920,
+        height: 1080,
+        frameRate: 30,
+        maxFrameRate: 60,
+        audio: includeAudio
+          ? (microphoneId
+            ? { deviceId: { exact: microphoneId }, echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+            : { echoCancellation: false, noiseSuppression: false, autoGainControl: false })
+          : false,
+      });
       try {
         stream = await navigator.mediaDevices.getUserMedia(constraints);
       } catch (error) {
         if (!microphoneId || !includeAudio || !(error instanceof DOMException)) throw error;
         stream = await navigator.mediaDevices.getUserMedia({ ...constraints, audio: true });
       }
-      connected = true;
+      const activeStream = stream;
       await refreshDevices();
-      if (videoElement) {
-        videoElement.srcObject = stream;
-        await videoElement.play().catch(() => undefined);
-      }
-      const video = stream.getVideoTracks()[0];
+      if (!videoElement) throw new Error('The camera preview is not mounted. Close and reopen the camera panel, then try again.');
+      videoElement.srcObject = activeStream;
+      await videoElement.play();
+      await waitForPreviewFrame(videoElement, activeStream);
+      if (disposed || stream !== activeStream) return;
+      connected = true;
+      const video = activeStream?.getVideoTracks()[0];
+      video?.addEventListener('ended', () => {
+        if (stream !== activeStream) return;
+        if (recording) stopRecording();
+        releaseCamera();
+        message = 'Camera disconnected. Any captured recording is being saved; reconnect the camera to continue.';
+        void refreshDevices();
+      }, { once: true });
       const settings = video?.getSettings();
       message = `Live preview connected${settings?.width && settings?.height ? ` · ${settings.width}×${settings.height}` : ''}${stream.getAudioTracks().length ? ' · microphone ready' : ' · video only'}.`;
     } catch (error) {
       releaseCamera();
-      const name = error instanceof DOMException ? error.name : '';
-      message = name === 'NotAllowedError' || name === 'SecurityError'
-        ? 'Camera or microphone permission was denied. Allow access for this editor and try again.'
-        : name === 'NotFoundError'
-          ? 'No camera was found. Connect a webcam and refresh the device list.'
-          : name === 'NotReadableError'
-            ? 'The camera is busy or unavailable. Close other apps using it and try again.'
-            : error instanceof Error ? error.message : 'Could not connect to the camera.';
+      message = cameraInputErrorMessage(error);
       await refreshDevices();
     }
   }

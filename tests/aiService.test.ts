@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  createFirebaseAiProvider,
+  createSupabaseAiProvider,
   OfflineProvider,
   OpenRouterProvider,
 } from '../src/lib/aiService';
@@ -43,14 +43,14 @@ describe('AI service security boundary', () => {
     expect(String(requestInit?.body)).not.toContain('sk-test-secret-that-must-not-leak');
   });
 
-  it('creates a Firebase-backed adapter that obtains its token on demand', async () => {
-    const getIdToken = vi.fn(async () => 'fresh-firebase-id-token');
-    const provider = createFirebaseAiProvider(getIdToken);
+  it('creates a token-backed adapter that fetches it on demand', async () => {
+    const getIdToken = vi.fn(async () => 'fresh-access-token');
+    const provider = createSupabaseAiProvider(getIdToken);
     vi.stubGlobal(
       'fetch',
       vi.fn(async (_url: string | URL, init?: RequestInit) => {
         expect(new Headers(init?.headers).get('authorization')).toBe(
-          'Bearer fresh-firebase-id-token',
+          'Bearer fresh-access-token',
         );
         return new Response(JSON.stringify({ content: 'Authenticated response.' }), {
           status: 200,
@@ -86,5 +86,36 @@ describe('AI service security boundary', () => {
     );
     const provider = new OpenRouterProvider(undefined, undefined, async () => 'session-token');
     await expect(provider.chat([message])).rejects.toThrow(/503/);
+  });
+
+  it('fails closed for cloud retouch/segment/cull without uploading anything', async () => {
+    const offline = new OfflineProvider();
+    await expect(offline.segmentImage()).rejects.toThrow(/not configured|unavailable/i);
+    await expect(offline.retouchImage()).rejects.toThrow(/not configured|unavailable/i);
+    await expect(offline.scoreCull()).rejects.toThrow(/not configured|unavailable/i);
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ error: 'not enabled' }), { status: 501 })),
+    );
+    const cloud = new OpenRouterProvider(undefined, undefined, async () => 'session-token');
+    await expect(cloud.segmentImage('aGVsbG8=')).rejects.toThrow(/not enabled/i);
+    await expect(cloud.retouchImage('aGVsbG8=')).rejects.toThrow(/not enabled/i);
+    await expect(cloud.scoreCull('aGVsbG8=')).rejects.toThrow(/not enabled/i);
+  });
+
+  it('advertises capability flags so the UI can gate AI affordances honestly', () => {
+    expect(new OfflineProvider().capabilities).toEqual({
+      chat: true,
+      retouch: false,
+      segment: false,
+      cullScore: false,
+    });
+    expect(new OpenRouterProvider().capabilities).toEqual({
+      chat: true,
+      retouch: false,
+      segment: false,
+      cullScore: false,
+    });
   });
 });

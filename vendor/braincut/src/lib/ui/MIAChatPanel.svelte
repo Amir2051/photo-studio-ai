@@ -7,11 +7,11 @@
   import { pendingVisualAnalysis } from '#lib/agent/visual-analysis.ts';
   import { bottomPanelTab } from '#lib/stores/app.ts';
   import VisualFrameReview from './VisualFrameReview.svelte';
-  import { getStudioAuth, performStudioAuth, type StudioAuthAction } from './studioAuth';
+  import { getStudioAuth } from './studioAuth';
 
   type ChatMessage = { role: 'user' | 'assistant'; content: string; at: number };
   type MiaUser = { id: string; email: string };
-  const apiBase = (import.meta.env.VITE_MIA_API_BASE_URL || 'https://every-frame-first-mia.onrender.com/api/mia').replace(/\/$/, '');
+  const apiBase = (import.meta.env.PROD ? 'https://every-frame-first-mia.onrender.com/api/mia' : (import.meta.env.VITE_MIA_API_BASE_URL || 'http://localhost:10000/api/mia')).replace(/\/$/, '');
   let user = $state<MiaUser | null>(null);
   let checking = $state(true);
   let busy = $state(false);
@@ -21,11 +21,6 @@
   let messages = $state<ChatMessage[]>([]);
   let transcript = $state<HTMLElement | null>(null);
   let visualReviewOpen = $state(false);
-  let authMode = $state<'sign_in' | 'sign_up'>('sign_in');
-  let authEmail = $state('');
-  let authPassword = $state('');
-  let authBusy = $state(false);
-  let authNotice = $state('');
 
   async function request(path: string, init: RequestInit = {}): Promise<any> {
     const auth = await getStudioAuth();
@@ -40,9 +35,8 @@
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      const detail = [data?.error, data?.detail, data?.message].find((value) => typeof value === 'string' && value.trim()) || 'MIA request failed (' + response.status + ').';
-      const requestId = typeof data?.requestId === 'string' ? ' (request ' + data.requestId + ')' : '';
-      throw new Error(detail + requestId);
+      const detail = typeof data?.error === 'string' ? data.error : 'MIA request failed (' + response.status + ').';
+      throw new Error(detail);
     }
     return data;
   }
@@ -59,38 +53,6 @@
     } finally {
       checking = false;
     }
-  }
-
-  async function submitStudioAuth(event?: SubmitEvent): Promise<void> {
-    event?.preventDefault();
-    if (authBusy) return;
-    authBusy = true;
-    error = '';
-    authNotice = '';
-    try {
-      const result = await performStudioAuth(authMode as StudioAuthAction, authEmail.trim(), authPassword);
-      authPassword = '';
-      if (result.user) {
-        user = result.user;
-        error = '';
-        authNotice = 'Signed in successfully. MIA is ready.';
-      } else authNotice = result.notice || 'Check your email for the next step.';
-    } catch (cause) {
-      error = cause instanceof Error ? cause.message : 'Studio authentication failed.';
-    } finally { authBusy = false; }
-  }
-
-  async function requestPasswordReset(): Promise<void> {
-    if (authBusy) return;
-    authBusy = true;
-    error = '';
-    authNotice = '';
-    try {
-      const result = await performStudioAuth('reset_password', authEmail.trim());
-      authNotice = result.notice || 'Check your email for a password reset link.';
-    } catch (cause) {
-      error = cause instanceof Error ? cause.message : 'Could not request a password reset.';
-    } finally { authBusy = false; }
   }
 
   function projectContext(): string {
@@ -163,7 +125,7 @@
       sequenceName: sequence.name,
       title: typeof payload.title === 'string' ? payload.title : 'MIA edit proposal',
       summary: typeof payload.summary === 'string' ? payload.summary : 'MIA prepared timeline changes for your review.',
-      source: 'MIA · RZ Agent',
+      source: 'MIA · Qwen / OpenRouter',
       operations: payload.operations,
     });
     addToast(`MIA prepared ${proposal.operations.length} edit${proposal.operations.length === 1 ? '' : 's'}. Review each one in AI Review.`, 'success', 6000);
@@ -181,7 +143,7 @@
     const requestSequenceId = get(activeSequence)?.id ?? null;
     try {
       const system = [
-        'You are MIA, the user\'s video-editing copilot inside Every Frame First Studio. The user is the director. Never claim to have watched or heard source footage: you receive only project/media/timeline metadata, not the original media bytes or frames.',
+        'You are MIA, the user\'s video-editing copilot inside Minu Studio. The user is the director. Never claim to have watched or heard source footage: you receive only project/media/timeline metadata, not the original media bytes or frames.',
         'Explain your plan in plain language. Ask a concise clarifying question when the instruction is ambiguous or essential timing/style choices are missing.',
         'When the user clearly requests timeline edits and you have enough information, include exactly one fenced block labelled edit_proposal containing valid JSON: {"title":"...","summary":"...","operations":[{"tool":"...","summary":"...","rationale":"...","args":{...}}]}. Do not include operations that are not supported by the schema. Supported tools: add_clip(args mediaId, at number or "end", trackIndex, sourceIn, sourceOut, sequenceId); add_title(args text, at, duration, trackIndex, fontFamily, fontSize, fontWeight, color, align, strokeWidth, strokeColor, shadow, box, boxColor, x, y, sequenceId); split(args at, clipId?, sequenceId?); trim(args clipId, start?, end?, ripple?); move_clip(args clipId, to, trackIndex?); delete_clips(args clipIds, ripple?); add_transition(args clipId, type?, duration?, edge?); add_marker(args time, name?, color?, sequenceId?).',
         'Use only IDs present in the supplied project context. All timeline times are seconds. Track indexes are zero-based within video or audio tracks of that kind. Never invent media IDs or clip IDs. Keep proposals to 20 operations maximum. For uncertain destructive actions, ask first. A proposal is not an action: no timeline changes happen until the user previews and individually applies edits in AI Review.',
@@ -240,20 +202,10 @@
   {:else if !user}
     <div class="signin-wrap">
       <div class="signin-icon"><Icon name="lock-keyhole" size={23} /></div>
-      <h3>{authMode === 'sign_in' ? 'Sign in to MIA' : 'Create your Studio account'}</h3>
-      <p>Use your Every Frame First Studio email and password. This is the same account used by the main Studio—no separate MIA or RZ-AI login.</p>
-      <form class="signin-form" onsubmit={submitStudioAuth}>
-        <label for="mia-auth-email">Email address</label>
-        <input id="mia-auth-email" type="email" autocomplete="email" required bind:value={authEmail} disabled={authBusy} placeholder="you@example.com" />
-        <label for="mia-auth-password">Password</label>
-        <input id="mia-auth-password" type="password" autocomplete={authMode === 'sign_in' ? 'current-password' : 'new-password'} minlength="8" required bind:value={authPassword} disabled={authBusy} placeholder="At least 8 characters" />
-        <button class="primary signin-submit" type="submit" disabled={authBusy}>{authBusy ? 'Please wait…' : authMode === 'sign_in' ? 'Sign in' : 'Create account'}</button>
-      </form>
-      {#if authMode === 'sign_in'}<button class="signin-text-button" type="button" disabled={authBusy} onclick={requestPasswordReset}>Forgot password?</button>{/if}
-      <p class="signin-switch">{authMode === 'sign_in' ? 'New to the Studio?' : 'Already have an account?'} <button class="signin-text-button" type="button" disabled={authBusy} onclick={() => { authMode = authMode === 'sign_in' ? 'sign_up' : 'sign_in'; error = ''; authNotice = ''; authPassword = ''; }}>{authMode === 'sign_in' ? 'Create an account' : 'Sign in'}</button></p>
-      {#if authNotice}<p class="auth-notice" role="status">{authNotice}</p>{/if}
-      {#if error}<p class="error" role="alert">{error}</p>{/if}
-      <button class="secondary signin-retry" type="button" onclick={checkSession} disabled={authBusy}>Already signed in? Check again</button>
+      <h3>Sign in to Minu Studio</h3>
+      <p>MIA uses your existing Studio account. No separate AI-provider login is required.</p>
+      <button class="primary" type="button" onclick={checkSession}>Check Studio sign-in</button>
+      {#if error}<p class="error">{error}</p>{/if}
     </div>
   {:else}
     <div class="context-strip"><Icon name="film" size={13} /><span>{$project?.name ?? 'No project open'}</span><span class="context-divider">·</span><span>{$activeSequence?.name ?? 'No active sequence'}</span><button class="visual-open" onclick={() => bottomPanelTab.set('visual-intelligence')}><Icon name="scan-search" size={12} />Visual Intelligence</button></div>
@@ -286,7 +238,7 @@
 <style>
   .mia-panel{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;background:var(--bg-elevated);color:var(--text-primary)}
   .mia-header{height:42px;flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 12px;border-bottom:1px solid var(--border);background:var(--bg-surface)}
-  .mia-brand{display:flex;align-items:center;gap:8px}.mia-orb,.welcome-orb{display:grid;place-items:center;border:1px solid color-mix(in srgb,var(--accent) 55%,var(--border));border-radius:50%;color:var(--accent);background:var(--accent-dim)}.mia-orb{width:27px;height:27px}.mia-brand strong{display:block;font-size:11px;letter-spacing:.12em}.mia-brand small{display:block;color:var(--text-muted);font-size:9px;margin-top:1px}.account{display:flex;align-items:center;gap:6px;min-width:0;color:var(--text-muted);font-size:9px}.account>span:nth-child(2){max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.online-dot{width:6px;height:6px;border-radius:50%;background:var(--success)}.signout{padding:4px 7px;border:1px solid var(--border);border-radius:4px;font-size:9px;color:var(--text-secondary)}.connection-state{font-size:9px;color:var(--text-muted)}
-  .signin-wrap{width:min(100% - 28px,340px);margin:auto;padding:22px 0;text-align:center}.signin-icon{width:48px;height:48px;margin:0 auto 12px;display:grid;place-items:center;border-radius:14px;border:1px solid var(--border);background:var(--bg-surface);color:var(--accent)}.signin-form{display:grid;gap:7px;text-align:left}.signin-form label{margin-top:4px;color:var(--text-secondary);font-size:10px}.signin-form input{width:100%;box-sizing:border-box;padding:10px 11px;border:1px solid var(--border);border-radius:6px;background:var(--bg-surface);color:var(--text-primary);font:inherit;font-size:12px;outline:none}.signin-form input:focus{border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 18%,transparent)}.signin-submit{width:100%;margin-top:7px;padding:10px 12px;border:1px solid var(--accent);border-radius:6px;background:var(--accent);color:white;font-size:11px;font-weight:600}.signin-submit:disabled,.signin-retry:disabled,.signin-text-button:disabled{opacity:.55;cursor:not-allowed}.signin-retry{display:block;width:100%;margin-top:8px;padding:8px 10px;border:1px solid var(--border);border-radius:5px;background:var(--bg-surface);color:var(--text-secondary);font-size:10px}.signin-retry:hover{border-color:var(--accent);color:var(--text-primary)}.signin-text-button{padding:3px 2px;border:0;background:transparent;color:var(--accent);font-size:10px;cursor:pointer}.signin-switch{margin:10px 0 2px!important}.auth-notice{margin:8px 0;color:var(--success);font-size:10px}.signin-wrap h3,.welcome h3{margin:0 0 6px;font-size:14px}.signin-wrap>p,.welcome>p{margin:0 auto 18px;color:var(--text-secondary);font-size:10.5px;line-height:1.55}.error,.inline-error{color:var(--error);font-size:10px}.context-strip{display:flex;align-items:center;gap:6px;min-height:30px;padding:0 10px;border-bottom:1px solid var(--border);color:var(--text-secondary);font-size:9px}.context-strip>span:first-of-type{max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.context-divider{color:var(--text-muted)}.visual-open{display:flex;align-items:center;gap:4px;margin-left:auto;padding:5px 7px;border:1px solid var(--border);border-radius:4px;background:var(--bg-surface);color:var(--text-secondary);font-size:9px;white-space:nowrap}.visual-open:hover{border-color:var(--accent);color:var(--text-primary)}
+  .mia-brand{display:flex;align-items:center;gap:8px}.mia-orb,.welcome-orb{display:grid;place-items:center;border:1px solid color-mix(in srgb,var(--accent) 55%,var(--border));border-radius:50%;color:var(--accent);background:var(--accent-dim)}.mia-orb{width:27px;height:27px}.mia-brand strong{display:block;font-size:11px;letter-spacing:.12em}.mia-brand small{display:block;color:var(--text-muted);font-size:9px;margin-top:1px}.account{display:flex;align-items:center;gap:6px;min-width:0;color:var(--text-muted);font-size:9px}.account>span:nth-child(2){max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.online-dot{width:6px;height:6px;border-radius:50%;background:var(--success)}.connection-state{font-size:9px;color:var(--text-muted)}
+  .signin-wrap{width:min(100% - 28px,340px);margin:auto;padding:22px 0;text-align:center}.signin-icon{width:48px;height:48px;margin:0 auto 12px;display:grid;place-items:center;border-radius:14px;border:1px solid var(--border);background:var(--bg-surface);color:var(--accent)}.signin-wrap h3,.welcome h3{margin:0 0 6px;font-size:14px}.signin-wrap>p,.welcome>p{margin:0 auto 18px;color:var(--text-secondary);font-size:10.5px;line-height:1.55}.error,.inline-error{color:var(--error);font-size:10px}.context-strip{display:flex;align-items:center;gap:6px;min-height:30px;padding:0 10px;border-bottom:1px solid var(--border);color:var(--text-secondary);font-size:9px}.context-strip>span:first-of-type{max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.context-divider{color:var(--text-muted)}.visual-open{display:flex;align-items:center;gap:4px;margin-left:auto;padding:5px 7px;border:1px solid var(--border);border-radius:4px;background:var(--bg-surface);color:var(--text-secondary);font-size:9px;white-space:nowrap}.visual-open:hover{border-color:var(--accent);color:var(--text-primary)}
   .chat-transcript{flex:1;min-height:0;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:10px}.welcome{margin:auto;max-width:330px;text-align:center;padding:20px 8px}.welcome-orb{width:48px;height:48px;margin:0 auto 12px}.suggestions{display:flex;flex-wrap:wrap;justify-content:center;gap:6px}.suggestions button{padding:6px 8px;border:1px solid var(--border);border-radius:5px;background:var(--bg-surface);color:var(--text-secondary);font-size:9px}.suggestions button:hover{border-color:var(--accent);color:var(--text-primary)}.message{max-width:92%;align-self:flex-start;padding:9px 10px;border:1px solid var(--border);border-radius:7px;background:var(--bg-surface)}.message.user-message{align-self:flex-end;background:var(--bg-hover)}.message-author{font-size:8px;letter-spacing:.1em;font-weight:700;color:var(--accent)}.message p{white-space:pre-wrap;overflow-wrap:anywhere;margin:4px 0 0;font-size:10.5px;line-height:1.55;color:var(--text-primary)}.thinking{display:flex;align-items:center;gap:6px;color:var(--text-muted);font-size:10px}.connection-message{margin:auto;display:flex;align-items:center;gap:8px;color:var(--text-secondary);font-size:11px}.inline-error{padding:5px 10px}.composer{margin:0 10px 8px;padding:7px;border:1px solid var(--border);border-radius:7px;background:var(--bg-surface)}.composer textarea{display:block;width:100%;resize:vertical;min-height:38px;max-height:120px;border:1px solid transparent;border-radius:4px;background:transparent;color:var(--text-primary);font:inherit;font-size:10.5px;line-height:1.5;outline:none}.composer textarea::placeholder{color:var(--text-muted)}.composer-footer{display:flex;align-items:center;justify-content:space-between;margin-top:4px;color:var(--text-muted);font-size:8px}.send{width:27px;height:25px;display:grid;place-items:center;border-radius:4px;background:var(--accent);color:white}.send:disabled{opacity:.35}.safety-footer{display:flex;align-items:center;gap:6px;flex:0 0 auto;min-height:27px;padding:0 10px;border-top:1px solid var(--border);color:var(--text-muted);font-size:8.5px}.safety-footer :global(svg){color:var(--success);flex:0 0 auto}
 </style>

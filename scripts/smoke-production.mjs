@@ -18,11 +18,11 @@ async function expectPage(path, description) {
 }
 
 const rootHtml = await expectPage('/', 'studio home');
-if (!/Every Frame First Studio/i.test(rootHtml))
+if (!/Minu Studio/i.test(rootHtml))
   throw new Error('Studio home has an unexpected page title.');
 
 const editorHtml = await expectPage('/video-studio/', 'video editor');
-if (!/Every Frame First Video Studio/i.test(editorHtml))
+if (!/Minu Studio Video Studio/i.test(editorHtml))
   throw new Error('Video editor metadata is missing.');
 const editorAssetPaths = [
   ...editorHtml.matchAll(/(?:src|href)="([^"]*\/_app\/immutable\/[^"]+)"/g),

@@ -9,8 +9,9 @@ import {
   QUALITY_MEDIUM,
   StreamTarget,
 } from 'mediabunny';
-import { writable } from 'svelte/store';
+import { writable, get } from 'svelte/store';
 import { edit } from '#lib/project/store.ts';
+import { preferences, normalizeProxyHeight } from '#lib/stores/preferences.ts';
 import type { MediaItem } from '#lib/project/types.ts';
 import { ensureRoom, proxyKey, remove, writeStream } from './opfs';
 import { invalidate } from './thumbnails';
@@ -46,7 +47,7 @@ export async function createProxy(
   signal?: AbortSignal,
 ): Promise<void> {
   if (media.kind !== 'video' || !media.hasVideo) throw new Error('Only video gets a proxy');
-  const size = proxySize(media, opts.height ?? 540);
+  const size = proxySize(media, normalizeProxyHeight(opts.height ?? get(preferences).proxyHeight));
   // a medium h.264 proxy lands well under a tenth of most camera files
   await ensureRoom(Math.round(blob.size / 8));
 

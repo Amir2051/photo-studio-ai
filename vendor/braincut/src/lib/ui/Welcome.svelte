@@ -8,12 +8,14 @@
     recents = [],
     onopen,
     onopenfile,
-    onimport
+    onimport,
+    oncamera
   }: {
     recents?: RecentProject[];
     onopen: (id: string) => void;
     onopenfile: () => void;
     onimport: () => void;
+    oncamera: () => void;
   } = $props();
 
   function sequences(count: number): string {
@@ -33,7 +35,7 @@
 <div class="welcome-state">
   <div class="welcome-content">
     <div class="welcome-icon"><Logo size={44} /></div>
-    <h1 class="welcome-title">Every Frame First</h1>
+    <h1 class="welcome-title">Minu Studio</h1>
     <p class="welcome-desc">
       Professional video editing, with real multitrack tools. Import footage, arrange clips, cut and trim precisely, mix audio, apply effects and export your finished video. Your media stays on this device.
     </p>
@@ -42,6 +44,9 @@
       <button class="welcome-btn primary" onclick={onimport}>
         <Icon name="importIcon" size={14} />
         Import footage
+      </button>
+      <button class="welcome-btn secondary" onclick={oncamera}>
+        Connect built-in camera
       </button>
       <button class="welcome-btn secondary" onclick={() => dialog.set({ kind: 'new-project' })}>
         <Icon name="plus" size={14} />

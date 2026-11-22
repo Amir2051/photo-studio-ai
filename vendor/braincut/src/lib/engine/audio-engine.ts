@@ -12,7 +12,8 @@ import {
   type ClipChain,
 } from './audio-graph';
 import { chunkSequenceEnd, dbToGain, gainToDb, sourceWindow } from './audio-math';
-import { clipEnd, sourceTimeAt } from './clip-time';
+import { clipEnd, clipSourceRange, sourceTimeAt } from './clip-time';
+import { addToast } from '#lib/stores/app.ts';
 
 // how often the scheduler looks for work and how far ahead it schedules
 const TICK_MS = 250;
@@ -359,7 +360,7 @@ export class AudioEngine {
         if (stream.done) return;
         this.holds.get(stream.clip.id)?.();
         this.holds.set(stream.clip.id, cache.hold(media.id));
-        stream.pieces = clipAudio(reader, stream.clip, this.ctx, window);
+        stream.pieces = clipAudio(reader, stream.clip, this.ctx, window, undefined, stream.clip.noiseReduction);
       }
       const clock = { seqToCtx: (t: number) => this.seqToCtx(t), rate: this.rate };
       while (
@@ -395,10 +396,20 @@ export class AudioEngine {
         );
       }
     } catch (e) {
-      stream.done = true;
-      if (!this.warned) {
-        this.warned = true;
-        console.warn('[braincut] audio decoding failed:', e);
+      if (stream.clip.noiseReduction?.enabled) {
+        const message = e instanceof Error ? e.message : String(e);
+        console.warn('[braincut] spectral noise reduction unavailable; restoring original audio:', message);
+        stream.clip = { ...stream.clip, noiseReduction: { ...stream.clip.noiseReduction, enabled: false } };
+        stream.done = false;
+        stream.pieces = null;
+        stream.scheduledTo = Math.max(this.currentTime(), stream.clip.start);
+        addToast('Noise reduction could not be applied: ' + message + ' Original audio playback has been restored.', 'warning', 7000);
+      } else {
+        stream.done = true;
+        if (!this.warned) {
+          this.warned = true;
+          console.warn('[braincut] audio decoding failed:', e);
+        }
       }
     } finally {
       stream.pumping = false;
@@ -460,11 +471,34 @@ export class AudioEngine {
     const reader = await cache.reader(media);
     if (!reader || !reader.hasAudio) return;
     const src = sourceTimeAt(clip, time, media.duration);
-    const pieces: AudioPiece[] = [];
-    for await (const chunk of reader.audio(src, src + SCRUB_SLICE * clip.speed)) pieces.push(chunk);
-    const merged = mergePieces(this.ctx, pieces);
+    let merged: AudioPiece | null = null;
+    if (clip.noiseReduction?.enabled) {
+      const fullRange = clipSourceRange(clip);
+      const sliceStart = clip.reverse ? Math.max(fullRange.start, src - SCRUB_SLICE * clip.speed) : src;
+      const sliceEnd = clip.reverse ? src : Math.min(fullRange.end, src + SCRUB_SLICE * clip.speed);
+      const processed: AudioPiece[] = [];
+      for await (const piece of clipAudio(reader, clip, this.ctx, { start: sliceStart, end: sliceEnd }, undefined, clip.noiseReduction)) processed.push(piece);
+      merged = mergePieces(this.ctx, processed);
+    } else {
+      const pieces: AudioPiece[] = [];
+      for await (const chunk of reader.audio(src, src + SCRUB_SLICE * clip.speed)) pieces.push(chunk);
+      merged = mergePieces(this.ctx, pieces);
+    }
     if (!merged) return;
-    const slice = trimPiece(this.ctx, merged, src, src + SCRUB_SLICE * clip.speed) ?? merged;
+    let slice: AudioPiece | null;
+    if (clip.reverse && clip.noiseReduction?.enabled) {
+      const offsetSeconds = Math.max(0, merged.timestamp + merged.buffer.duration - src);
+      const startFrame = Math.min(merged.buffer.length, Math.round(offsetSeconds * merged.buffer.sampleRate));
+      const endFrame = Math.min(merged.buffer.length, startFrame + Math.round(SCRUB_SLICE * clip.speed * merged.buffer.sampleRate));
+      if (endFrame <= startFrame) return;
+      const buffer = this.ctx.createBuffer(merged.buffer.numberOfChannels, endFrame - startFrame, merged.buffer.sampleRate);
+      for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
+        buffer.copyToChannel(merged.buffer.getChannelData(channel).subarray(startFrame, endFrame), channel);
+      }
+      slice = { buffer, timestamp: src };
+    } else {
+      slice = trimPiece(this.ctx, merged, src, src + SCRUB_SLICE * clip.speed) ?? merged;
+    }
     const gain = this.ctx.createGain();
     gain.gain.value = volumeAt(clip, time - clip.start);
     gain.connect(destination);

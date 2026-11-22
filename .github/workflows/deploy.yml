@@ -1,10 +1,10 @@
-name: Build and deploy Every Frame First Studio
+name: Build and deploy Minu Studio
 
 on:
   pull_request:
-    branches: [main, 'fix/**']
+    branches: [main]
   push:
-    branches: [main, 'fix/photo-studio-core-repair']
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -38,29 +38,23 @@ jobs:
       - name: Run root application tests
         run: npx vitest run tests
       - name: Type-check and build
-        env:
-          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
-          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
-          VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
-          VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
-          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
-          VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
-          VITE_FIREBASE_MEASUREMENT_ID: ${{ secrets.VITE_FIREBASE_MEASUREMENT_ID }}
         run: npm run build
       - name: Verify published editor bundle
         run: |
           test -s public/video-studio/index.html
           grep -R -q 'CLIP ACTIONS' public/video-studio/_app/immutable
           grep -R -q 'PRODUCER AUDIO DESK' public/video-studio/_app/immutable
+      - name: Copy custom-domain CNAME into the Pages artifact
+        run: cp CNAME dist/CNAME
+      - name: Add SPA fallback for client-side routes
+        run: cp dist/index.html dist/404.html
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: dist
 
   deploy:
-    if: >-
-      github.event_name != 'pull_request' &&
-      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/fix/photo-studio-core-repair')
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

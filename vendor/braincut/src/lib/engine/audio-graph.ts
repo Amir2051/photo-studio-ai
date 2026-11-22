@@ -1,8 +1,10 @@
-import type { Clip, EffectInstance, Track, Transition } from '#lib/project/types.ts';
+import type { Clip, ClipNoiseReduction, EffectInstance, Track, Transition } from '#lib/project/types.ts';
 import { paramsAt, valueAt } from '#lib/project/keyframes.ts';
 import { createAudioEffect } from '#lib/engine/effects/audio.ts';
 import { transitionCurve, transitionDef } from '#lib/engine/transitions/registry.ts';
 import type { MediaReader } from './media-reader';
+import { clipSourceRange } from './clip-time';
+import { reduceSpectralNoise, type NoiseProfile } from '#lib/media/spectral-denoise.ts';
 import {
   automationTimes,
   catchUp,
@@ -243,6 +245,88 @@ export function reverseBuffer(ctx: BaseAudioContext, buffer: AudioBuffer): Audio
   return out;
 }
 
+
+// Process fixed source-time windows with overlap context. Playback and export
+// request the same window keys, so they reuse identical processed samples while
+// long recordings remain bounded in memory.
+const denoisedClipCache = new WeakMap<MediaReader, Map<string, Promise<AudioPiece | null>>>();
+const DENOISE_CHUNK_SECONDS = 5;
+const DENOISE_CONTEXT_SECONDS = 0.5;
+const DENOISE_CACHE_ENTRIES = 12;
+
+async function denoisedClipPiece(
+  reader: MediaReader,
+  clip: Clip,
+  ctx: BaseAudioContext,
+  settings: ClipNoiseReduction,
+  chunkStart: number,
+  chunkEnd: number,
+): Promise<AudioPiece | null> {
+  const key = JSON.stringify({
+    id: clip.id, in: clip.in, duration: clip.duration, speed: clip.speed,
+    reverse: clip.reverse, chunkStart, chunkEnd, settings,
+  });
+  let entries = denoisedClipCache.get(reader);
+  if (!entries) {
+    entries = new Map();
+    denoisedClipCache.set(reader, entries);
+  }
+  const cached = entries.get(key);
+  if (cached) {
+    entries.delete(key);
+    entries.set(key, cached);
+    return cached;
+  }
+
+  const job = (async (): Promise<AudioPiece | null> => {
+    const fullRange = clipSourceRange(clip);
+    const contextStart = Math.max(fullRange.start, chunkStart - DENOISE_CONTEXT_SECONDS);
+    const contextEnd = Math.min(fullRange.end, chunkEnd + DENOISE_CONTEXT_SECONDS);
+    const decoded: AudioPiece[] = [];
+    for await (const piece of reader.audio(contextStart, contextEnd)) decoded.push(piece);
+    const merged = mergePieces(ctx, decoded);
+    if (!merged) throw new Error('No source audio could be decoded for spectral noise reduction.');
+    const context = trimPiece(ctx, merged, contextStart, contextEnd);
+    if (!context) throw new Error('The selected source range contains no decodable audio.');
+    if (context.buffer.numberOfChannels > 2) {
+      throw new Error('Spectral noise reduction currently supports mono and stereo clips. Bypass this effect for multichannel audio.');
+    }
+    const stored = settings.profile;
+    const profile: NoiseProfile = {
+      version: stored.version, sampleRate: stored.sampleRate, fftSize: stored.fftSize,
+      hopSize: stored.hopSize, magnitudes: Float32Array.from(stored.magnitudes),
+      capturedFrames: stored.capturedFrames,
+    };
+    const channels = Array.from({ length: context.buffer.numberOfChannels }, (_, channel) =>
+      context.buffer.getChannelData(channel),
+    );
+    const result = reduceSpectralNoise(channels, context.buffer.sampleRate, profile, {
+      strength: settings.strength, floor: settings.floor, threshold: settings.threshold,
+      frequencySmoothing: settings.frequencySmoothing,
+    });
+    if (result.status !== 'ok') throw new Error(result.reason);
+    const output = ctx.createBuffer(result.channels.length, result.channels[0].length, context.buffer.sampleRate);
+    result.channels.forEach((channel: Float32Array, index: number) =>
+      output.copyToChannel(Float32Array.from(channel), index),
+    );
+    const centered = trimPiece(ctx, { buffer: output, timestamp: contextStart }, chunkStart, chunkEnd);
+    if (!centered) throw new Error('The processed audio window could not be aligned to its source range.');
+    return {
+      buffer: clip.reverse ? reverseBuffer(ctx, centered.buffer) : centered.buffer,
+      timestamp: chunkStart,
+    };
+  })();
+
+  entries.set(key, job);
+  while (entries.size > DENOISE_CACHE_ENTRIES) entries.delete(entries.keys().next().value!);
+  try {
+    return await job;
+  } catch (error) {
+    entries.delete(key);
+    throw error;
+  }
+}
+
 // decoded pieces are tiny (an aac frame is 21 ms), pieces this long keep the
 // number of source nodes sane
 const PIECE_SECONDS = 0.5;
@@ -258,8 +342,26 @@ export async function* clipAudio(
   ctx: BaseAudioContext,
   range: { start: number; end: number },
   pieceSeconds = PIECE_SECONDS,
+  noiseReduction?: ClipNoiseReduction,
 ): AsyncGenerator<AudioPiece> {
   if (range.end <= range.start) return;
+  if (noiseReduction?.enabled) {
+    const fullRange = clipSourceRange(clip);
+    const requestStart = Math.max(fullRange.start, range.start);
+    const requestEnd = Math.min(fullRange.end, range.end);
+    if (requestEnd <= requestStart) return;
+    const firstIndex = Math.max(0, Math.floor((requestStart - fullRange.start) / DENOISE_CHUNK_SECONDS));
+    const lastIndex = Math.max(firstIndex, Math.ceil((requestEnd - fullRange.start) / DENOISE_CHUNK_SECONDS) - 1);
+    const indices = Array.from({ length: lastIndex - firstIndex + 1 }, (_, index) => firstIndex + index);
+    if (clip.reverse) indices.reverse();
+    for (const index of indices) {
+      const chunkStart = fullRange.start + index * DENOISE_CHUNK_SECONDS;
+      const chunkEnd = Math.min(fullRange.end, chunkStart + DENOISE_CHUNK_SECONDS);
+      const processed = await denoisedClipPiece(reader, clip, ctx, noiseReduction, chunkStart, chunkEnd);
+      if (processed) yield processed;
+    }
+    return;
+  }
   if (!clip.reverse) {
     let batch: AudioPiece[] = [];
     let batchSeconds = 0;

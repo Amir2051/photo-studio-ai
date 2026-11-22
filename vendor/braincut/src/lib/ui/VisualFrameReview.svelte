@@ -1,13 +1,52 @@
-<script lang="ts">
+<script lang="ts" module>
   import { get } from 'svelte/store';
-  import Icon from './Icon.svelte';
-  import { activeSequence, project } from '#lib/project/store.ts';
+  import { project } from '#lib/project/store.ts';
   import { getBlob } from '#lib/media/sources.ts';
   import { filmstripFrames } from '#lib/media/thumbnails.ts';
-  import type { MediaItem } from '#lib/project/types.ts';
+  import { createContactSheetService } from '#lib/media/contact-sheet.ts';
+
+  function abortError(): Error {
+    const error = new Error('Frame sampling cancelled');
+    error.name = 'AbortError';
+    return error;
+  }
+
+  // One service for the component module: repeated samples with the same
+  // media/times/width reuse the cached sheet instead of decoding again.
+  // thumbnails.ts owns the bitmaps, so the adapter only paints data URLs and
+  // never closes them. filmstripFrames has no signal, so poll between steps.
+  const sheetService = createContactSheetService({
+    extract: async (mediaId, times, width, signal) => {
+      const current = get(project);
+      const media = current?.media.find((item) => item.id === mediaId);
+      if (!media) throw new Error('The media for this clip is no longer in the project.');
+      if (signal.aborted) throw abortError();
+      const blob = await getBlob(media.id);
+      if (signal.aborted) throw abortError();
+      if (!blob) throw new Error('Could not read "' + media.name + '". Relink the original media and try again.');
+      const bitmaps = await filmstripFrames(media, blob, { times: [...times], width });
+      if (signal.aborted) throw abortError();
+      return bitmaps.map((bitmap) => {
+        if (!bitmap) return null;
+        const canvas = document.createElement('canvas');
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return null;
+        ctx.drawImage(bitmap, 0, 0);
+        return { dataUrl: canvas.toDataURL('image/jpeg', 0.78) };
+      });
+    },
+  });
+</script>
+
+<script lang="ts">
+  import { onDestroy } from 'svelte';
+  import Icon from './Icon.svelte';
+  import { activeSequence } from '#lib/project/store.ts';
   import { getStudioAuth } from './studioAuth';
 
-  const apiBase = (import.meta.env.VITE_MIA_API_BASE_URL || 'https://every-frame-first-mia.onrender.com/api/mia').replace(/\/$/, '');
+  const apiBase = (import.meta.env.PROD ? 'https://every-frame-first-mia.onrender.com/api/mia' : (import.meta.env.VITE_MIA_API_BASE_URL || 'http://localhost:10000/api/mia')).replace(/\/$/, '');
 
   let { onClose, onUseAnalysis }: { onClose: () => void; onUseAnalysis: (analysis: string) => void } = $props();
   type Candidate = { key: string; mediaId: string; mediaName: string; clipName: string; sequenceTime: number; sourceTime: number };
@@ -24,6 +63,11 @@
   let analyzing = $state(false);
   let analysis = $state('');
   let analysisError = $state('');
+  let sampleController: AbortController | null = null;
+
+  onDestroy(() => {
+    sampleController?.abort();
+  });
 
   function candidates(): Candidate[] {
     const current = get(project);
@@ -58,10 +102,13 @@
   }
 
   async function sample(): Promise<void> {
-    if (busy) return;
+    // a new sample supersedes the previous one, including its in-flight read
+    sampleController?.abort();
+    const controller = new AbortController();
+    sampleController = controller;
     busy = true;
     error = '';
-    frames = [];
+    progress = '';
     copied = false;
     showApproval = false;
     analysis = '';
@@ -78,24 +125,16 @@
       const extracted: ReviewFrame[] = [];
       let done = 0;
       for (const [mediaId, group] of grouped) {
-        const media = mediaById.get(mediaId) as MediaItem;
-        progress = 'Reading ' + media.name + ' locally…';
-        const blob = await getBlob(media.id);
-        if (!blob) throw new Error('Could not read "' + media.name + '". Relink the original media and try again.');
-        const bitmaps = await filmstripFrames(media, blob, {
-          times: group.map((item) => Math.min(media.duration, item.sourceTime)),
-          width: 480,
-        });
-        for (let i = 0; i < group.length; i++) {
-          const bitmap = bitmaps[i];
-          if (!bitmap) continue;
-          const canvas = document.createElement('canvas');
-          canvas.width = bitmap.width;
-          canvas.height = bitmap.height;
-          const ctx = canvas.getContext('2d');
-          if (!ctx) continue;
-          ctx.drawImage(bitmap, 0, 0);
-          extracted.push({ ...group[i], dataUrl: canvas.toDataURL('image/jpeg', 0.78), selected: true });
+        const media = mediaById.get(mediaId);
+        if (!media) continue;
+        progress = 'Sampling ' + media.name + ' locally…';
+        const times = group.map((item) => Math.min(media.duration, item.sourceTime));
+        const sheet = await sheetService.get(mediaId, times, { width: 480, signal: controller.signal });
+        if (controller.signal.aborted) return;
+        for (let i = 0; i < sheet.frames.length; i++) {
+          const frame = sheet.frames[i];
+          if (!frame.ok || !frame.dataUrl) continue;
+          extracted.push({ ...group[i], dataUrl: frame.dataUrl, selected: true });
           done++;
         }
       }
@@ -103,9 +142,11 @@
       if (!frames.length) throw new Error('No frames could be decoded from these clips in this browser.');
       progress = 'Extracted ' + done + ' frame' + (done === 1 ? '' : 's') + ' on this device.';
     } catch (cause) {
+      if (controller.signal.aborted) return;
       error = cause instanceof Error ? cause.message : 'Frame extraction failed.';
+      frames = [];
     } finally {
-      busy = false;
+      if (sampleController === controller) busy = false;
     }
   }
 
@@ -186,7 +227,7 @@
     <label>Maximum frames
       <select bind:value={maxFrames}><option value="6">6 frames</option><option value="12">12 frames</option><option value="20">20 frames</option><option value="30">30 frames</option></select>
     </label>
-    <button class="sample" disabled={busy} onclick={sample}><Icon name="scan-search" size={14} />{busy ? 'Sampling…' : 'Sample timeline'}</button>
+    <button class="sample" onclick={sample} title={busy ? 'Starts a new sample and cancels the current one' : undefined}><Icon name="scan-search" size={14} />{busy ? 'Sampling…' : 'Sample timeline'}</button>
   </div>
   {#if progress}<p class="progress">{progress}</p>{/if}
   {#if error}<p class="error">{error}</p>{/if}
@@ -203,7 +244,7 @@
     </div>
     <div class="next-step">
       <strong>Ready for visual review</strong>
-      <p>These frames are selected locally. A vision provider has not been connected, so there is no send action yet. Your approval will be required before any future provider receives image data.</p>
+      <p>These frames are selected locally. Qwen is configured for approved still-frame analysis, but live execution is currently disabled. Your approval will still be required before selected frames are shared.</p>
       <div class="analysis-actions">
         <button disabled={!frames.some((frame) => frame.selected) || frames.filter((frame) => frame.selected).length > 8 || !visionStatus?.available} onclick={() => showApproval = true}><Icon name="eye" size={13} />Analyze selected with MIA</button>
         <button class="copy" disabled={!frames.some((frame) => frame.selected)} onclick={copyReviewSummary}><Icon name="copy" size={13} />{copied ? 'Summary copied' : 'Copy timestamps'}</button>
@@ -212,7 +253,7 @@
         <p class="provider-note">Select no more than 8 frames for a single cloud analysis request.</p>
       {/if}
       {#if !visionStatus?.available}
-        <p class="provider-note">Cloud visual analysis is not configured on RZ Agent yet. No frames have been sent. The server needs OPENROUTER_VISION_MODEL plus the required Zero Data Retention and no-fallback settings.</p>
+        <p class="provider-note">Qwen 3.8 27B is configured through OpenRouter with Near AI ZDR routing. Live AI remains disabled until a separate bounded Qwen test is approved. No frames have been sent.</p>
       {/if}
       {#if showApproval}
         <div class="approval">

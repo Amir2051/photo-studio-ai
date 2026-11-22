@@ -1,0 +1,161 @@
+/* Minu Studio — workflow step bar (Import → Cull → Edit → Batch → Deliver)
+ *
+ * Unified design language (Phase 1): the `--studio-*` tokens defined in
+ * pro-editor.css alias the graphite/champagne `--pro-*` ramp (bg, surface,
+ * raised, input, line, text-hi/mid/lo, accent*, ok/warn/err, radius,
+ * control-h, gap, --studio-font-ui / --studio-font-mono). New shared panel
+ * and UI classes (.studio-panel, .studio-eyebrow, .studio-splitter, .ai-dock,
+ * .studio-nav-button, …) consume those tokens. Existing rules are preserved.
+ */
+.workflow-steps {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 1.25rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: #141612;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.workflow-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.32rem 0.8rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  background: transparent;
+  color: #e8e6df;
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    color 0.15s ease;
+}
+.workflow-step:hover:not(:disabled) {
+  border-color: #d4a94e;
+  color: #f4d98a;
+  background: rgba(212, 169, 78, 0.08);
+}
+.workflow-step:focus-visible {
+  outline: 2px solid #d4a94e;
+  outline-offset: 2px;
+}
+.workflow-step-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  font-size: 0.68rem;
+}
+.workflow-step-divider {
+  color: rgba(255, 255, 255, 0.28);
+  font-size: 0.85rem;
+}
+.workflow-step-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.workflow-step-badge {
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  background: rgba(212, 169, 78, 0.18);
+  color: #d4a94e;
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+}
+@media (max-width: 720px) {
+  .workflow-steps {
+    padding: 0.4rem 0.75rem;
+    gap: 0.35rem;
+  }
+  .workflow-step {
+    font-size: 0.7rem;
+    padding: 0.28rem 0.6rem;
+  }
+}
+
+.workflow-step { text-decoration: none; }
+
+.batch-photo-card { position: relative; }
+.batch-photo-error { outline: 2px solid #8a4444; }
+.batch-error-note { position: absolute; top: 0.3rem; left: 0.3rem; background: #6e3636; color: #ffd9d9; font-size: 0.62rem; padding: 0.1rem 0.35rem; border-radius: 3px; }
+.batch-done-note { position: absolute; top: 0.3rem; left: 0.3rem; background: #2f5a3a; color: #c9f5d4; font-size: 0.62rem; padding: 0.1rem 0.35rem; border-radius: 3px; }
+
+.gallery-panel-controls { display: flex; gap: 0.75rem; align-items: center; margin: 0.5rem 0; font-size: 0.85rem; color: #cfd6e0; }
+.gallery-photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 0.5rem; max-height: 260px; overflow-y: auto; }
+.gallery-photo-item { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.68rem; color: #cfd6e0; cursor: pointer; }
+.gallery-photo-item img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 6px; border: 1px solid #2c3a4e; }
+.gallery-photo-item input { accent-color: #d4a94e; }
+.gallery-share-result { margin-top: 0.5rem; }
+.gallery-share-row { display: flex; gap: 0.4rem; }
+.gallery-share-row input { flex: 1; background: #141a26; border: 1px solid #2c3a4e; color: inherit; border-radius: 6px; padding: 0.35rem 0.6rem; font-size: 0.8rem; }
+
+.privacy-footer-link { color: #d4a94e; text-decoration: none; font-size: inherit; }
+.privacy-footer-link:hover { text-decoration: underline; }
+
+/* Simplified two-panel dark studio */
+.tools-column .tool-panel { display: none; }
+.pro-shell[data-workspace="home"] .tool-panel[data-panel~="adjust"],
+.pro-shell[data-workspace="editor"] .tool-panel[data-panel~="adjust"],
+.pro-shell[data-workspace="retouch"] .tool-panel[data-panel~="retouch"],
+.pro-shell[data-workspace="effects"] .tool-panel[data-panel~="effects"],
+.pro-shell[data-workspace="assets"] .tool-panel[data-panel~="batch"],
+.pro-shell[data-workspace="export"] .tool-panel[data-panel~="deliver"],
+.pro-shell[data-advanced="true"] .tool-panel[data-panel~="advanced"] {
+  display: block;
+}
+/* Additive: expose the advanced photo tools (Masking, Layers) in the everyday
+   editor/home workspace without requiring the Advanced toggle. This selector
+   is appended after the whitelist above; its specificity (0,3,0) already beats
+   the `.tools-column .tool-panel { display:none }` gate (0,2,0), and it only
+   adds a `display:block` for advanced panels — no existing rule is deleted or
+   negated, and Batch/Deliver/Basic panels keep their workspace gating. */
+.pro-shell .tool-panel[data-panel~="advanced"] {
+  display: block;
+}
+.pro-shell[data-workspace="export"] .gallery-panel { display: block; }
+
+/* Advanced toggle */
+.advanced-mode-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  margin-bottom: 10px;
+}
+.advanced-mode-label { font-size: 0.78rem; color: #cfd6e0; letter-spacing: 0.03em; }
+.advanced-mode-hint { font-size: 0.68rem; color: #8a96a8; margin-left: auto; text-align: right; }
+.advanced-toggle {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: #232a36;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.advanced-toggle.on { background: #d4a94e; border-color: #d4a94e; }
+.advanced-toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #cfd6e0;
+  transition: transform 0.15s ease;
+}
+.advanced-toggle.on .advanced-toggle-thumb { transform: translateX(16px); background: #241c08; }

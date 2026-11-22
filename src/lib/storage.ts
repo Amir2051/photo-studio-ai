@@ -14,7 +14,7 @@ import {
 } from './types';
 
 const DB_NAME = 'secureforge-lab-db';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const STORE_PHOTOS = 'photos';
 const STORE_FILTER_LIBRARY = 'filter_library';
 const STORE_USER_PREFERENCES = 'user_preferences';
@@ -22,6 +22,7 @@ const STORE_AI_MESSAGES = 'ai_messages';
 const STORE_SCENE_PROMPTS = 'scene_prompts';
 const STORE_BATCH_EDITS = 'batch_edits';
 const STORE_STYLE_RECIPES = 'style_recipes';
+const STORE_CULL_SESSIONS = 'cull_sessions';
 
 interface IDBRequests {
   request: IDBRequest<unknown>;
@@ -53,6 +54,9 @@ function openDB(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains(STORE_STYLE_RECIPES)) {
         db.createObjectStore(STORE_STYLE_RECIPES, { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains(STORE_CULL_SESSIONS)) {
+        db.createObjectStore(STORE_CULL_SESSIONS, { keyPath: 'id' });
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -170,7 +174,7 @@ export async function saveUserPreferences(
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_USER_PREFERENCES, 'readwrite');
     const store = tx.objectStore(STORE_USER_PREFERENCES);
-    const req = store.put(merged);
+    const req = store.put(merged, 'app');
     req.onsuccess = () => resolve(merged);
     req.onerror = () => reject(req.error);
   });
@@ -307,13 +311,73 @@ export async function deleteStyleRecipe(id: string): Promise<void> {
 }
 
 // ── Export ────────────────────────────────────────────────────────────
+// --- Cull sessions ----------------------------------------------------------
+export interface CullSession {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+  items: import('./cull').CullItem[];
+}
+
+export async function saveCullSession(session: CullSession): Promise<CullSession> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_CULL_SESSIONS, 'readwrite');
+    const request = tx.objectStore(STORE_CULL_SESSIONS).put(session);
+    request.onsuccess = () => resolve(session);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+export async function getCullSessions(): Promise<CullSession[]> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const request = db
+      .transaction(STORE_CULL_SESSIONS, 'readonly')
+      .objectStore(STORE_CULL_SESSIONS)
+      .getAll();
+    request.onsuccess = () =>
+      resolve(
+        (request.result as CullSession[]).sort((a, b) =>
+          b.updatedAt.localeCompare(a.updatedAt),
+        ),
+      );
+    request.onerror = () => reject(request.error);
+  });
+}
+
+export async function getCullSession(id: string): Promise<CullSession | null> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const request = db
+      .transaction(STORE_CULL_SESSIONS, 'readonly')
+      .objectStore(STORE_CULL_SESSIONS)
+      .get(id);
+    request.onsuccess = () => resolve((request.result as CullSession) ?? null);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+export async function deleteCullSession(id: string): Promise<void> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const request = db
+      .transaction(STORE_CULL_SESSIONS, 'readwrite')
+      .objectStore(STORE_CULL_SESSIONS)
+      .delete(id);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+}
+
 export async function exportPhotosToZip(photoIds: string[]): Promise<Blob> {
   const photos = await getAllPhotos();
   const selected = photos.filter((photo) => photoIds.includes(photo.id));
   if (!selected.length) throw new Error('No saved photos matched the requested export.');
   const { default: JSZip } = await import('jszip');
   const zip = new JSZip();
-  const folder = zip.folder('every-frame-first-photos');
+  const folder = zip.folder('minu-studio-photos');
   if (!folder) throw new Error('Could not create the photo export archive.');
   for (const photo of selected) {
     const source = photo.dataUrlHigh || photo.dataUrl;

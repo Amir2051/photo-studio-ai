@@ -1,4 +1,4 @@
-import type { Bin, Clip, EffectInstance, Keyframe, Label, Marker, MediaItem, ParamValue, Project, Sequence, TitleData, Track, Transition } from './types';
+import type { Bin, Clip, ClipNoiseReduction, EffectInstance, Keyframe, Label, Marker, MediaItem, ParamValue, Project, Sequence, TitleData, Track, Transition } from './types';
 import { defaultTitle, fixedEffects } from './defaults';
 import { id } from './ids';
 
@@ -153,6 +153,48 @@ function title(raw: unknown): TitleData {
   return t;
 }
 
+
+function noiseReduction(raw: unknown, path: string): ClipNoiseReduction | null {
+  if (raw === undefined || raw === null) return null;
+  if (!isRecord(raw) || !isRecord(raw.profile)) throw new ShapeError(path, 'a valid spectral noise profile');
+  const profile = raw.profile;
+  const magnitudes = profile.magnitudes;
+  if (profile.version !== 1 || !Array.isArray(magnitudes) || magnitudes.length !== 513 ||
+      !magnitudes.every((value) => typeof value === 'number' && Number.isFinite(value) && value >= 0)) {
+    throw new ShapeError(path + '.profile', 'a version 1 finite 513-bin noise profile');
+  }
+  const sampleRate = profile.sampleRate;
+  const fftSize = profile.fftSize;
+  const hopSize = profile.hopSize;
+  const capturedFrames = profile.capturedFrames;
+  const capturedAt = profile.capturedAt;
+  const sourceStart = profile.sourceStart;
+  const sourceEnd = profile.sourceEnd;
+  const strength = raw.strength;
+  const floor = raw.floor;
+  const threshold = raw.threshold;
+  const frequencySmoothing = raw.frequencySmoothing;
+  const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
+  if (!finite(sampleRate) || sampleRate < 8000 || sampleRate > 384000 ||
+      fftSize !== 1024 || hopSize !== 256 || !finite(capturedFrames) || capturedFrames < 1 ||
+      !finite(capturedAt) || !finite(sourceStart) || sourceStart < 0 ||
+      !finite(sourceEnd) || sourceEnd <= sourceStart ||
+      !finite(strength) || strength < 0 || strength > 2 ||
+      !finite(floor) || floor < 0.03 || floor > 0.5 ||
+      !finite(threshold) || threshold < 0.5 || threshold > 3 ||
+      !finite(frequencySmoothing) || !Number.isInteger(frequencySmoothing) || frequencySmoothing < 0 || frequencySmoothing > 4) {
+    throw new ShapeError(path, 'valid spectral noise settings');
+  }
+  return {
+    enabled: bool(raw, 'enabled', true),
+    profile: {
+      version: 1, sampleRate, fftSize, hopSize, magnitudes: magnitudes as number[],
+      capturedFrames, capturedAt, sourceStart, sourceEnd,
+    },
+    strength, floor, threshold, frequencySmoothing,
+  };
+}
+
 const clipKinds = ['video', 'audio', 'image', 'title', 'color', 'adjustment'] as const;
 
 function clip(raw: unknown, path: string): Clip {
@@ -174,6 +216,8 @@ function clip(raw: unknown, path: string): Clip {
     label: label(raw),
     effects: list(raw, 'effects', path, false).map((e, i) => effect(e, `${path}.effects[${i}]`))
   };
+  const denoise = noiseReduction(raw.noiseReduction, path + '.noiseReduction');
+  if (denoise) c.noiseReduction = denoise;
   // a file from a build that stored fewer fixed effects still gets them all
   const missing = fixedEffects(c.kind).filter((fixed) => !c.effects.some((e) => e.type === fixed.type && e.fixed));
   c.effects.unshift(...missing);
