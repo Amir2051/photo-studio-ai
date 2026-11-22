@@ -261,7 +261,7 @@ if (process.argv[1] && new URL(import.meta.url).pathname === process.argv[1]) {
     port: Number(process.env.PORT || 10000),
     authJwksUrl: MINU_STUDIO_SUPABASE_URL + '/auth/v1/.well-known/jwks.json',
     authIssuer: MINU_STUDIO_SUPABASE_URL + '/auth/v1',
-    authAudience: process.env.AUTH_AUDIENCE,
+    authAudience: 'authenticated',
     openRouterApiKey: process.env.OPENROUTER_API_KEY,
     allowedOrigins: (process.env.STUDIO_ALLOWED_ORIGINS || DEFAULT_ALLOWED_ORIGINS.join(',')).split(',').map((item) => item.trim()).filter(Boolean),
     maxRequestsPerMinute: Number(process.env.MIA_RATE_LIMIT_PER_MINUTE || DEFAULT_RATE_LIMIT),

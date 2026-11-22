@@ -23,12 +23,13 @@ function renderCenter() {
 }
 
 describe('M2B-3 MIA interface', () => {
-  it('renders all three MIA identities from the registry', () => {
+  it('renders all four registered MIA identities, including the Qwen primary', () => {
     renderCenter();
     const cards = screen.getAllByTestId('mia-model');
-    expect(cards).toHaveLength(3);
+    expect(cards).toHaveLength(4);
     const text = cards.map((card) => card.textContent).join(' ');
     expect(text).toContain('MIA Assistant');
+    expect(text).toContain('MIA Qwen Assistant');
     expect(text).toContain('MIA Video Intelligence');
     expect(text).toContain('MIA Advanced Analysis');
   });

@@ -83,7 +83,7 @@ describe('M2B-2 routing', () => {
     for (const task of ['video_understanding', 'scene_analysis', 'audio_dialogue', 'caption_transcription', 'complex_reasoning']) {
       const routed = routeTask({ task });
       expect(routed.ok).toBe(false);
-      expect(routed.error.code).toBe('no_eligible_model');
+      expect(routed.error.code).toBe(task === 'scene_analysis' ? 'unsupported_modality' : 'no_eligible_model');
       expect(routed.rejected.length).toBeGreaterThan(0);
     }
     const video = routeTask({ task: 'video_understanding', miaIdentity: MIA_IDENTITIES.video });
