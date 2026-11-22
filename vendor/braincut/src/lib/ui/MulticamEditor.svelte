@@ -342,6 +342,43 @@
     } catch { status = 'Could not list capture devices. Check browser permissions and try again.'; }
   }
 
+  async function enableDefaultCamera() {
+    if (isRecording || recordingBusy) return;
+    if (!navigator.mediaDevices?.getUserMedia) {
+      status = 'Camera access is unavailable. Open the studio over HTTPS in a supported browser.';
+      return;
+    }
+    try {
+      status = 'Requesting camera permission…';
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30, max: 60 } },
+        audio: false
+      });
+      const index = activeAngle;
+      liveStreams[index]?.getTracks().forEach((track) => track.stop());
+      liveStreams = liveStreams.map((current, slot) => slot === index ? stream : current);
+      const deviceId = stream.getVideoTracks()[0]?.getSettings().deviceId ?? '';
+      cameraDeviceIds = cameraDeviceIds.map((id, slot) => slot === index ? deviceId : id);
+      await tick();
+      const video = liveVideoEls[index];
+      if (video) {
+        video.srcObject = stream;
+        try { await video.play(); }
+        catch { status = 'Camera permission granted, but the preview could not start. Check browser autoplay and camera permissions.'; return; }
+      }
+      await refreshCaptureDevices();
+      status = `${angleSlots[index].label} live preview is on. Camera permission granted.`;
+    } catch (error) {
+      status = error instanceof DOMException && error.name === 'NotAllowedError'
+        ? 'Camera permission was blocked. Allow camera access for this site in your browser, then try again.'
+        : error instanceof DOMException && error.name === 'NotFoundError'
+          ? 'No camera was found. Connect a webcam and try again.'
+          : error instanceof DOMException && error.name === 'NotReadableError'
+            ? 'The camera is busy or unavailable. Close other apps using it and try again.'
+            : error instanceof Error ? error.message : 'Could not start the camera preview.';
+    }
+  }
+
   async function connectLiveCamera(index: number, deviceId: string) {
     if (isRecording || recordingBusy) return;
     if (!navigator.mediaDevices?.getUserMedia) {
@@ -984,6 +1021,11 @@
       <button class:chosen={layoutMode === 'horizontal'} type="button" onclick={() => applyLayout('horizontal')}>4 across</button>
       <button class:chosen={layoutMode === 'vertical'} type="button" onclick={() => applyLayout('vertical')}>Stack</button>
     </div>
+    {#if !liveStreams[activeAngle]}
+      <button type="button" class="capture-connect" onclick={() => void enableDefaultCamera()} disabled={isRecording || recordingBusy}>Enable camera preview</button>
+    {:else}
+      <button type="button" class="capture-disconnect" onclick={() => void disconnectLiveCamera(activeAngle)} disabled={isRecording || recordingBusy}>Stop preview</button>
+    {/if}
     <span class="toolbar-spacer"></span>
     <button type="button" class="take-main" onclick={() => cutToAngle(activeAngle)} disabled={!angleSlots[activeAngle].media}>TAKE · {angleSlots[activeAngle].label}</button>
   </div>

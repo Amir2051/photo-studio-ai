@@ -4,6 +4,65 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 const LibraryToolsPanel = React.lazy(() => import('../components/LibraryToolsPanel'));
 const VideoStudioFrame = React.lazy(() => import('../components/VideoStudioFrame'));
 const CloudSyncPanel = React.lazy(() => import('../components/CloudSyncPanel'));
+const MiaControlCenter = React.lazy(() => import('../components/MiaControlCenter'));
+const ClientGalleryPanel = React.lazy(() => import('../components/ClientGalleryPanel'));
+import AIDock from '../components/AIDock';
+import StudioSplitter, {
+  readStudioLayout,
+  writeStudioLayout,
+} from '../components/StudioSplitter';
+import FilterThumbnail from '../components/FilterThumbnail';
+import ImageLibrary from '../editor/ImageLibrary';
+import EditorToolbar from '../editor/EditorToolbar';
+import LayersPanel from '../editor/LayersPanel';
+import HistoryPanel from '../editor/HistoryPanel';
+import BatchWorkspace from '../editor/BatchWorkspace';
+import EffectsPanel from '../editor/EffectsPanel';
+import AdjustmentPanel from '../editor/AdjustmentPanel';
+import MaskingPanel from '../editor/MaskingPanel';
+import BackgroundPanel from '../editor/BackgroundPanel';
+import RetouchPanel from '../editor/RetouchPanel';
+import StyleAssistantPanel from '../editor/StyleAssistantPanel';
+import DeliveryWorkspace from '../editor/DeliveryWorkspace';
+import {
+  Upload,
+  Save,
+  Download,
+  Undo2,
+  Redo2,
+  RotateCcw,
+  RotateCw,
+  Columns2,
+  Maximize2,
+  ZoomIn,
+  ZoomOut,
+  Image as ImageIcon,
+  Brush,
+  Wand2,
+  Type,
+  Crop,
+  MousePointer2,
+  Bandage,
+  Check,
+  Plus,
+  ChevronUp,
+  ChevronDown,
+  ChevronRight,
+  SlidersHorizontal,
+  Folder,
+  ArrowUpRight,
+  Eye,
+  EyeOff,
+  Star,
+  FlipHorizontal2,
+  FlipVertical2,
+  Sun,
+  Moon,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
+} from 'lucide-react';
 import {
   savePhoto,
   getAllPhotos,
@@ -39,9 +98,23 @@ import {
 import {
   applyPortraitRetouch,
   detectFaceLandmarks,
+  suppressSpecularGlare,
   type BrushStroke,
   type NormalizedPoint,
 } from '../lib/portraitRetouch';
+import { detectBlemishes } from '../lib/blemishDetect';
+import {
+  adjustmentFilter,
+  loadImage,
+  readAsDataUrl,
+  safeExportName,
+} from '../lib/domImage';
+import {
+  applyBackgroundOps,
+  computePersonMask,
+  DEFAULT_BACKGROUND_OPS,
+  type BackgroundOps,
+} from '../lib/segmentation';
 import { applyFaceMakeup, DEFAULT_FACE_MAKEUP, type FaceMakeupSettings } from '../lib/faceMakeup';
 import {
   applyFaceAccessories,
@@ -160,6 +233,10 @@ const PRESETS: Preset[] = [
 ];
 const MAX_FILE_BYTES = 40 * 1024 * 1024;
 const MAX_PIXELS = 24_000_000;
+const PICK_TAG = 'pro-pick';
+const REJECT_TAG = 'pro-reject';
+const ALBUM_TAG_PREFIX = 'pro-album:';
+const RATING_TAG_PREFIX = 'pro-rating:';
 const MAX_BATCH_PHOTOS = 20;
 const MAX_BATCH_TOTAL_PIXELS = 80_000_000;
 type BatchPhotoItem = {
@@ -168,31 +245,32 @@ type BatchPhotoItem = {
   image: HTMLImageElement;
   originalPreview: string;
   previewUrl?: string;
+  status?: 'ready' | 'done' | 'error';
+  error?: string;
 };
 
-function adjustmentFilter(a: Adjustments): string {
-  return `brightness(${a.brightness}%) contrast(${a.contrast}%) saturate(${a.saturation}%)`;
-}
-function readAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () =>
-      typeof reader.result === 'string'
-        ? resolve(reader.result)
-        : reject(new Error('Could not read this image.'));
-    reader.onerror = () => reject(new Error('Could not read this image.'));
-    reader.readAsDataURL(file);
-  });
-}
-function loadImage(src: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const image = new Image();
-    image.onload = () => resolve(image);
-    image.onerror = () =>
-      reject(new Error('This image format could not be decoded by your browser.'));
-    image.src = src;
-  });
-}
+/** Tools exposed by the contextual inspector for each workspace.
+ *  Every target is an existing panel id — no placeholder controls. */
+type InspectorTool = { label: string; section: string; target: string };
+const INSPECTOR_TOOLS: Record<string, InspectorTool[]> = {
+  editor: [
+    { label: 'Adjustments', section: 'editor', target: 'color-workspace' },
+    { label: 'Masking', section: 'editor', target: 'masking-workspace' },
+    { label: 'Layers', section: 'editor', target: 'layers-workspace' },
+    { label: 'History', section: 'editor', target: 'history-workspace' },
+  ],
+  retouch: [
+    { label: 'Portrait', section: 'retouch', target: 'retouch-workspace' },
+    { label: 'Background', section: 'retouch', target: 'background-workspace' },
+  ],
+  effects: [{ label: 'Looks', section: 'effects', target: 'effects-workspace' }],
+  assets: [{ label: 'Batch', section: 'assets', target: 'assets-workspace' }],
+  export: [
+    { label: 'Export', section: 'export', target: 'export-workspace' },
+    { label: 'Gallery', section: 'export', target: 'deliver-workspace' },
+  ],
+  mia: [{ label: 'AI Dock', section: 'mia', target: 'mia-workspace' }],
+};
 
 async function renderStyleBlob(
   image: HTMLImageElement,
@@ -239,15 +317,6 @@ async function renderStyleBlob(
   });
 }
 
-function safeExportName(name: string, fallback: string): string {
-  return (
-    name
-      .replace(/[\\/:*?"<>|]+/g, '-')
-      .replace(/\.[^.]+$/, '')
-      .trim() || fallback
-  ).slice(0, 100);
-}
-
 function renderStudioDocument(
   image: HTMLImageElement,
   width: number,
@@ -265,6 +334,8 @@ function renderStudioDocument(
   faceAccessorySettings: FaceAccessorySettings,
   documentTransform: DocumentTransform = DEFAULT_DOCUMENT_TRANSFORM,
   selection: SelectionState | null = null,
+  background: { mask: HTMLCanvasElement | null; ops: BackgroundOps } | null = null,
+  retouchOptions: { faceStrengths?: Array<number | null>; glare?: number } = {},
 ): HTMLCanvasElement {
   const output = document.createElement('canvas');
   output.width = width;
@@ -310,7 +381,11 @@ function renderStudioDocument(
             strength: retouchStrength,
             faces: faceLandmarks,
             strokes: retouchStrokes,
+            faceStrengths: retouchOptions.faceStrengths,
           });
+          if ((retouchOptions.glare ?? 0) > 0 && faceLandmarks.length) {
+            suppressSpecularGlare(base, faceLandmarks, retouchOptions.glare);
+          }
           applyFaceMakeup(base, faceLandmarks, faceMakeup);
           applyFaceAccessories(base, faceLandmarks, faceAccessory, faceAccessorySettings);
           layerContext.drawImage(base, 0, 0);
@@ -358,6 +433,9 @@ function renderStudioDocument(
     }
   };
   drawStack(ctx, null);
+  if (background?.mask && background.ops.mode !== 'none') {
+    applyBackgroundOps(output, output, background.mask, background.ops);
+  }
   const crop = documentTransform.crop;
   const sx = Math.max(0, Math.min(width - 1, Math.round(crop.x * width)));
   const sy = Math.max(0, Math.min(height - 1, Math.round(crop.y * height)));
@@ -374,62 +452,6 @@ function renderStudioDocument(
   transformContext.scale(documentTransform.flipX ? -1 : 1, documentTransform.flipY ? -1 : 1);
   transformContext.drawImage(output, sx, sy, sw, sh, -sw / 2, -sh / 2, sw, sh);
   return transformed;
-}
-
-type FilterThumbnailProps = { sourceUrl: string | null; recipe: FilterRecipe };
-
-/** Renders each catalogue look against the current photo using the real export pipeline. */
-function FilterThumbnail({ sourceUrl, recipe }: FilterThumbnailProps): React.JSX.Element {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [ready, setReady] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    setReady(false);
-    const canvas = canvasRef.current;
-    if (!canvas || !sourceUrl) return;
-
-    const image = new Image();
-    image.onload = () => {
-      if (cancelled) return;
-      const context = canvas.getContext('2d', { willReadFrequently: true });
-      if (!context) return;
-      const width = 112;
-      const height = 84;
-      canvas.width = width;
-      canvas.height = height;
-      const scale = Math.max(width / image.naturalWidth, height / image.naturalHeight);
-      const drawWidth = image.naturalWidth * scale;
-      const drawHeight = image.naturalHeight * scale;
-      context.clearRect(0, 0, width, height);
-      context.drawImage(
-        image,
-        (width - drawWidth) / 2,
-        (height - drawHeight) / 2,
-        drawWidth,
-        drawHeight,
-      );
-      const settings = mapFilterRecipeToManualSettings(recipe, 100, DEFAULT_MANUAL_ADJUSTMENTS);
-      applyManualAdjustments(canvas, settings);
-      if (!cancelled) setReady(true);
-    };
-    image.onerror = () => {
-      if (!cancelled) setReady(false);
-    };
-    image.src = sourceUrl;
-    return () => {
-      cancelled = true;
-      image.onload = null;
-      image.onerror = null;
-    };
-  }, [sourceUrl, recipe]);
-
-  return (
-    <span className={`filter-thumb-wrap${ready ? ' ready' : ''}`} aria-hidden="true">
-      <canvas ref={canvasRef} className="filter-thumb" />
-      {!ready && <span className="filter-thumb-placeholder">Preview</span>}
-    </span>
-  );
 }
 
 export default function Home(): React.JSX.Element {
@@ -477,6 +499,7 @@ export default function Home(): React.JSX.Element {
   const [localRadius, setLocalRadius] = useState(35);
   const [selectedHslChannel, setSelectedHslChannel] = useState<HslChannel>('red');
   const [selectedCurveChannel, setSelectedCurveChannel] = useState<CurveChannel>('master');
+  const [advancedMode, setAdvancedMode] = useState(false);
   const [activeWorkspace, setActiveWorkspace] = useState<'professional' | 'portrait'>(
     'professional',
   );
@@ -512,10 +535,16 @@ export default function Home(): React.JSX.Element {
   );
   const [prompt, setPrompt] = useState('');
   const [styleInterpretation, setStyleInterpretation] = useState<StyleInterpretation | null>(null);
-  const [showSaved, setShowSaved] = useState(false);
-  const [activeSection, setActiveSection] = useState('creator');
+  const [activeSection, setActiveSection] = useState('editor');
+  const [selectedPhotoId, setSelectedPhotoId] = useState<string | null>(null);
+  const [zoom, setZoom] = useState(1);
   const [retouchMode, setRetouchMode] = useState<'off' | 'brush'>('off');
   const [retouchStrength, setRetouchStrength] = useState(55);
+  const [backgroundOps, setBackgroundOps] = useState<BackgroundOps>(DEFAULT_BACKGROUND_OPS);
+  const [personMask, setPersonMask] = useState<HTMLCanvasElement | null>(null);
+  const [backgroundBusy, setBackgroundBusy] = useState(false);
+  const [faceStrengths, setFaceStrengths] = useState<Array<number | null>>([]);
+  const [glareSoftness, setGlareSoftness] = useState(0);
   const [brushSize, setBrushSize] = useState(28);
   const [faceLandmarks, setFaceLandmarks] = useState<NormalizedPoint[][]>([]);
   const [retouchStrokes, setRetouchStrokes] = useState<BrushStroke[]>([]);
@@ -547,22 +576,106 @@ export default function Home(): React.JSX.Element {
   const [selectedStyleRecipeId, setSelectedStyleRecipeId] = useState('');
   const [batchItems, setBatchItems] = useState<BatchPhotoItem[]>([]);
   const [batchBusy, setBatchBusy] = useState(false);
+  const [batchProgress, setBatchProgress] = useState<{ current: number; total: number } | null>(
+    null,
+  );
+  const [adHocBatchRecipe, setAdHocBatchRecipe] = useState<StyleRecipe | null>(null);
+  const batchCancelRef = useRef(false);
   const [batchFormat, setBatchFormat] = useState<'image/jpeg' | 'image/png' | 'image/webp'>(
     'image/jpeg',
   );
 
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const shellRef = useRef<HTMLDivElement | null>(null);
+  const [libraryCollapsed, setLibraryCollapsed] = useState(false);
+  const [toolsCollapsed, setToolsCollapsed] = useState(false);
+
   const navigateStudio = (section: string, target: string) => {
     setActiveSection(section);
-    setShowSaved(false);
     if (section === 'retouch') setActiveWorkspace('portrait');
     if (['color', 'effects', 'compositing', 'assets'].includes(section))
       setActiveWorkspace('professional');
-    if (section === 'library') setShowSaved(true);
     window.setTimeout(
       () => document.getElementById(target)?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
       40,
     );
   };
+
+  // Restore saved column widths / collapsed state from `studio-layout`.
+  useEffect(() => {
+    const shell = shellRef.current;
+    if (!shell) return;
+    const layout = readStudioLayout();
+    shell.style.setProperty('--pro-left', `${layout.left}px`);
+    shell.style.setProperty('--pro-right', `${layout.right}px`);
+    setLibraryCollapsed(layout.collapsedLibrary);
+    setToolsCollapsed(layout.collapsedTools);
+  }, []);
+
+  const toggleLibraryColumn = () => {
+    const next = !libraryCollapsed;
+    setLibraryCollapsed(next);
+    writeStudioLayout({ ...readStudioLayout(), collapsedLibrary: next });
+  };
+
+  const toggleToolsColumn = () => {
+    const next = !toolsCollapsed;
+    setToolsCollapsed(next);
+    writeStudioLayout({ ...readStudioLayout(), collapsedTools: next });
+  };
+
+  const persistPhotoTags = useCallback(async (photo: Photo, tags: string[]) => {
+    const updated: Photo = { ...photo, tags, updatedAt: new Date().toISOString() };
+    try {
+      await savePhoto(updated);
+      setSavedPhotos((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+    } catch (error) {
+      console.error('Could not update library photo', error);
+      setMessage('Could not save that library change. Try again.');
+    }
+  }, []);
+
+  const togglePhotoTags = useCallback(
+    (photo: Photo, additions: string[]) => {
+      const tags = new Set(photo.tags);
+      for (const tag of additions) {
+        if (tags.has(tag)) {
+          tags.delete(tag);
+          continue;
+        }
+        tags.add(tag);
+        if (tag === PICK_TAG) tags.delete(REJECT_TAG);
+        if (tag === REJECT_TAG) tags.delete(PICK_TAG);
+      }
+      void persistPhotoTags(photo, [...tags]);
+    },
+    [persistPhotoTags],
+  );
+
+  const setPhotoRating = useCallback(
+    (photo: Photo, rating: number) => {
+      const tags = photo.tags.filter((tag) => !tag.startsWith(RATING_TAG_PREFIX));
+      if (rating >= 1 && rating <= 5) tags.push(`${RATING_TAG_PREFIX}${rating}`);
+      void persistPhotoTags(photo, tags);
+    },
+    [persistPhotoTags],
+  );
+
+  const createAlbumAndAssign = useCallback(
+    (name: string) => {
+      const albumTag = `${ALBUM_TAG_PREFIX}${name}`;
+      const target = savedPhotos.find((photo) => photo.id === selectedPhotoId);
+      if (!target) {
+        setMessage(`Album "${name}" ready — open a saved photo to assign it.`);
+        return;
+      }
+      if (!target.tags.includes(albumTag)) {
+        void persistPhotoTags(target, [...target.tags, albumTag]);
+      }
+      setMessage(`“${target.name}” added to album “${name}”.`);
+    },
+    [persistPhotoTags, savedPhotos, selectedPhotoId],
+  );
 
   const render = useCallback(
     (next: Adjustments, showOriginal = false) => {
@@ -598,6 +711,8 @@ export default function Home(): React.JSX.Element {
         faceAccessorySettings,
         documentTransform,
         selection,
+        { mask: personMask, ops: backgroundOps },
+        { faceStrengths, glare: glareSoftness },
       );
       canvas.width = rendered.width;
       canvas.height = rendered.height;
@@ -643,6 +758,10 @@ export default function Home(): React.JSX.Element {
       healStrokes,
       documentTransform,
       selection,
+      personMask,
+      backgroundOps,
+      faceStrengths,
+      glareSoftness,
     ],
   );
 
@@ -650,7 +769,7 @@ export default function Home(): React.JSX.Element {
     // Coalesce rapid slider/state changes into one canvas render per animation frame.
     const frame = window.requestAnimationFrame(() => render(adjustments, compare));
     return () => window.cancelAnimationFrame(frame);
-  }, [adjustments, compare, render, sourceUrl, showSaved]);
+  }, [adjustments, compare, render, sourceUrl]);
   useEffect(() => {
     const canvas = maskThumbnailRef.current;
     const activeLayer = layers.find((layer) => layer.id === selectedLayerId);
@@ -1132,6 +1251,12 @@ export default function Home(): React.JSX.Element {
       }
       if (sourceUrl?.startsWith('blob:')) URL.revokeObjectURL(sourceUrl);
       imageRef.current = image;
+      setSelectedPhotoId(null);
+      setZoom(1);
+      setPersonMask(null);
+      setBackgroundOps(DEFAULT_BACKGROUND_OPS);
+      setFaceStrengths([]);
+      setGlareSoftness(0);
       setSourceUrl(url);
       setSourceName(file.name);
       setSourceMime(file.type);
@@ -1312,6 +1437,8 @@ export default function Home(): React.JSX.Element {
         faceAccessorySettings,
         documentTransform,
         selection,
+        { mask: personMask, ops: backgroundOps },
+        { faceStrengths, glare: glareSoftness },
       );
       const blob = await new Promise<Blob>((resolve, reject) =>
         output.toBlob(
@@ -1323,9 +1450,9 @@ export default function Home(): React.JSX.Element {
       const downloadUrl = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = downloadUrl;
-      link.download = `${sourceName.replace(/\.[^.]+$/, '') || 'photo'}-edited.${exportFormat.split('/')[1]}`;
+      link.download = `${safeExportName(sourceName || 'photo', 'photo')}-edited.${exportFormat.split('/')[1]}`;
       link.click();
-      URL.revokeObjectURL(downloadUrl);
+      window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 5000);
       setMessage(
         `Exported ${output.width.toLocaleString()} × ${output.height.toLocaleString()} pixels.`,
       );
@@ -1359,6 +1486,8 @@ export default function Home(): React.JSX.Element {
         faceAccessorySettings,
         documentTransform,
         selection,
+        { mask: personMask, ops: backgroundOps },
+        { faceStrengths, glare: glareSoftness },
       );
       const dataUrl = preview.toDataURL('image/jpeg', 0.88);
       const originalDataUrl = await readAsDataUrl(
@@ -1442,6 +1571,10 @@ export default function Home(): React.JSX.Element {
         : savedOriginal;
       const image = await loadImage(original);
       imageRef.current = image;
+      setPersonMask(null);
+      setBackgroundOps(DEFAULT_BACKGROUND_OPS);
+      setFaceStrengths([]);
+      setGlareSoftness(0);
       setSourceUrl(original);
       setSourceName(photo.name);
       setSourceMime(
@@ -1587,7 +1720,8 @@ export default function Home(): React.JSX.Element {
       );
       setHistoryIndex(isDefault ? 0 : 1);
       setCompare(false);
-      setShowSaved(false);
+      setSelectedPhotoId(photo.id);
+      setZoom(1);
       setMessage('Restored the saved original and its local adjustment recipe.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Could not reopen this saved photo.');
@@ -1708,41 +1842,120 @@ export default function Home(): React.JSX.Element {
       return current.filter((item) => item.id !== id);
     });
 
+  const selectedBatchRecipe =
+    styleRecipes.find((item) => item.id === selectedStyleRecipeId) ?? adHocBatchRecipe;
+
+  const syncCurrentEditsToBatch = () => {
+    if (!hasImage) return;
+    const recipe: StyleRecipe = {
+      id: 'adhoc-current-edits',
+      name: 'Current edits (unsaved)',
+      createdAt: new Date().toISOString(),
+      adjustments: { ...adjustments },
+      filterIntensity,
+      selectedFilterId,
+      retouchStrength,
+      retouchEnabled: faceLandmarks.length > 0 || retouchStrokes.length > 0,
+      manualAdjustments: { ...manualAdjustments },
+      localMasks: localMasks.map((mask) => ({
+        ...mask,
+        points: mask.points.map((point) => ({ ...point })),
+      })),
+    };
+    setAdHocBatchRecipe(recipe);
+    clearBatchPreviews();
+    setMessage('Current edits are now the batch source. Preview or export the batch below.');
+  };
+
   const previewBatch = async () => {
-    const recipe = styleRecipes.find((item) => item.id === selectedStyleRecipeId);
+    const recipe = selectedBatchRecipe;
     if (!recipe || !batchItems.length) return;
+    batchCancelRef.current = false;
     setBatchBusy(true);
+    setBatchProgress({ current: 0, total: batchItems.length });
     try {
       const previews: BatchPhotoItem[] = [];
-      for (const item of batchItems) {
-        const blob = await renderStyleBlob(item.image, recipe, 'image/jpeg', 900);
-        const previewUrl = URL.createObjectURL(blob);
-        if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
-        previews.push({ ...item, previewUrl });
+      for (const [index, item] of batchItems.entries()) {
+        if (batchCancelRef.current) break;
+        try {
+          const blob = await renderStyleBlob(item.image, recipe, 'image/jpeg', 900);
+          const previewUrl = URL.createObjectURL(blob);
+          if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+          previews.push({ ...item, previewUrl, status: 'done', error: undefined });
+        } catch (error) {
+          // One unreadable photo must not fail the whole batch.
+          previews.push({
+            ...item,
+            status: 'error',
+            error: error instanceof Error ? error.message : 'Preview failed',
+          });
+        }
+        setBatchProgress({ current: index + 1, total: batchItems.length });
       }
-      setBatchItems(previews);
-      setMessage(`Preview ready: “${recipe.name}” applied to ${previews.length} photo(s).`);
+      setBatchItems((current) => {
+        const byId = new Map(previews.map((entry) => [entry.id, entry]));
+        return current.map((entry) => byId.get(entry.id) ?? entry);
+      });
+      const failed = previews.filter((entry) => entry.status === 'error').length;
+      const cancelled = batchCancelRef.current;
+      setMessage(
+        cancelled
+          ? `Batch preview cancelled after ${previews.length} photo(s).`
+          : failed
+            ? `Preview ready with ${failed} failed photo(s) — they are marked in the grid.`
+            : `Preview ready: ${recipe.name} applied to ${previews.length} photo(s).`,
+      );
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Could not preview this batch.');
     } finally {
       setBatchBusy(false);
+      setBatchProgress(null);
     }
   };
 
   const exportBatch = async () => {
-    const recipe = styleRecipes.find((item) => item.id === selectedStyleRecipeId);
+    const recipe = selectedBatchRecipe;
     if (!recipe || !batchItems.length) return;
+    batchCancelRef.current = false;
     setBatchBusy(true);
+    setBatchProgress({ current: 0, total: batchItems.length });
     try {
       const { default: JSZip } = await import('jszip');
       const zip = new JSZip();
       const folder = zip.folder(safeExportName(recipe.name, 'edited-batch'));
       if (!folder) throw new Error('Could not create the export archive.');
       const extension = batchFormat.split('/')[1].replace('jpeg', 'jpg');
+      const failures: string[] = [];
+      let exported = 0;
       for (const [index, item] of batchItems.entries()) {
-        const blob = await renderStyleBlob(item.image, recipe, batchFormat);
-        const name = safeExportName(item.file.name, `photo-${index + 1}`);
-        folder.file(`${String(index + 1).padStart(3, '0')}-${name}.${extension}`, blob);
+        if (batchCancelRef.current) break;
+        try {
+          const blob = await renderStyleBlob(item.image, recipe, batchFormat);
+          const name = safeExportName(item.file.name, `photo-${index + 1}`);
+          folder.file(`${String(index + 1).padStart(3, '0')}-${name}.${extension}`, blob);
+          exported += 1;
+          setBatchItems((current) =>
+            current.map((entry) => (entry.id === item.id ? { ...entry, status: 'done' } : entry)),
+          );
+        } catch (error) {
+          failures.push(item.file.name);
+          setBatchItems((current) =>
+            current.map((entry) =>
+              entry.id === item.id
+                ? {
+                    ...entry,
+                    status: 'error',
+                    error: error instanceof Error ? error.message : 'Export failed',
+                  }
+                : entry,
+            ),
+          );
+        }
+        setBatchProgress({ current: index + 1, total: batchItems.length });
+      }
+      if (!exported) {
+        setMessage('No photos could be exported from this batch.');
+        return;
       }
       const archive = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
       const url = URL.createObjectURL(archive);
@@ -1750,12 +1963,19 @@ export default function Home(): React.JSX.Element {
       link.href = url;
       link.download = `${safeExportName(recipe.name, 'style')}-batch.zip`;
       link.click();
-      URL.revokeObjectURL(url);
-      setMessage(`Exported ${batchItems.length} full-resolution photo(s) in a ZIP archive.`);
+      window.setTimeout(() => URL.revokeObjectURL(url), 5000);
+      setMessage(
+        failures.length
+          ? `Exported ${exported} photo(s); ${failures.length} failed (${failures[0]}${failures.length > 1 ? ', …' : ''}).`
+          : batchCancelRef.current
+            ? `Batch cancelled — exported ${exported} of ${batchItems.length} photo(s).`
+            : `Exported ${exported} full-resolution photo(s) in a ZIP archive.`,
+      );
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Batch export failed.');
     } finally {
       setBatchBusy(false);
+      setBatchProgress(null);
     }
   };
 
@@ -1777,6 +1997,54 @@ export default function Home(): React.JSX.Element {
     );
     setCompare(false);
     setMessage(`Loaded “${recipe.name}” onto the reference photo.`);
+  };
+
+  const runBackgroundDetection = async () => {
+    const image = imageRef.current;
+    if (!image) return;
+    setBackgroundBusy(true);
+    try {
+      const mask = await computePersonMask(image);
+      setPersonMask(mask);
+      setMessage(
+        mask
+          ? 'Person detected locally. Choose a background effect below.'
+          : 'Background detection is unavailable in this browser session.',
+      );
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? `Background detection failed: ${error.message}`
+          : 'Background detection failed. Check your connection and try again.',
+      );
+    } finally {
+      setBackgroundBusy(false);
+    }
+  };
+
+  const applyBlemishes = () => {
+    const image = imageRef.current;
+    if (!image) return;
+    if (!faceLandmarks.length) {
+      setMessage('Run Auto face detect first, then apply local blemish fixing.');
+      return;
+    }
+    const spots = detectBlemishes(image, faceLandmarks);
+    if (!spots.length) {
+      setMessage('No clear blemish spots found. Use the heal brush for manual fixes.');
+      return;
+    }
+    const nextHeal = [
+      ...healStrokes,
+      ...spots.map((spot) => ({
+        points: [{ x: spot.x, y: spot.y }],
+        size: Math.max(8, Math.round(spot.radius * 1000)),
+      })),
+    ];
+    commitSnapshot(adjustments, manualAdjustments, localMasks, nextHeal);
+    setMessage(
+      `Applied ${spots.length} local healing stroke${spots.length === 1 ? '' : 's'} from blemish detection. Undo to revert.`,
+    );
   };
 
   const runFaceDetection = async () => {
@@ -2064,6 +2332,20 @@ export default function Home(): React.JSX.Element {
     );
   }
 
+  if (activeSection === 'mia') {
+    return (
+      <React.Suspense
+        fallback={
+          <main className="auth-screen">
+            <p className="auth-muted">Loading MIA Control Center…</p>
+          </main>
+        }
+      >
+        <MiaControlCenter onBack={() => setActiveSection('home')} />
+      </React.Suspense>
+    );
+  }
+
   if (activeSection === 'cloud-sync') {
     return (
       <React.Suspense
@@ -2078,33 +2360,31 @@ export default function Home(): React.JSX.Element {
     );
   }
 
+  const inspectorTools = INSPECTOR_TOOLS[activeSection] ?? INSPECTOR_TOOLS.editor;
+
   return (
-    <div className="studio-shell">
-      <header className="studio-header">
-        <a
-          className="brand"
-          href={import.meta.env.BASE_URL}
-          aria-label="Every Frame First Studio home"
-        >
-          <span className="brand-mark">EF</span>
-          <span>
-            <strong>EVERY FRAME FIRST</strong>
-            <small>PHOTO STUDIO</small>
-          </span>
-        </a>
-        <div className="header-actions">
-          <span className="local-indicator">
-            <i /> LOCAL EDITING
-          </span>
-          <button className="button button-quiet" onClick={() => setShowSaved((v) => !v)}>
-            {showSaved
-              ? 'Close library'
-              : `Library${savedPhotos.length ? ` (${savedPhotos.length})` : ''}`}
-          </button>
-          <button className="button button-primary" onClick={() => fileInputRef.current?.click()}>
-            ＋ Add photo
-          </button>
-        </div>
+    <div
+      ref={shellRef}
+      className="pro-shell"
+      data-workspace={activeSection}
+      data-advanced={advancedMode ? 'true' : 'false'}
+      data-library-collapsed={libraryCollapsed ? 'true' : 'false'}
+      data-tools-collapsed={toolsCollapsed ? 'true' : 'false'}
+    >
+      <EditorToolbar
+        activeSection={activeSection}
+        canUndo={canUndo}
+        canRedo={canRedo}
+        hasImage={hasImage}
+        busy={busy}
+        onNavigate={navigateStudio}
+        onImport={() => fileInputRef.current?.click()}
+        onUndo={undo}
+        onRedo={redo}
+        onReset={reset}
+        onSave={saveToLibrary}
+        onExport={exportPhoto}
+      />
         <input
           ref={fileInputRef}
           className="visually-hidden"
@@ -2126,236 +2406,135 @@ export default function Home(): React.JSX.Element {
             e.target.value = '';
           }}
         />
-      </header>
 
-      <aside className="studio-sidebar" aria-label="Studio navigation">
-        <div className="sidebar-workspace-label">WORKSPACE</div>
-        <button
-          className={`sidebar-link ${activeSection === 'home' ? 'active' : ''}`}
-          onClick={() => navigateStudio('home', 'studio-home')}
-        >
-          <span className="sidebar-icon">⌂</span>
-          <span>Overview</span>
-          <kbd>H</kbd>
-        </button>
-        <button
-          className={`sidebar-link ${activeSection === 'editor' ? 'active' : ''}`}
-          onClick={() => navigateStudio('editor', 'editor-canvas')}
-        >
-          <span className="sidebar-icon">▧</span>
-          <span>Photo editor</span>
-          <kbd>1</kbd>
-        </button>
-        <div className="sidebar-divider" />
-        <div className="sidebar-workspace-label">EDITING SUITES</div>
-        <button
-          className={`sidebar-link ${activeSection === 'retouch' ? 'active' : ''}`}
-          onClick={() => navigateStudio('retouch', 'retouch-workspace')}
-        >
-          <span className="sidebar-icon">✧</span>
-          <span>Retouch studio</span>
-        </button>
-        <button
-          className={`sidebar-link ${activeSection === 'color' ? 'active' : ''}`}
-          onClick={() => navigateStudio('color', 'color-workspace')}
-        >
-          <span className="sidebar-icon">◉</span>
-          <span>Color lab</span>
-        </button>
-        <button
-          className={`sidebar-link ${activeSection === 'compositing' ? 'active' : ''}`}
-          onClick={() => navigateStudio('compositing', 'layers-workspace')}
-        >
-          <span className="sidebar-icon">▤</span>
-          <span>Compositing</span>
-        </button>
-        <button
-          className={`sidebar-link ${activeSection === 'effects' ? 'active' : ''}`}
-          onClick={() => navigateStudio('effects', 'effects-workspace')}
-        >
-          <span className="sidebar-icon">✺</span>
-          <span>Effects</span>
-        </button>
-        <button
-          className={`sidebar-link ${activeSection === 'creator' ? 'active' : ''}`}
-          onClick={() => setActiveSection('creator')}
-        >
-          <span className="sidebar-icon">▶</span>
-          <span>Video Studio</span>
-        </button>
-        <div className="sidebar-divider" />
-        <div className="sidebar-workspace-label">PROJECT</div>
-        <button
-          className={`sidebar-link ${activeSection === 'assets' ? 'active' : ''}`}
-          onClick={() => navigateStudio('assets', 'assets-workspace')}
-        >
-          <span className="sidebar-icon">▦</span>
-          <span>Assets & presets</span>
-        </button>
-        <button
-          className={`sidebar-link ${activeSection === 'history' ? 'active' : ''}`}
-          onClick={() => navigateStudio('history', 'history-workspace')}
-        >
-          <span className="sidebar-icon">◷</span>
-          <span>History</span>
-          <span className="sidebar-count">{Math.max(0, history.length - 1)}</span>
-        </button>
-        <button
-          className={`sidebar-link ${activeSection === 'library' ? 'active' : ''}`}
-          onClick={() => navigateStudio('library', 'studio-home')}
-        >
-          <span className="sidebar-icon">▣</span>
-          <span>Photo library</span>
-          <span className="sidebar-count">{savedPhotos.length}</span>
-        </button>
-        <Link className="sidebar-link" to="/audio">
-          <span className="sidebar-icon">♫</span>
-          <span>Podcast studio</span>
-        </Link>
-        <button
-          className={`sidebar-link ${activeSection === 'cloud-sync' ? 'active' : ''}`}
-          onClick={() => setActiveSection('cloud-sync')}
-        >
-          <span className="sidebar-icon">⇄</span>
-          <span>Cloud sync</span>
-        </button>
-        <button
-          className={`sidebar-link ${activeSection === 'export' ? 'active' : ''}`}
-          onClick={() => navigateStudio('export', 'export-workspace')}
-        >
-          <span className="sidebar-icon">⇧</span>
-          <span>Export center</span>
-        </button>
-        <div className="sidebar-bottom">
-          <div className="sidebar-status">
-            <i /> Local engine ready
+      <ImageLibrary
+        photos={savedPhotos}
+        selectedId={selectedPhotoId}
+        onOpen={(photo) => void openSavedPhoto(photo)}
+        onTogglePick={(photo) => togglePhotoTags(photo, [PICK_TAG])}
+        onToggleReject={(photo) => togglePhotoTags(photo, [REJECT_TAG])}
+        onSetRating={setPhotoRating}
+        onToggleAlbum={(photo, album) => togglePhotoTags(photo, [`${ALBUM_TAG_PREFIX}${album}`])}
+        onNewAlbum={createAlbumAndAssign}
+        onImportClick={() => fileInputRef.current?.click()}
+      />
+      <StudioSplitter side="left" shellRef={shellRef} />
+      <section className="preview-column pro-canvas-col" id="editor-canvas">
+          <div className="studio-inspector" data-testid="studio-inspector">
+            <span className="studio-inspector-label">Inspector</span>
+            <span className="studio-inspector-workspace">
+              {activeSection.replace(/-/g, ' ')}
+            </span>
+            <span className="studio-inspector-divider" aria-hidden="true" />
+            <div className="studio-inspector-tools">
+              {inspectorTools.map((tool) => (
+                <button
+                  key={tool.label}
+                  type="button"
+                  className="studio-inspector-chip"
+                  onClick={() => navigateStudio(tool.section, tool.target)}
+                  title={`Open ${tool.label}`}
+                >
+                  {tool.label}
+                </button>
+              ))}
+            </div>
+            <span className="studio-inspector-spacer" />
+            <button
+              type="button"
+              className="studio-collapse-btn"
+              onClick={toggleLibraryColumn}
+              aria-pressed={libraryCollapsed}
+              title={libraryCollapsed ? 'Show library column' : 'Hide library column'}
+            >
+              {libraryCollapsed ? (
+                <PanelLeftOpen size={13} aria-hidden="true" />
+              ) : (
+                <PanelLeftClose size={13} aria-hidden="true" />
+              )}
+              <span>Library</span>
+            </button>
+            <button
+              type="button"
+              className="studio-collapse-btn"
+              onClick={toggleToolsColumn}
+              aria-pressed={toolsCollapsed}
+              title={toolsCollapsed ? 'Show tools column' : 'Hide tools column'}
+            >
+              <span>Tools</span>
+              {toolsCollapsed ? (
+                <PanelRightOpen size={13} aria-hidden="true" />
+              ) : (
+                <PanelRightClose size={13} aria-hidden="true" />
+              )}
+            </button>
           </div>
-          <small>EVERY FRAME FIRST STUDIO</small>
-        </div>
-      </aside>
-
-      <main className="studio-main">
-        <section className="video-first-launch" aria-labelledby="video-first-title">
-          <div className="video-first-copy">
-            <p className="eyebrow">PRIMARY WORKSPACE · VIDEO PRODUCTION</p>
-            <h2 id="video-first-title">Professional Video Studio</h2>
-            <p>Import footage, edit a real multitrack timeline, mix sound, finish color and export your film.</p>
-          </div>
-          <button className="button button-primary video-first-launch-button" type="button" onClick={() => setActiveSection('creator')}>
-            Open Video Studio <span aria-hidden="true">→</span>
-          </button>
-        </section>
-        <section className="workspace-heading" id="studio-home">
-          <div>
-            <p className="eyebrow">YOUR CREATIVE WORKSPACE</p>
-            <h1>
-              Make every frame <em>count.</em>
-            </h1>
-            <p className="subheading">A thoughtful photo editor. Your original stays untouched.</p>
-          </div>
-          {hasImage && (
-            <div className="history-actions">
-              <button className="icon-button" disabled={!canUndo} onClick={undo} aria-label="Undo">
-                ↶
+          <div className="pro-canvas-toolbar">
+            <span className="pro-canvas-title" title={hasImage ? sourceName : undefined}>
+              {hasImage ? sourceName : 'PREVIEW CANVAS'}
+            </span>
+            <div className="pro-canvas-spacer" />
+            {hasImage && (
+              <button
+                className={`pro-icon-btn ${compare ? 'active' : ''}`}
+                onClick={() => setCompare((v) => !v)}
+                title="Toggle before / after"
+                aria-label="Toggle before and after"
+                aria-pressed={compare}
+              >
+                <Columns2 size={15} aria-hidden="true" />
+                <span>{compare ? 'Original' : 'Edited'}</span>
               </button>
-              <button className="icon-button" disabled={!canRedo} onClick={redo} aria-label="Redo">
-                ↷
-              </button>
-              <button className="button button-quiet" onClick={reset}>
-                Reset edits
-              </button>
-            </div>
-          )}
-        </section>
-        <section className="studio-overview-strip" aria-label="Workspace status">
-          <div className="overview-stat">
-            <span className="overview-icon">▧</span>
-            <div>
-              <small>DOCUMENT</small>
-              <strong>{hasImage ? sourceName : 'No document open'}</strong>
-              <em>
-                {hasImage
-                  ? `${sourceSize.width.toLocaleString()} × ${sourceSize.height.toLocaleString()}`
-                  : 'Import an image to begin'}
-              </em>
-            </div>
-          </div>
-          <div className="overview-stat">
-            <span className="overview-icon">◈</span>
-            <div>
-              <small>EDIT HISTORY</small>
-              <strong>{hasImage ? `${historyIndex} changes` : 'Ready for edits'}</strong>
-              <em>{canUndo ? 'Undo available' : 'No pending changes'}</em>
-            </div>
-          </div>
-          <div className="overview-stat">
-            <span className="overview-icon">▤</span>
-            <div>
-              <small>LAYERS</small>
-              <strong>{hasImage ? `${layers.length} layers` : 'Waiting for image'}</strong>
-              <em>{layers.filter((layer) => layer.visible).length} visible</em>
-            </div>
-          </div>
-          <div className="overview-stat engine-stat">
-            <span className="engine-pulse" />
-            <div>
-              <small>PROCESSING</small>
-              <strong>On-device engine</strong>
-              <em>Private · No upload required</em>
-            </div>
-          </div>
-        </section>
-
-        {showSaved ? (
-          <section className="library-panel">
-            <div className="section-title">
-              <div>
-                <p className="eyebrow">ON THIS DEVICE</p>
-                <h2>Your photo library</h2>
-              </div>
-              <span>{savedPhotos.length} saved</span>
-            </div>
-            {savedPhotos.length ? (
-              <div className="saved-grid">
-                {savedPhotos.map((photo) => (
-                  <button
-                    className="saved-card"
-                    key={photo.id}
-                    onClick={() => void openSavedPhoto(photo)}
-                  >
-                    <img src={photo.dataUrl} alt="" />
-                    <div>
-                      <strong>{photo.name}</strong>
-                      <small>
-                        {photo.dimensions.width} × {photo.dimensions.height} · Open edit
-                      </small>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <p className="empty-library">
-                Your saved photos will appear here. Save an edit to keep a local copy.
-              </p>
             )}
-          </section>
-        ) : (
-          <div className="editor-layout">
-            <section className="preview-column" id="editor-canvas">
-              <div className="preview-toolbar">
-                <span>{hasImage ? sourceName : 'PREVIEW CANVAS'}</span>
-                {hasImage && (
-                  <button
-                    className={`compare-toggle ${compare ? 'active' : ''}`}
-                    onClick={() => setCompare((v) => !v)}
-                    title="Hold or tap to compare with original"
-                  >
-                    ◐ {compare ? 'Original' : 'Compare'}
-                  </button>
-                )}
-              </div>
+            <div className="pro-zoom" aria-label="Canvas zoom">
+              <button
+                className="pro-icon-btn"
+                onClick={() => setZoom((z) => Math.max(0.25, Number((z / 1.25).toFixed(2))))}
+                disabled={!hasImage || zoom <= 0.25}
+                title="Zoom out"
+                aria-label="Zoom out"
+              >
+                <ZoomOut size={15} aria-hidden="true" />
+              </button>
+              <span className="pro-zoom-label" aria-live="polite">
+                {Math.round(zoom * 100)}%
+              </span>
+              <button
+                className="pro-icon-btn"
+                onClick={() => setZoom((z) => Math.min(2, Number((z * 1.25).toFixed(2))))}
+                disabled={!hasImage || zoom >= 2}
+                title="Zoom in"
+                aria-label="Zoom in"
+              >
+                <ZoomIn size={15} aria-hidden="true" />
+              </button>
+              <button
+                className="pro-icon-btn"
+                onClick={() => setZoom(1)}
+                disabled={!hasImage || zoom === 1}
+                title="Fit to screen"
+                aria-label="Fit to screen"
+                style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.08em' }}
+              >
+                FIT
+              </button>
+            </div>
+            <button
+              className="pro-icon-btn"
+              onClick={() => {
+                const stage = stageRef.current;
+                if (stage?.requestFullscreen) void stage.requestFullscreen();
+              }}
+              disabled={!hasImage}
+              title="Full-screen preview"
+              aria-label="Full-screen preview"
+            >
+              <Maximize2 size={15} aria-hidden="true" />
+            </button>
+          </div>
               <div
-                className={`preview-stage ${hasImage ? 'has-image' : ''}`}
+                ref={stageRef}
+                className={`preview-stage pro-stage ${hasImage ? 'has-image' : ''}`}
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={(e) => {
                   e.preventDefault();
@@ -2374,7 +2553,7 @@ export default function Home(): React.JSX.Element {
                           setRetouchMode('off');
                         }}
                       >
-                        ↖
+                        <MousePointer2 size={16} aria-hidden="true" />
                       </button>
                       <button
                         className={localTool === 'brush' ? 'active' : ''}
@@ -2385,7 +2564,7 @@ export default function Home(): React.JSX.Element {
                           setRetouchMode('off');
                         }}
                       >
-                        ◉
+                        <Brush size={16} aria-hidden="true" />
                       </button>
                       <button
                         className={localTool === 'heal' ? 'active' : ''}
@@ -2396,7 +2575,7 @@ export default function Home(): React.JSX.Element {
                           setRetouchMode('off');
                         }}
                       >
-                        ✳
+                        <Bandage size={16} aria-hidden="true" />
                       </button>
                       <button
                         className={retouchMode === 'brush' ? 'active' : ''}
@@ -2407,14 +2586,14 @@ export default function Home(): React.JSX.Element {
                           setRetouchMode('brush');
                         }}
                       >
-                        ✧
+                        <Wand2 size={16} aria-hidden="true" />
                       </button>
                       <button
                         title="Add text layer"
                         aria-label="Add text layer"
                         onClick={addTextLayer}
                       >
-                        T
+                        <Type size={16} aria-hidden="true" />
                       </button>
                       <button
                         title="Crop & transform"
@@ -2426,7 +2605,7 @@ export default function Home(): React.JSX.Element {
                             ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
                         }}
                       >
-                        ⌗
+                        <Crop size={16} aria-hidden="true" />
                       </button>
                     </nav>
                     <canvas
@@ -2439,6 +2618,7 @@ export default function Home(): React.JSX.Element {
                           ? 'retouch-brush-active'
                           : ''
                       }
+                      style={{ transform: `scale(${zoom})` }}
                       onPointerDown={startBrushStroke}
                       onPointerMove={continueBrushStroke}
                       onPointerUp={finishBrushStroke}
@@ -2447,7 +2627,9 @@ export default function Home(): React.JSX.Element {
                   </>
                 ) : (
                   <div className="upload-prompt">
-                    <div className="upload-icon">↥</div>
+                    <div className="upload-icon">
+                      <Upload size={34} strokeWidth={1.5} aria-hidden="true" />
+                    </div>
                     <h2>Start with a photograph</h2>
                     <p>Drop an image here, or choose one from your device.</p>
                     <button
@@ -2460,34 +2642,25 @@ export default function Home(): React.JSX.Element {
                   </div>
                 )}
               </div>
-              <div className="preview-footer">
-                <span>{message}</span>
+              <div className="pro-statusbar">
+                <span className="status-message">{message}</span>
+                <span className="spacer" />
                 {hasImage && (
                   <span>
                     {sourceSize.width.toLocaleString()} × {sourceSize.height.toLocaleString()}
                   </span>
                 )}
+                <span>On-device · Private</span>
+                <Link to="/privacy">Privacy</Link>
               </div>
               {hasImage && (
-                <div className="export-bar" id="export-workspace">
-                  <label className="format-select">
-                    Export as{' '}
-                    <select
-                      value={exportFormat}
-                      onChange={(e) => setExportFormat(e.target.value as typeof exportFormat)}
-                    >
-                      <option value="image/jpeg">JPEG · High quality</option>
-                      <option value="image/png">PNG · Lossless</option>
-                      <option value="image/webp">WebP · Compact</option>
-                    </select>
-                  </label>
-                  <button className="button button-quiet" onClick={saveToLibrary} disabled={busy}>
-                    Save to library
-                  </button>
-                  <button className="button button-primary" onClick={exportPhoto} disabled={busy}>
-                    ↓ Export photo
-                  </button>
-                </div>
+                <DeliveryWorkspace
+                  exportFormat={exportFormat}
+                  setExportFormat={setExportFormat}
+                  saveToLibrary={saveToLibrary}
+                  exportPhoto={exportPhoto}
+                  busy={busy}
+                />
               )}
               {hasImage && sourceUrl && (
                 <React.Suspense
@@ -2525,2173 +2698,239 @@ export default function Home(): React.JSX.Element {
                   />
                 </React.Suspense>
               )}
+              {savedPhotos.length > 0 && (
+                <React.Suspense
+                  fallback={<p className="auth-muted">Loading client gallery tools…</p>}
+                >
+                  <ClientGalleryPanel photos={savedPhotos} />
+                </React.Suspense>
+              )}
             </section>
 
-            <aside className="tools-column">
-              <div className="workspace-switcher" role="tablist" aria-label="Editing workspace">
+            <StudioSplitter side="right" shellRef={shellRef} />
+            <aside className="tools-column pro-tools">
+              <div className="advanced-mode-row">
+                <span className="advanced-mode-label">Advanced tools</span>
                 <button
-                  role="tab"
-                  aria-selected={activeWorkspace === 'professional'}
-                  className={activeWorkspace === 'professional' ? 'active' : ''}
-                  onClick={() => setActiveWorkspace('professional')}
+                  type="button"
+                  role="switch"
+                  aria-checked={advancedMode}
+                  className={`advanced-toggle ${advancedMode ? 'on' : ''}`}
+                  onClick={() => setAdvancedMode((value) => !value)}
                 >
-                  Professional Studio
+                  <span className="advanced-toggle-thumb" />
                 </button>
-                <button
-                  role="tab"
-                  aria-selected={activeWorkspace === 'portrait'}
-                  className={activeWorkspace === 'portrait' ? 'active' : ''}
-                  onClick={() => {
-                    setActiveWorkspace('portrait');
-                    if (hasImage && !faceLandmarks.length && !detectingFaces)
-                      void runFaceDetection();
-                  }}
-                >
-                  Portrait Studio
-                </button>
+                <span className="advanced-mode-hint">
+                  {advancedMode ? 'Curves, HSL, layers and masks are shown' : 'Off — basic tools only'}
+                </span>
               </div>
-              <section className="tool-panel layer-panel" id="layers-workspace">
-                <div className="section-title">
-                  <div>
-                    <p className="eyebrow">DOCUMENT STACK</p>
-                    <h2>Layers</h2>
-                  </div>
-                  <span>{layers.length} layers</span>
-                </div>
-                <div className="layer-add-actions">
-                  <button
-                    className="button button-quiet"
-                    disabled={!hasImage}
-                    onClick={addLayerGroup}
-                  >
-                    ＋ Group
-                  </button>
-                  <button
-                    className="button button-quiet"
-                    disabled={!hasImage}
-                    onClick={addAdjustmentLayer}
-                  >
-                    ＋ Adjustment
-                  </button>
-                  <button
-                    className="button button-quiet"
-                    disabled={!hasImage}
-                    onClick={addTextLayer}
-                  >
-                    ＋ Text
-                  </button>
-                </div>
-                <div className="layer-list" role="listbox" aria-label="Document layers">
-                  {[...layers]
-                    .reverse()
-                    .filter((layer) => {
-                      if (!layer.groupId) return true;
-                      const parent = layers.find((candidate) => candidate.id === layer.groupId);
-                      return parent?.type !== 'group' || parent.expanded !== false;
-                    })
-                    .map((layer) => (
-                      <div
-                        key={layer.id}
-                        draggable
-                        onDragStart={(event) => {
-                          setDraggedLayerId(layer.id);
-                          document.body.dataset.draggedLayerId = layer.id;
-                          event.dataTransfer.setData('text/plain', layer.id);
-                          event.dataTransfer.effectAllowed = 'move';
-                        }}
-                        onDragOver={(event) => {
-                          event.preventDefault();
-                          event.dataTransfer.dropEffect = 'move';
-                        }}
-                        onDrop={(event) => {
-                          event.preventDefault();
-                          const sourceId =
-                            event.dataTransfer.getData('text/plain') ||
-                            document.body.dataset.draggedLayerId ||
-                            draggedLayerId;
-                          if (sourceId) reorderLayer(sourceId, layer.id);
-                          delete document.body.dataset.draggedLayerId;
-                          setDraggedLayerId(null);
-                        }}
-                        onDragEnd={() => {
-                          delete document.body.dataset.draggedLayerId;
-                          setDraggedLayerId(null);
-                        }}
-                        className={`layer-row ${selectedLayerId === layer.id ? 'selected' : ''} ${layer.type === 'group' ? 'layer-group-row' : ''}`}
-                        style={{ marginLeft: layer.groupId ? 18 : 0 }}
-                      >
-                        <button
-                          className="layer-visibility"
-                          aria-label={`${layer.visible ? 'Hide' : 'Show'} ${layer.name}`}
-                          onClick={() => updateLayer(layer.id, { visible: !layer.visible })}
-                        >
-                          {layer.visible ? '◉' : '○'}
-                        </button>
-                        {layer.type === 'group' && (
-                          <button
-                            className="layer-visibility"
-                            aria-label={`${layer.expanded === false ? 'Expand' : 'Collapse'} ${layer.name}`}
-                            onClick={() => toggleGroupExpanded(layer.id)}
-                          >
-                            {layer.expanded === false ? '▸' : '▾'}
-                          </button>
-                        )}
-                        <button
-                          className="layer-select"
-                          role="option"
-                          aria-selected={selectedLayerId === layer.id}
-                          onClick={() => {
-                            setSelectedLayerId(layer.id);
-                            setLayerMaskView(false);
-                            setLayerMaskTool('off');
-                          }}
-                        >
-                          <span className={`layer-thumb layer-thumb-${layer.type}`}>
-                            {layer.type === 'image'
-                              ? '▧'
-                              : layer.type === 'adjustment'
-                                ? '◐'
-                                : layer.type === 'group'
-                                  ? '▣'
-                                  : 'T'}
-                          </span>
-                          <span>
-                            <strong>{layer.name}</strong>
-                            <small>
-                              {layer.type === 'image'
-                                ? 'Pixel layer'
-                                : layer.type === 'adjustment'
-                                  ? 'Adjustment layer'
-                                  : layer.type === 'group'
-                                    ? layers.filter((child) => child.groupId === layer.id).length +
-                                      ' child layers'
-                                    : 'Type layer'}
-                            </small>
-                          </span>
-                        </button>
-                        <span className="layer-reorder">
-                          <button
-                            aria-label={`Move ${layer.name} up`}
-                            onClick={() => moveLayer(layer.id, 1)}
-                          >
-                            ↑
-                          </button>
-                          <button
-                            aria-label={`Move ${layer.name} down`}
-                            onClick={() => moveLayer(layer.id, -1)}
-                          >
-                            ↓
-                          </button>
-                        </span>
-                      </div>
-                    ))}
-                </div>
-                {selectedLayer && (
-                  <div className="layer-properties">
-                    <label className="layer-name-control">
-                      <span>Layer name</span>
-                      <input
-                        value={selectedLayer.name}
-                        onChange={(e) => updateLayer(selectedLayer.id, { name: e.target.value })}
-                      />
-                    </label>
-                    <div className="layer-mask-panel">
-                      <strong>Layer mask</strong>
-                      <div className="layer-mask-list">
-                        {(
-                          selectedLayer.masks || (selectedLayer.mask ? [selectedLayer.mask] : [])
-                        ).map((mask, index) => (
-                          <div className="layer-mask-item" key={mask.id}>
-                            <canvas
-                              data-layer-mask-thumb={mask.id}
-                              width="56"
-                              height="32"
-                              aria-label={(mask.name || 'Layer mask') + ' thumbnail'}
-                            />
-                            <button
-                              className={
-                                selectedLayerMask?.id === mask.id
-                                  ? 'button button-primary'
-                                  : 'button button-quiet'
-                              }
-                              onClick={() => {
-                                setSelectedLayerMaskId(mask.id);
-                                setLayerMaskView(false);
-                                setLayerMaskTool('off');
-                              }}
-                            >
-                              {mask.name || mask.kind + ' mask ' + (index + 1)}
-                            </button>
-                            <button
-                              className="button button-quiet"
-                              aria-label="Move mask up"
-                              onClick={() => {
-                                const all = [
-                                  ...(selectedLayer.masks ||
-                                    (selectedLayer.mask ? [selectedLayer.mask] : [])),
-                                ];
-                                if (index > 0) {
-                                  [all[index - 1], all[index]] = [all[index], all[index - 1]];
-                                  updateLayer(selectedLayer.id, { masks: all });
-                                }
-                              }}
-                            >
-                              ↑
-                            </button>
-                            <button
-                              className="button button-quiet"
-                              aria-label="Move mask down"
-                              onClick={() => {
-                                const all = [
-                                  ...(selectedLayer.masks ||
-                                    (selectedLayer.mask ? [selectedLayer.mask] : [])),
-                                ];
-                                if (index < all.length - 1) {
-                                  [all[index + 1], all[index]] = [all[index], all[index + 1]];
-                                  updateLayer(selectedLayer.id, { masks: all });
-                                }
-                              }}
-                            >
-                              ↓
-                            </button>
-                            <button
-                              className="button button-quiet"
-                              aria-label={
-                                (mask.enabled ? 'Disable ' : 'Enable ') + (mask.name || 'mask')
-                              }
-                              onClick={() => {
-                                const nextMask = { ...mask, enabled: !mask.enabled };
-                                const all =
-                                  selectedLayer.masks ||
-                                  (selectedLayer.mask ? [selectedLayer.mask] : []);
-                                updateLayer(selectedLayer.id, {
-                                  mask:
-                                    selectedLayerMask?.id === mask.id
-                                      ? nextMask
-                                      : selectedLayer.mask,
-                                  masks: all.map((item) => (item.id === mask.id ? nextMask : item)),
-                                });
-                              }}
-                            >
-                              {mask.enabled ? 'Visible' : 'Hidden'}
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                      <div className="layer-mask-actions">
-                        <button
-                          className="button button-quiet"
-                          onClick={() => addLayerMask('brush')}
-                        >
-                          + Paint mask
-                        </button>
-                        <button
-                          className="button button-quiet"
-                          onClick={() => addLayerMask('linear')}
-                        >
-                          + Linear
-                        </button>
-                        <button
-                          className="button button-quiet"
-                          onClick={() => addLayerMask('radial')}
-                        >
-                          + Radial
-                        </button>
-                      </div>
-                      <div className="layer-mask-preview">
-                        {selectedLayer.masks?.length || selectedLayer.mask ? (
-                          <>
-                            <canvas
-                              ref={maskThumbnailRef}
-                              aria-label="Live grayscale layer mask thumbnail"
-                            />
-                            <span>
-                              {(
-                                selectedLayerMask?.kind ||
-                                selectedLayer.mask?.kind ||
-                                'brush'
-                              ).toUpperCase()}{' '}
-                              · {selectedLayerMask?.strokes.length || 0} stroke(s)
-                            </span>
-                          </>
-                        ) : (
-                          'No mask attached'
-                        )}
-                      </div>
-                      {!(selectedLayer.masks?.length || selectedLayer.mask) ? (
-                        <p>No mask selected. Add a mask above to begin.</p>
-                      ) : (
-                        <>
-                          <label className="layer-name-control">
-                            <span>Mask name</span>
-                            <input
-                              value={selectedLayerMask?.name || ''}
-                              placeholder="Layer mask"
-                              onChange={(event) =>
-                                updateSelectedLayerMask({ name: event.target.value })
-                              }
-                            />
-                          </label>
-                          <div className="layer-mask-actions">
-                            <button
-                              className={
-                                layerMaskView ? 'button button-primary' : 'button button-quiet'
-                              }
-                              onClick={() => setLayerMaskView((value) => !value)}
-                            >
-                              {layerMaskView ? 'Return to image' : 'Edit mask view'}
-                            </button>
-                            <button
-                              className={
-                                layerMaskTool === 'reveal'
-                                  ? 'button button-primary'
-                                  : 'button button-quiet'
-                              }
-                              onClick={() =>
-                                setLayerMaskTool(layerMaskTool === 'reveal' ? 'off' : 'reveal')
-                              }
-                            >
-                              Reveal brush
-                            </button>
-                            <button
-                              className={
-                                layerMaskTool === 'hide'
-                                  ? 'button button-primary'
-                                  : 'button button-quiet'
-                              }
-                              onClick={() =>
-                                setLayerMaskTool(layerMaskTool === 'hide' ? 'off' : 'hide')
-                              }
-                            >
-                              Hide brush
-                            </button>
-                            {selectedLayerMask?.kind !== 'brush' && (
-                              <button
-                                className={
-                                  layerMaskTool === 'position'
-                                    ? 'button button-primary'
-                                    : 'button button-quiet'
-                                }
-                                onClick={() =>
-                                  setLayerMaskTool(
-                                    layerMaskTool === 'position' ? 'off' : 'position',
-                                  )
-                                }
-                              >
-                                Position gradient
-                              </button>
-                            )}
-                            <button
-                              className="button button-quiet"
-                              onClick={() =>
-                                updateSelectedLayerMask({ inverted: !selectedLayerMask?.inverted })
-                              }
-                            >
-                              Invert
-                            </button>
-                            <button
-                              className="button button-quiet"
-                              onClick={() =>
-                                updateSelectedLayerMask({ enabled: !selectedLayerMask?.enabled })
-                              }
-                            >
-                              {selectedLayerMask?.enabled ? 'Disable' : 'Enable'}
-                            </button>
-                          </div>
-                          <label className="range-control">
-                            <span>
-                              <span>Mask brush size</span>
-                              <strong>{layerMaskBrushSize}</strong>
-                            </span>
-                            <input
-                              type="range"
-                              min="5"
-                              max="140"
-                              value={layerMaskBrushSize}
-                              onChange={(event) =>
-                                setLayerMaskBrushSize(Number(event.target.value))
-                              }
-                            />
-                          </label>
-                          <label className="range-control">
-                            <span>
-                              <span>Mask feather</span>
-                              <strong>{selectedLayerMask?.feather || 0}%</strong>
-                            </span>
-                            <input
-                              type="range"
-                              min="0"
-                              max="100"
-                              value={selectedLayerMask?.feather || 0}
-                              onChange={(event) =>
-                                updateSelectedLayerMask({ feather: Number(event.target.value) })
-                              }
-                            />
-                          </label>
-                          {selectedLayerMask?.kind !== 'brush' && (
-                            <label className="range-control">
-                              <span>
-                                <span>Gradient radius</span>
-                                <strong>{selectedLayerMask?.radius || 35}%</strong>
-                              </span>
-                              <input
-                                type="range"
-                                min="5"
-                                max="100"
-                                value={selectedLayerMask?.radius || 35}
-                                onChange={(event) =>
-                                  updateSelectedLayerMask({ radius: Number(event.target.value) })
-                                }
-                              />
-                            </label>
-                          )}
-                          <button
-                            className="text-button"
-                            onClick={() => {
-                              const remaining = (
-                                selectedLayer.masks ||
-                                (selectedLayer.mask ? [selectedLayer.mask] : [])
-                              ).filter((mask) => mask.id !== selectedLayerMask?.id);
-                              const nextActive = remaining[remaining.length - 1] || null;
-                              updateLayer(selectedLayer.id, { mask: nextActive, masks: remaining });
-                              setSelectedLayerMaskId(nextActive?.id || '');
-                              setLayerMaskTool('off');
-                            }}
-                          >
-                            Remove layer mask
-                          </button>
-                        </>
-                      )}
-                    </div>
-                    <label className="range-control">
-                      <span>
-                        <span>Opacity</span>
-                        <strong>{selectedLayer.opacity}%</strong>
-                      </span>
-                      <input
-                        type="range"
-                        min="0"
-                        max="100"
-                        value={selectedLayer.opacity}
-                        onChange={(e) =>
-                          updateLayer(selectedLayer.id, { opacity: Number(e.target.value) })
-                        }
-                      />
-                    </label>
-                    {selectedLayer.type !== 'group' && (
-                      <label className="layer-name-control">
-                        <span>Layer group</span>
-                        <select
-                          value={selectedLayer.groupId || ''}
-                          onChange={(e) =>
-                            updateLayer(selectedLayer.id, { groupId: e.target.value || null })
-                          }
-                        >
-                          <option value="">No group</option>
-                          {layers
-                            .filter((layer) => layer.type === 'group')
-                            .map((group) => (
-                              <option key={group.id} value={group.id}>
-                                {group.name}
-                              </option>
-                            ))}
-                        </select>
-                      </label>
-                    )}
-                    <label className="layer-name-control">
-                      <span>Blend mode</span>
-                      <select
-                        value={selectedLayer.blendMode}
-                        onChange={(e) =>
-                          updateLayer(selectedLayer.id, {
-                            blendMode: e.target.value as GlobalCompositeOperation,
-                          })
-                        }
-                      >
-                        {BLEND_MODES.map((mode) => (
-                          <option key={mode} value={mode}>
-                            {mode.replace('-', ' ')}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    {selectedLayer.type === 'adjustment' && (
-                      <div className="layer-adjustment-controls">
-                        <p className="tool-note">
-                          This layer has its own editable tone, color, curves and HSL settings.
-                          Changes remain separate from the background and other layers.
-                        </p>
-                        <h4>Light & color</h4>
-                        {(
-                          [
-                            ['exposure', 'Exposure', -200, 200, ''],
-                            ['brightness', 'Brightness', -100, 100, ''],
-                            ['contrast', 'Contrast', -100, 100, ''],
-                            ['highlights', 'Highlights', -100, 100, ''],
-                            ['shadows', 'Shadows', -100, 100, ''],
-                            ['whites', 'Whites', -100, 100, ''],
-                            ['blacks', 'Blacks', -100, 100, ''],
-                            ['temperature', 'Temperature', -100, 100, ''],
-                            ['tint', 'Tint', -100, 100, ''],
-                            ['vibrance', 'Vibrance', -100, 100, ''],
-                            ['saturation', 'Saturation', -100, 100, ''],
-                          ] as const
-                        ).map(([key, label, min, max, unit]) => (
-                          <label className="range-control" key={key}>
-                            <span>
-                              <span>{label}</span>
-                              <strong>
-                                {selectedLayerManual[key]}
-                                {unit}
-                              </strong>
-                            </span>
-                            <input
-                              type="range"
-                              min={min}
-                              max={max}
-                              value={selectedLayerManual[key]}
-                              onChange={(event) =>
-                                updateLayer(selectedLayer.id, {
-                                  manualAdjustments: {
-                                    ...selectedLayerManual,
-                                    [key]: Number(event.target.value),
-                                  },
-                                })
-                              }
-                            />
-                          </label>
-                        ))}
-                        <details className="layer-advanced-controls">
-                          <summary>Tone curve & effects</summary>
-                          <label className="layer-name-control">
-                            <span>Tone curve channel</span>
-                            <select
-                              value={selectedCurveChannel}
-                              onChange={(event) =>
-                                setSelectedCurveChannel(event.target.value as CurveChannel)
-                              }
-                            >
-                              {CURVE_CHANNEL_OPTIONS.map((channel) => (
-                                <option key={channel} value={channel}>
-                                  {channel === 'master' ? 'Master RGB' : channel.toUpperCase()}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                          {(
-                            [
-                              ['Shadows', 'Shadows'],
-                              ['Darks', 'Darks'],
-                              ['Lights', 'Lights'],
-                              ['Highlights', 'Highlights'],
-                            ] as const
-                          ).map(([part, label]) => {
-                            const prefix =
-                              selectedCurveChannel === 'master'
-                                ? 'curve'
-                                : 'curve' +
-                                  selectedCurveChannel[0].toUpperCase() +
-                                  selectedCurveChannel.slice(1);
-                            const key = (prefix + part) as keyof ManualAdjustmentSettings;
-                            return (
-                              <label className="range-control" key={key}>
-                                <span>
-                                  <span>{label}</span>
-                                  <strong>{selectedLayerManual[key]}</strong>
-                                </span>
-                                <input
-                                  type="range"
-                                  min={-100}
-                                  max={100}
-                                  value={selectedLayerManual[key]}
-                                  onChange={(event) =>
-                                    updateLayer(selectedLayer.id, {
-                                      manualAdjustments: {
-                                        ...selectedLayerManual,
-                                        [key]: Number(event.target.value),
-                                      },
-                                    })
-                                  }
-                                />
-                              </label>
-                            );
-                          })}
-                          {(
-                            [
-                              ['grain', 'Film grain'],
-                              ['vignette', 'Vignette'],
-                              ['filmFade', 'Film fade'],
-                              ['bloom', 'Bloom'],
-                              ['dehaze', 'Dehaze'],
-                              ['clarity', 'Clarity'],
-                              ['sharpening', 'Sharpening'],
-                              ['noiseReduction', 'Noise reduction'],
-                            ] as const
-                          ).map(([key, label]) => (
-                            <label className="range-control" key={key}>
-                              <span>
-                                <span>{label}</span>
-                                <strong>{selectedLayerManual[key]}</strong>
-                              </span>
-                              <input
-                                type="range"
-                                min={key === 'vignette' || key === 'dehaze' ? -100 : 0}
-                                max={100}
-                                value={selectedLayerManual[key]}
-                                onChange={(event) =>
-                                  updateLayer(selectedLayer.id, {
-                                    manualAdjustments: {
-                                      ...selectedLayerManual,
-                                      [key]: Number(event.target.value),
-                                    },
-                                  })
-                                }
-                              />
-                            </label>
-                          ))}
-                          <label className="layer-name-control">
-                            <span>HSL color range</span>
-                            <select
-                              value={selectedHslChannel}
-                              onChange={(event) =>
-                                setSelectedHslChannel(event.target.value as HslChannel)
-                              }
-                            >
-                              {HSL_CHANNEL_OPTIONS.map((channel) => (
-                                <option key={channel} value={channel}>
-                                  {channel[0].toUpperCase() + channel.slice(1)}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                          {(['Hue', 'Saturation', 'Luminance'] as const).map((part) => {
-                            const key = ('hsl' +
-                              selectedHslChannel[0].toUpperCase() +
-                              selectedHslChannel.slice(1) +
-                              part) as keyof ManualAdjustmentSettings;
-                            return (
-                              <label className="range-control" key={key}>
-                                <span>
-                                  <span>
-                                    {selectedHslChannel} {part}
-                                  </span>
-                                  <strong>{selectedLayerManual[key]}</strong>
-                                </span>
-                                <input
-                                  type="range"
-                                  min={-100}
-                                  max={100}
-                                  value={selectedLayerManual[key]}
-                                  onChange={(event) =>
-                                    updateLayer(selectedLayer.id, {
-                                      manualAdjustments: {
-                                        ...selectedLayerManual,
-                                        [key]: Number(event.target.value),
-                                      },
-                                    })
-                                  }
-                                />
-                              </label>
-                            );
-                          })}
-                        </details>
-                        <button
-                          type="button"
-                          className="text-button"
-                          onClick={() =>
-                            updateLayer(selectedLayer.id, {
-                              manualAdjustments: { ...DEFAULT_MANUAL_ADJUSTMENTS },
-                              adjustments: { ...DEFAULTS },
-                            })
-                          }
-                        >
-                          Reset this adjustment layer
-                        </button>
-                      </div>
-                    )}
-                    {selectedLayer.type === 'text' && (
-                      <>
-                        <label className="layer-name-control">
-                          <span>Text content</span>
-                          <input
-                            value={selectedLayer.text || ''}
-                            onChange={(e) =>
-                              updateLayer(selectedLayer.id, { text: e.target.value })
-                            }
-                          />
-                        </label>
-                        <label className="layer-name-control">
-                          <span>Text color</span>
-                          <input
-                            type="color"
-                            value={selectedLayer.color || '#ffffff'}
-                            onChange={(e) =>
-                              updateLayer(selectedLayer.id, { color: e.target.value })
-                            }
-                          />
-                        </label>
-                        <label className="range-control">
-                          <span>
-                            <span>Font size</span>
-                            <strong>{selectedLayer.fontSize || 72}px</strong>
-                          </span>
-                          <input
-                            type="range"
-                            min="16"
-                            max="180"
-                            value={selectedLayer.fontSize || 72}
-                            onChange={(e) =>
-                              updateLayer(selectedLayer.id, { fontSize: Number(e.target.value) })
-                            }
-                          />
-                        </label>
-                      </>
-                    )}
-                    <button
-                      className="text-button layer-delete"
-                      disabled={selectedLayer.type === 'image'}
-                      onClick={removeSelectedLayer}
-                    >
-                      {selectedLayer.type === 'group'
-                        ? 'Ungroup and remove'
-                        : 'Remove selected layer'}
-                    </button>
-                  </div>
-                )}
-              </section>
-              <section className="tool-panel history-panel" id="history-workspace">
-                <div className="section-title">
-                  <div>
-                    <p className="eyebrow">NON-DESTRUCTIVE WORKFLOW</p>
-                    <h2>History</h2>
-                  </div>
-                  <span>{history.length} states</span>
-                </div>
-                <div className="history-timeline">
-                  {history.map((entry, index) => (
-                    <button
-                      key={index}
-                      className={`history-entry ${index === historyIndex ? 'current' : ''}`}
-                      onClick={() => {
-                        setHistoryIndex(index);
-                        setAdjustments(entry.adjustments);
-                        setManualAdjustments(entry.manualAdjustments);
-                        setLocalMasks(entry.localMasks);
-                        setHealStrokes(entry.healStrokes);
-                        setSelection(entry.selection || null);
-                        setDocumentTransform(entry.documentTransform || DEFAULT_DOCUMENT_TRANSFORM);
-                        if (entry.layers) setLayers(entry.layers.map((layer) => ({ ...layer })));
-                        if (entry.selectedLayerId) setSelectedLayerId(entry.selectedLayerId);
-                      }}
-                    >
-                      <span className="history-dot" />
-                      <span>
-                        <strong>{index === 0 ? 'Original state' : `Edit state ${index}`}</strong>
-                        <small>
-                          {index === historyIndex
-                            ? 'Current state'
-                            : index < historyIndex
-                              ? 'Previous state'
-                              : 'Redo state'}
-                        </small>
-                      </span>
-                    </button>
-                  ))}
-                </div>
-                <div className="history-footer">
-                  <button className="button button-quiet" onClick={undo} disabled={!canUndo}>
-                    ↶ Undo
-                  </button>
-                  <button className="button button-quiet" onClick={redo} disabled={!canRedo}>
-                    ↷ Redo
-                  </button>
-                </div>
-              </section>
-              <section className="tool-panel style-workflow-panel" id="assets-workspace">
-                <div className="section-title">
-                  <div>
-                    <p className="eyebrow">REFERENCE → REPEAT</p>
-                    <h2>Style Recipes</h2>
-                  </div>
-                  <span>{styleRecipes.length} saved</span>
-                </div>
-                <p className="tool-note">
-                  Finish editing this reference photo, save its settings, then apply the same look
-                  to a group of photos.
-                </p>
-                <input
-                  className="filter-search"
-                  value={styleRecipeName}
-                  onChange={(e) => setStyleRecipeName(e.target.value)}
-                  placeholder="Name this style (e.g. Warm Studio)"
-                  disabled={!hasImage}
-                />
-                <button
-                  className="button button-primary style-save-button"
-                  onClick={() => void saveCurrentStyle()}
-                  disabled={!hasImage || batchBusy}
-                >
-                  Save current edits as Style Recipe
-                </button>
-                <div className="style-recipe-row">
-                  <select
-                    className="filter-category-select"
-                    value={selectedStyleRecipeId}
-                    onChange={(e) => {
-                      setSelectedStyleRecipeId(e.target.value);
-                      clearBatchPreviews();
-                    }}
-                  >
-                    <option value="">Choose a saved recipe</option>
-                    {styleRecipes.map((recipe) => (
-                      <option key={recipe.id} value={recipe.id}>
-                        {recipe.name}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    className="text-button"
-                    disabled={!selectedStyleRecipeId}
-                    onClick={() => {
-                      const recipe = styleRecipes.find((item) => item.id === selectedStyleRecipeId);
-                      if (recipe && window.confirm(`Delete “${recipe.name}”?`))
-                        void deleteStyleRecipe(recipe.id).then(() =>
-                          getStyleRecipes().then(setStyleRecipes),
-                        );
-                    }}
-                  >
-                    Delete
-                  </button>
-                </div>
-                <div className="batch-actions">
-                  <button
-                    className="button button-quiet"
-                    onClick={() => batchFileInputRef.current?.click()}
-                    disabled={batchBusy}
-                  >
-                    ＋ Add batch photos
-                  </button>
-                  <button
-                    className="button button-quiet"
-                    onClick={loadStyleOnReference}
-                    disabled={!hasImage || !selectedStyleRecipeId}
-                  >
-                    Load onto reference
-                  </button>
-                </div>
-                {batchItems.length > 0 && (
-                  <>
-                    <div className="batch-summary">
-                      <strong>{batchItems.length} photo(s) queued</strong>
-                      <button
-                        className="text-button"
-                        onClick={() => {
-                          for (const item of batchItems)
-                            if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
-                          setBatchItems([]);
-                        }}
-                      >
-                        Clear batch
-                      </button>
-                    </div>
-                    <div className="batch-photo-grid">
-                      {batchItems.map((item) => (
-                        <div className="batch-photo-card" key={item.id}>
-                          <img src={item.previewUrl || item.originalPreview} alt={item.file.name} />
-                          <span title={item.file.name}>{item.file.name}</span>
-                          <button
-                            className="batch-remove"
-                            onClick={() => removeBatchPhoto(item.id)}
-                            aria-label={`Remove ${item.file.name}`}
-                          >
-                            ×
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="batch-actions">
-                      <button
-                        className="button button-quiet"
-                        onClick={() => void previewBatch()}
-                        disabled={batchBusy || !selectedStyleRecipeId}
-                      >
-                        {batchBusy ? 'Working…' : 'Preview recipe on all'}
-                      </button>
-                    </div>
-                    <label className="format-select batch-format-select">
-                      Export format{' '}
-                      <select
-                        value={batchFormat}
-                        onChange={(e) => setBatchFormat(e.target.value as typeof batchFormat)}
-                      >
-                        <option value="image/jpeg">JPEG</option>
-                        <option value="image/png">PNG</option>
-                        <option value="image/webp">WebP</option>
-                      </select>
-                    </label>
-                    <button
-                      className="button button-primary style-save-button"
-                      onClick={() => void exportBatch()}
-                      disabled={batchBusy || !selectedStyleRecipeId}
-                    >
-                      {batchBusy
-                        ? 'Processing…'
-                        : `Export ${batchItems.length} edited photos (.zip)`}
-                    </button>
-                  </>
-                )}
-                <p className="tool-note">
-                  Recipes store global tone settings and retouch strength locally. Face smoothing is
-                  detected separately on each target photo; hand-painted brush marks are specific to
-                  the reference and are not copied.
-                </p>
-              </section>
-              {activeWorkspace === 'professional' && (
-                <section className="tool-panel filter-library-panel" id="effects-workspace">
-                  <div className="section-title">
-                    <div>
-                      <p className="eyebrow">FILTER LIBRARY</p>
-                      <h2>Explore looks</h2>
-                    </div>
-                    <span>{FILTER_LIBRARY.length} looks</span>
-                  </div>
-                  <input
-                    className="filter-search"
-                    type="search"
-                    value={filterQuery}
-                    onChange={(e) => setFilterQuery(e.target.value)}
-                    placeholder="Search portraits, film, cinematic…"
-                  />
-                  <select
-                    className="filter-category-select"
-                    value={filterCategory}
-                    onChange={(e) => setFilterCategory(e.target.value)}
-                  >
-                    <option value="all">All categories</option>
-                    <option value="favorites">★ Favorites ({favoriteFilterIds.length})</option>
-                    {CATEGORIES.filter((category) => category.id !== 'custom').map((category) => (
-                      <option key={category.id} value={category.id}>
-                        {category.label}
-                      </option>
-                    ))}
-                  </select>
-                  <div className="filter-list">
-                    {visibleFilters.slice(0, filterVisibleCount).map((filter) => (
-                      <article className="filter-card" key={filter.id}>
-                        <button
-                          className={`filter-option ${selectedFilterId === filter.id ? 'selected' : ''}`}
-                          onClick={() => applyLibraryFilter(filter)}
-                          disabled={!hasImage}
-                          aria-pressed={selectedFilterId === filter.id}
-                        >
-                          <FilterThumbnail sourceUrl={sourceUrl} recipe={filter} />
-                          <span className="filter-option-copy">
-                            <strong>{filter.name}</strong>
-                            <small>{filter.description}</small>
-                          </span>
-                          <span className="filter-apply-mark">
-                            {selectedFilterId === filter.id ? '✓' : '＋'}
-                          </span>
-                        </button>
-                        <button
-                          type="button"
-                          className={`filter-favorite ${favoriteFilterIds.includes(filter.id) ? 'is-favorite' : ''}`}
-                          onClick={() => toggleFavoriteFilter(filter.id)}
-                          aria-label={`${favoriteFilterIds.includes(filter.id) ? 'Remove' : 'Add'} ${filter.name} ${favoriteFilterIds.includes(filter.id) ? 'from' : 'to'} favorites`}
-                          aria-pressed={favoriteFilterIds.includes(filter.id)}
-                        >
-                          {favoriteFilterIds.includes(filter.id) ? '★' : '☆'}
-                        </button>
-                      </article>
-                    ))}
-                    {!visibleFilters.length && (
-                      <p className="tool-note">
-                        No filters match. Try another search or save a few looks with ☆.
-                      </p>
-                    )}
-                    {visibleFilters.length > filterVisibleCount && (
-                      <button
-                        type="button"
-                        className="button button-quiet filter-load-more"
-                        onClick={() => setFilterVisibleCount((count) => count + 24)}
-                      >
-                        Load 24 more looks · {visibleFilters.length - filterVisibleCount} remaining
-                      </button>
-                    )}
-                  </div>
-                  <label className="range-control filter-intensity-control">
-                    <span>
-                      <span>Filter intensity</span>
-                      <strong>{filterIntensity}%</strong>
-                    </span>
-                    <input
-                      type="range"
-                      min="0"
-                      max="100"
-                      value={filterIntensity}
-                      disabled={!hasImage || !selectedFilterId}
-                      onChange={(e) => {
-                        const value = Number(e.target.value);
-                        const recipe = FILTER_LIBRARY.find((item) => item.id === selectedFilterId);
-                        if (recipe) applyLibraryFilter(recipe, value);
-                      }}
-                    />
-                  </label>
-                  <p className="tool-note">
-                    Filters use local pixel processing for exposure, tone, color, grain, vignette,
-                    and detail. Some cinematic glow and bloom recipes remain in the next effects
-                    pass.
-                  </p>
-                </section>
-              )}
-              {activeWorkspace === 'professional' && (
-                <section className="tool-panel">
-                  <div className="section-title">
-                    <div>
-                      <p className="eyebrow">QUICK LOOKS</p>
-                      <h2>Presets</h2>
-                    </div>
-                    <span>01 / 07</span>
-                  </div>
-                  <div className="preset-grid">
-                    {PRESETS.map((preset) => (
-                      <button
-                        key={preset.id}
-                        className={`preset-chip ${activePreset === preset.id ? 'selected' : ''}`}
-                        onClick={() => applyPreset(preset)}
-                        disabled={!hasImage}
-                      >
-                        <span className={`preset-swatch swatch-${preset.id}`} />
-                        <span>{preset.name}</span>
-                      </button>
-                    ))}
-                  </div>
-                </section>
-              )}
-              {activeWorkspace === 'professional' && (
-                <section className="tool-panel" id="color-workspace">
-                  <div className="section-title">
-                    <div>
-                      <p className="eyebrow">FINE TUNING</p>
-                      <h2>Adjustments</h2>
-                    </div>
-                    <button className="text-button" onClick={reset} disabled={!hasImage}>
-                      Reset
-                    </button>
-                  </div>
-                  {(
-                    [
-                      ['brightness', 'Brightness', 50, 150, '%'],
-                      ['contrast', 'Contrast', 50, 160, '%'],
-                      ['saturation', 'Saturation', 0, 180, '%'],
-                      ['warmth', 'Temperature', -60, 60, ''],
-                    ] as const
-                  ).map(([key, label, min, max, unit]) => (
-                    <label className="range-control" key={key}>
-                      <span>
-                        <span>{label}</span>
-                        <strong>
-                          {adjustments[key]}
-                          {unit}
-                        </strong>
-                      </span>
-                      <input
-                        type="range"
-                        min={min}
-                        max={max}
-                        value={adjustments[key]}
-                        disabled={!hasImage}
-                        onChange={(e) => updateAdjustment(key, Number(e.target.value))}
-                      />
-                    </label>
-                  ))}
-                  <div className="manual-control-groups">
-                    <h3>Light & tone</h3>
-                    {(
-                      [
-                        ['exposure', 'Exposure', -200, 200, ' EV'],
-                        ['highlights', 'Highlights', -100, 100, '%'],
-                        ['shadows', 'Shadows', -100, 100, '%'],
-                        ['whites', 'Whites', -100, 100, '%'],
-                        ['blacks', 'Blacks', -100, 100, '%'],
-                      ] as const
-                    ).map(([key, label, min, max, unit]) => (
-                      <label className="range-control" key={key}>
-                        <span>
-                          <span>{label}</span>
-                          <strong>
-                            {key === 'exposure'
-                              ? (manualAdjustments[key] / 100).toFixed(2)
-                              : manualAdjustments[key]}
-                            {unit}
-                          </strong>
-                        </span>
-                        <input
-                          type="range"
-                          min={min}
-                          max={max}
-                          value={manualAdjustments[key]}
-                          disabled={!hasImage}
-                          onChange={(e) => updateManualAdjustment(key, Number(e.target.value))}
-                        />
-                      </label>
-                    ))}
-                    <h3>Color</h3>
-                    {(
-                      [
-                        ['tint', 'Tint', -100, 100, ''],
-                        ['vibrance', 'Vibrance', -100, 100, '%'],
-                        ['hue', 'Hue', -180, 180, '°'],
-                      ] as const
-                    ).map(([key, label, min, max, unit]) => (
-                      <label className="range-control" key={key}>
-                        <span>
-                          <span>{label}</span>
-                          <strong>
-                            {manualAdjustments[key]}
-                            {unit}
-                          </strong>
-                        </span>
-                        <input
-                          type="range"
-                          min={min}
-                          max={max}
-                          value={manualAdjustments[key]}
-                          disabled={!hasImage}
-                          onChange={(e) => updateManualAdjustment(key, Number(e.target.value))}
-                        />
-                      </label>
-                    ))}
-                    <h3>RGB tone curve</h3>
-                    <label className="range-control">
-                      <span>
-                        <span>Curve channel</span>
-                      </span>
-                      <select
-                        className="filter-category-select"
-                        value={selectedCurveChannel}
-                        onChange={(e) => setSelectedCurveChannel(e.target.value as CurveChannel)}
-                      >
-                        {CURVE_CHANNEL_OPTIONS.map((channel) => (
-                          <option key={channel} value={channel}>
-                            {channel === 'master' ? 'Master RGB' : channel.toUpperCase()}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <div
-                      className="tone-curve-preview"
-                      aria-label={selectedCurveChannel + ' tone curve preview'}
-                    >
-                      <svg
-                        viewBox="0 0 100 100"
-                        role="img"
-                        aria-label="Tone curve with adjustable shadow, dark, light and highlight points"
-                      >
-                        <path d="M0 0 V100 H100" className="tone-curve-axis" />
-                        <path
-                          d="M0 100 L19 81 L44 56 L69 31 L88 12 L100 0"
-                          className="tone-curve-gridline"
-                        />
-                        <polyline
-                          points={
-                            '0,100 19,' +
-                            (100 -
-                              Math.max(
-                                0,
-                                Math.min(100, 19 + curvePreviewValue('Shadows') * 0.19),
-                              )) +
-                            ' 44,' +
-                            (100 -
-                              Math.max(0, Math.min(100, 44 + curvePreviewValue('Darks') * 0.19))) +
-                            ' 69,' +
-                            (100 -
-                              Math.max(0, Math.min(100, 69 + curvePreviewValue('Lights') * 0.19))) +
-                            ' 88,' +
-                            (100 -
-                              Math.max(
-                                0,
-                                Math.min(100, 88 + curvePreviewValue('Highlights') * 0.12),
-                              )) +
-                            ' 100,0'
-                          }
-                          className="tone-curve-line"
-                        />
-                      </svg>
-                      <span>Shadows</span>
-                      <span>Highlights</span>
-                    </div>
-                    {(
-                      [
-                        ['Shadows', 'Shadow point'],
-                        ['Darks', 'Dark midtone'],
-                        ['Lights', 'Light midtone'],
-                        ['Highlights', 'Highlight point'],
-                      ] as const
-                    ).map(([part, label]) => {
-                      const key = (curvePreviewPrefix + part) as keyof ManualAdjustmentSettings;
-                      return (
-                        <label className="range-control" key={key}>
-                          <span>
-                            <span>{label}</span>
-                            <strong>{manualAdjustments[key]}</strong>
-                          </span>
-                          <input
-                            type="range"
-                            min={-100}
-                            max={100}
-                            value={manualAdjustments[key]}
-                            disabled={!hasImage}
-                            onChange={(e) => updateManualAdjustment(key, Number(e.target.value))}
-                          />
-                        </label>
-                      );
-                    })}
-                    <h3>Selective HSL</h3>
-                    <label className="range-control">
-                      <span>
-                        <span>Color range</span>
-                      </span>
-                      <select
-                        className="filter-category-select"
-                        value={selectedHslChannel}
-                        onChange={(e) => setSelectedHslChannel(e.target.value as HslChannel)}
-                      >
-                        {HSL_CHANNEL_OPTIONS.map((channel) => (
-                          <option key={channel} value={channel}>
-                            {channel[0].toUpperCase() + channel.slice(1)}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    {(
-                      [
-                        ['Hue', 'Hue', -100, 100, '°'],
-                        ['Saturation', 'Saturation', -100, 100, '%'],
-                        ['Luminance', 'Luminance', -100, 100, '%'],
-                      ] as const
-                    ).map(([suffix, label, min, max, unit]) => {
-                      const key = ('hsl' +
-                        selectedHslChannel[0].toUpperCase() +
-                        selectedHslChannel.slice(1) +
-                        suffix) as keyof ManualAdjustmentSettings;
-                      return (
-                        <label className="range-control" key={key}>
-                          <span>
-                            <span>{label}</span>
-                            <strong>
-                              {manualAdjustments[key]}
-                              {unit}
-                            </strong>
-                          </span>
-                          <input
-                            type="range"
-                            min={min}
-                            max={max}
-                            value={manualAdjustments[key]}
-                            disabled={!hasImage}
-                            onChange={(e) => updateManualAdjustment(key, Number(e.target.value))}
-                          />
-                        </label>
-                      );
-                    })}
-                    <h3>Detail</h3>
-                    {(
-                      [
-                        ['clarity', 'Clarity', -100, 100],
-                        ['texture', 'Texture', -100, 100],
-                        ['sharpening', 'Sharpening', 0, 100],
-                        ['noiseReduction', 'Noise reduction', 0, 100],
-                      ] as const
-                    ).map(([key, label, min, max]) => (
-                      <label className="range-control" key={key}>
-                        <span>
-                          <span>{label}</span>
-                          <strong>{manualAdjustments[key]}%</strong>
-                        </span>
-                        <input
-                          type="range"
-                          min={min}
-                          max={max}
-                          value={manualAdjustments[key]}
-                          disabled={!hasImage}
-                          onChange={(e) => updateManualAdjustment(key, Number(e.target.value))}
-                        />
-                      </label>
-                    ))}
-                    <h3>Effects</h3>
-                    {(
-                      [
-                        ['grain', 'Film grain', 0, 100, '%'],
-                        ['vignette', 'Vignette', -100, 100, '%'],
-                      ] as const
-                    ).map(([key, label, min, max, unit]) => (
-                      <label className="range-control" key={key}>
-                        <span>
-                          <span>{label}</span>
-                          <strong>
-                            {manualAdjustments[key]}
-                            {unit}
-                          </strong>
-                        </span>
-                        <input
-                          type="range"
-                          min={min}
-                          max={max}
-                          value={manualAdjustments[key]}
-                          disabled={!hasImage}
-                          onChange={(e) => updateManualAdjustment(key, Number(e.target.value))}
-                        />
-                      </label>
-                    ))}
-                  </div>
-                  <p className="tool-note">
-                    Professional controls render from the untouched original. Exposure, tonal range,
-                    tint, vibrance, hue, grain and vignette are processed locally.
-                  </p>
-                </section>
-              )}
-              {activeWorkspace === 'professional' && (
-                <section className="tool-panel" id="transform-workspace">
-                  <div className="section-title">
-                    <div>
-                      <p className="eyebrow">DOCUMENT GEOMETRY</p>
-                      <h2>Crop & transform</h2>
-                    </div>
-                    <span className="offline-tag">NON-DESTRUCTIVE</span>
-                  </div>
-                  <div className="retouch-actions">
-                    <button
-                      className="button button-quiet"
-                      disabled={!hasImage}
-                      onClick={() => rotateDocument(-90)}
-                    >
-                      ↶ Rotate left
-                    </button>
-                    <button
-                      className="button button-quiet"
-                      disabled={!hasImage}
-                      onClick={() => rotateDocument(90)}
-                    >
-                      ↷ Rotate right
-                    </button>
-                  </div>
-                  <div className="retouch-actions">
-                    <button
-                      className={`button ${documentTransform.flipX ? 'button-primary' : 'button-quiet'}`}
-                      disabled={!hasImage}
-                      onClick={() =>
-                        commitDocumentTransform({
-                          ...documentTransform,
-                          flipX: !documentTransform.flipX,
-                        })
-                      }
-                    >
-                      ⇋ Flip horizontal
-                    </button>
-                    <button
-                      className={`button ${documentTransform.flipY ? 'button-primary' : 'button-quiet'}`}
-                      disabled={!hasImage}
-                      onClick={() =>
-                        commitDocumentTransform({
-                          ...documentTransform,
-                          flipY: !documentTransform.flipY,
-                        })
-                      }
-                    >
-                      ⇵ Flip vertical
-                    </button>
-                  </div>
-                  {(
-                    [
-                      ['Left', 'x', 0, 90],
-                      ['Top', 'y', 0, 90],
-                      ['Width', 'width', 10, 100 - Math.round(cropDraft.x * 100)],
-                      ['Height', 'height', 10, 100 - Math.round(cropDraft.y * 100)],
-                    ] as const
-                  ).map(([label, key, min, max]) => (
-                    <label className="range-control" key={key}>
-                      <span>
-                        <span>Crop {label}</span>
-                        <strong>{Math.round(cropDraft[key] * 100)}%</strong>
-                      </span>
-                      <input
-                        type="range"
-                        min={min}
-                        max={Math.max(min, max)}
-                        value={Math.round(cropDraft[key] * 100)}
-                        disabled={!hasImage}
-                        onChange={(event) =>
-                          setCropDraft((current) => ({
-                            ...current,
-                            [key]: Number(event.target.value) / 100,
-                          }))
-                        }
-                      />
-                    </label>
-                  ))}
-                  <div className="retouch-actions">
-                    <button
-                      className="button button-primary"
-                      disabled={!hasImage}
-                      onClick={applyCropDraft}
-                    >
-                      Apply crop
-                    </button>
-                    <button
-                      className="text-button"
-                      disabled={!hasImage}
-                      onClick={() => commitDocumentTransform(DEFAULT_DOCUMENT_TRANSFORM)}
-                    >
-                      Reset geometry
-                    </button>
-                  </div>
-                  <p className="tool-note">
-                    Crop coordinates are relative to the original image. Rotation and flips remain
-                    editable, and the same transform is used for preview, local save, and
-                    full-resolution export.
-                  </p>
-                </section>
-              )}
-              {activeWorkspace === 'professional' && (
-                <section className="tool-panel">
-                  <div className="section-title">
-                    <div>
-                      <p className="eyebrow">LOCAL ADJUSTMENTS</p>
-                      <h2>Masking & healing</h2>
-                    </div>
-                    <span className="offline-tag">ON DEVICE</span>
-                  </div>
-                  <p className="tool-note">
-                    Choose a brush, linear gradient, or radial mask, then paint or place it on the
-                    preview. Healing uses nearby pixels and stays local to this photo.
-                  </p>
-                  <div className="retouch-actions">
-                    {(['off', 'brush', 'linear', 'radial', 'heal'] as const).map((tool) => (
-                      <button
-                        key={tool}
-                        className={
-                          localTool === tool ? 'button button-primary' : 'button button-quiet'
-                        }
-                        disabled={!hasImage}
-                        onClick={() => {
-                          setLocalTool(tool);
-                          if (tool === 'brush' || tool === 'off') setTonalBrush(null);
-                        }}
-                      >
-                        {tool === 'off'
-                          ? 'Select'
-                          : tool === 'brush'
-                            ? 'Brush mask'
-                            : tool === 'linear'
-                              ? 'Gradient'
-                              : tool === 'radial'
-                                ? 'Radial'
-                                : 'Healing'}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="selection-workspace">
-                    <strong>Selection brush</strong>
-                    <p className="tool-note">
-                      Paint a selection, then local brush/gradient adjustments are restricted to the
-                      selected area.
-                    </p>
-                    <div className="retouch-actions">
-                      <button
-                        className={
-                          selectionMode === 'add' ? 'button button-primary' : 'button button-quiet'
-                        }
-                        disabled={!hasImage}
-                        onClick={() => {
-                          setSelectionMode(selectionMode === 'add' ? 'off' : 'add');
-                          setLocalTool('off');
-                        }}
-                      >
-                        Add selection
-                      </button>
-                      <button
-                        className={
-                          selectionMode === 'subtract'
-                            ? 'button button-primary'
-                            : 'button button-quiet'
-                        }
-                        disabled={!hasImage}
-                        onClick={() => {
-                          setSelectionMode(selectionMode === 'subtract' ? 'off' : 'subtract');
-                          setLocalTool('off');
-                        }}
-                      >
-                        Subtract
-                      </button>
-                      <button
-                        className="button button-quiet"
-                        disabled={!selection}
-                        onClick={() =>
-                          commitSelection(
-                            selection ? { ...selection, inverted: !selection.inverted } : null,
-                          )
-                        }
-                      >
-                        Invert
-                      </button>
-                      <button
-                        className="button button-quiet"
-                        disabled={!selection}
-                        onClick={() => commitSelection(null)}
-                      >
-                        Clear
-                      </button>
-                    </div>
-                    <label className="range-control">
-                      <span>
-                        <span>Selection brush size</span>
-                        <strong>{selectionBrushSize}</strong>
-                      </span>
-                      <input
-                        type="range"
-                        min="5"
-                        max="120"
-                        value={selectionBrushSize}
-                        onChange={(e) => setSelectionBrushSize(Number(e.target.value))}
-                      />
-                    </label>
-                    <label className="range-control">
-                      <span>
-                        <span>Selection feather</span>
-                        <strong>{selectionFeather}%</strong>
-                      </span>
-                      <input
-                        type="range"
-                        min="0"
-                        max="100"
-                        value={selectionFeather}
-                        onChange={(e) => {
-                          const value = Number(e.target.value);
-                          setSelectionFeather(value);
-                          setSelection((current) =>
-                            current ? { ...current, feather: value } : current,
-                          );
-                        }}
-                      />
-                    </label>
-                    <span className="tool-note">
-                      {selection
-                        ? `${selection.strokes.length} selection stroke(s) · ${selection.inverted ? 'inverted' : 'normal'}`
-                        : 'No active selection'}
-                    </span>
-                  </div>
-                  <div className="retouch-actions" aria-label="Tonal brushes">
-                    <button
-                      className={
-                        tonalBrush === 'dodge' ? 'button button-primary' : 'button button-quiet'
-                      }
-                      disabled={!hasImage}
-                      onClick={() => {
-                        setTonalBrush('dodge');
-                        setLocalTool('brush');
-                        setRetouchMode('off');
-                        setLocalExposure(28);
-                        setLocalTemperature(0);
-                        setLocalSaturation(0);
-                      }}
-                    >
-                      ☼ Dodge
-                    </button>
-                    <button
-                      className={
-                        tonalBrush === 'burn' ? 'button button-primary' : 'button button-quiet'
-                      }
-                      disabled={!hasImage}
-                      onClick={() => {
-                        setTonalBrush('burn');
-                        setLocalTool('brush');
-                        setRetouchMode('off');
-                        setLocalExposure(-28);
-                        setLocalTemperature(0);
-                        setLocalSaturation(0);
-                      }}
-                    >
-                      ◐ Burn
-                    </button>
-                  </div>
-                  {tonalBrush && localTool === 'brush' && (
-                    <p className="tool-note">
-                      {tonalBrush === 'dodge' ? 'Dodge brightens' : 'Burn darkens'} the painted area
-                      with a feathered exposure mask. Adjust exposure below for strength, then paint
-                      directly on the photo. Select Brush mask to return to general local
-                      adjustments.
-                    </p>
-                  )}
-                  <label className="range-control">
-                    <span>
-                      <span>Brush size</span>
-                      <strong>{localBrushSize}</strong>
-                    </span>
-                    <input
-                      type="range"
-                      min="8"
-                      max="100"
-                      value={localBrushSize}
-                      onChange={(e) => setLocalBrushSize(Number(e.target.value))}
-                    />
-                  </label>
-                  {(
-                    [
-                      ['Local exposure', localExposure, setLocalExposure],
-                      ['Local temperature', localTemperature, setLocalTemperature],
-                      ['Local saturation', localSaturation, setLocalSaturation],
-                    ] as const
-                  ).map(([label, value, setter]) => (
-                    <label className="range-control" key={label}>
-                      <span>
-                        <span>{label}</span>
-                        <strong>{value}</strong>
-                      </span>
-                      <input
-                        type="range"
-                        min="-100"
-                        max="100"
-                        value={value}
-                        onChange={(e) => setter(Number(e.target.value))}
-                      />
-                    </label>
-                  ))}
-                  <label className="range-control">
-                    <span>
-                      <span>Mask radius</span>
-                      <strong>{localRadius}%</strong>
-                    </span>
-                    <input
-                      type="range"
-                      min="10"
-                      max="80"
-                      value={localRadius}
-                      onChange={(e) => setLocalRadius(Number(e.target.value))}
-                    />
-                  </label>
-                  <label className="range-control">
-                    <span>
-                      <span>Mask feather</span>
-                      <strong>{localFeather}%</strong>
-                    </span>
-                    <input
-                      type="range"
-                      min="5"
-                      max="100"
-                      value={localFeather}
-                      onChange={(e) => setLocalFeather(Number(e.target.value))}
-                    />
-                  </label>
-                  <div className="mask-workspace" aria-label="Mask workspace">
-                    <div className="mask-workspace-heading">
-                      <strong>Mask workspace</strong>
-                      <span className="tool-note">{localMasks.length} mask(s)</span>
-                    </div>
-                    {localMasks.length === 0 ? (
-                      <p className="tool-note">
-                        Paint a brush, linear, or radial mask to manage it here.
-                      </p>
-                    ) : (
-                      <div className="mask-list">
-                        {localMasks.map((mask, index) => (
-                          <div
-                            className={`mask-row ${selectedMaskId === mask.id ? 'selected' : ''}`}
-                            key={mask.id}
-                          >
-                            <button
-                              className="mask-select"
-                              onClick={() => setSelectedMaskId(mask.id)}
-                              aria-pressed={selectedMaskId === mask.id}
-                            >
-                              <span>{mask.name || `${mask.kind} mask ${index + 1}`}</span>
-                              <small>
-                                {mask.kind} · {mask.exposure > 0 ? '+' : ''}
-                                {mask.exposure} EV
-                              </small>
-                            </button>
-                            <button
-                              className="icon-button"
-                              aria-label={`${mask.visible === false ? 'Show' : 'Hide'} ${mask.name || 'mask'}`}
-                              title={
-                                mask.visible === false ? 'Show mask effect' : 'Hide mask effect'
-                              }
-                              onClick={() => {
-                                const next = localMasks.map((item) =>
-                                  item.id === mask.id
-                                    ? { ...item, visible: item.visible === false }
-                                    : item,
-                                );
-                                commitSnapshot(adjustments, manualAdjustments, next, healStrokes);
-                              }}
-                            >
-                              {mask.visible === false ? '◉̸' : '◉'}
-                            </button>
-                            <button
-                              className="icon-button"
-                              aria-label={`Delete ${mask.name || 'mask'}`}
-                              title="Delete mask"
-                              onClick={() => {
-                                const next = localMasks.filter((item) => item.id !== mask.id);
-                                setSelectedMaskId(next.at(-1)?.id || null);
-                                commitSnapshot(adjustments, manualAdjustments, next, healStrokes);
-                              }}
-                            >
-                              ×
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    {selectedMaskId && localMasks.some((mask) => mask.id === selectedMaskId) && (
-                      <div className="mask-selected-note">
-                        Selected mask:{' '}
-                        {localMasks.find((mask) => mask.id === selectedMaskId)?.name ||
-                          'Untitled mask'}
-                        . Edit this mask below; the active selection remains applied when it is
-                        rendered and exported.
-                        {(() => {
-                          const mask = localMasks.find((item) => item.id === selectedMaskId);
-                          if (!mask) return null;
-                          return (
-                            <div className="selected-mask-controls">
-                              {(
-                                [
-                                  ['Exposure', 'exposure', -100, 100],
-                                  ['Temperature', 'temperature', -100, 100],
-                                  ['Saturation', 'saturation', -100, 100],
-                                  ['Feather', 'feather', 0, 100],
-                                  ['Brush size', 'size', 5, 120],
-                                ] as const
-                              ).map(([label, key, min, max]) => (
-                                <label className="range-control" key={key}>
-                                  <span>
-                                    <span>{label}</span>
-                                    <strong>{mask[key]}</strong>
-                                  </span>
-                                  <input
-                                    type="range"
-                                    min={min}
-                                    max={max}
-                                    value={mask[key]}
-                                    onChange={(event) =>
-                                      updateSelectedMask({ [key]: Number(event.target.value) })
-                                    }
-                                  />
-                                </label>
-                              ))}
-                            </div>
-                          );
-                        })()}
-                      </div>
-                    )}
-                  </div>
-                  <div className="retouch-actions">
-                    <button
-                      className="text-button"
-                      disabled={!localMasks.length && !healStrokes.length}
-                      onClick={() => {
-                        setSelectedMaskId(null);
-                        commitSnapshot(adjustments, manualAdjustments, [], []);
-                      }}
-                    >
-                      Clear local edits
-                    </button>
-                    <span className="tool-note">{healStrokes.length} healing stroke(s)</span>
-                  </div>
-                </section>
-              )}
-              {activeWorkspace === 'portrait' && (
-                <section className="tool-panel retouch-panel" id="retouch-workspace">
-                  <div className="section-title">
-                    <div>
-                      <p className="eyebrow">PORTRAIT TOOLS</p>
-                      <h2>Retouch</h2>
-                    </div>
-                    <span className="offline-tag">ON DEVICE</span>
-                  </div>
-                  <p className="tool-note">
-                    Detect faces for a feathered skin mask that protects eyes, brows and lips, or
-                    paint a precise area. The preview and full-resolution export use the same
-                    resolution-scaled retouch strength. Processing stays on this device.
-                  </p>
-                  <div className="retouch-actions">
-                    <button
-                      className={
-                        localTool === 'heal' ? 'button button-primary' : 'button button-quiet'
-                      }
-                      onClick={() => setLocalTool(localTool === 'heal' ? 'off' : 'heal')}
-                      disabled={!hasImage}
-                    >
-                      Healing / blemish brush
-                    </button>
-                    <button
-                      className="text-button"
-                      onClick={() => commitSnapshot(adjustments, manualAdjustments, localMasks, [])}
-                      disabled={!healStrokes.length}
-                    >
-                      Clear healing
-                    </button>
-                  </div>
-                  {localTool === 'heal' && (
-                    <label className="range-control">
-                      <span>
-                        <span>Healing brush size</span>
-                        <strong>{localBrushSize}</strong>
-                      </span>
-                      <input
-                        type="range"
-                        min="8"
-                        max="100"
-                        value={localBrushSize}
-                        onChange={(e) => setLocalBrushSize(Number(e.target.value))}
-                      />
-                    </label>
-                  )}
-                  {localTool === 'heal' && (
-                    <p className="retouch-hint">
-                      Paint over a small blemish. The editor blends nearby pixels locally; this is a
-                      basic clone-style healing tool, not content-aware reconstruction.
-                    </p>
-                  )}
-                  <div className="retouch-actions">
-                    <button
-                      className={`button ${retouchMode === 'off' && faceLandmarks.length ? 'button-primary' : 'button-quiet'}`}
-                      onClick={() => void runFaceDetection()}
-                      disabled={!hasImage || detectingFaces || busy}
-                    >
-                      {detectingFaces ? 'Detecting…' : 'Auto face detect'}
-                    </button>
-                    <button
-                      className={`button ${retouchMode === 'brush' ? 'button-primary' : 'button-quiet'}`}
-                      onClick={() => setRetouchMode(retouchMode === 'brush' ? 'off' : 'brush')}
-                      disabled={!hasImage}
-                    >
-                      Brush
-                    </button>
-                  </div>
-                  <div
-                    className="retouch-strength-presets"
-                    aria-label="Skin smoothing strength presets"
-                  >
-                    <button
-                      type="button"
-                      className={retouchStrength === 30 ? 'selected' : ''}
-                      onClick={() => commitPortraitSnapshot({ retouchStrength: 30 })}
-                      disabled={!hasImage}
-                    >
-                      Subtle
-                    </button>
-                    <button
-                      type="button"
-                      className={retouchStrength === 55 ? 'selected' : ''}
-                      onClick={() => commitPortraitSnapshot({ retouchStrength: 55 })}
-                      disabled={!hasImage}
-                    >
-                      Balanced
-                    </button>
-                    <button
-                      type="button"
-                      className={retouchStrength === 78 ? 'selected' : ''}
-                      onClick={() => commitPortraitSnapshot({ retouchStrength: 78 })}
-                      disabled={!hasImage}
-                    >
-                      Strong
-                    </button>
-                  </div>
-                  <label className="range-control">
-                    <span>
-                      <span>Skin smoothing</span>
-                      <strong>{retouchStrength}%</strong>
-                    </span>
-                    <input
-                      type="range"
-                      min="0"
-                      max="100"
-                      value={retouchStrength}
-                      disabled={!hasImage}
-                      onChange={(e) =>
-                        commitPortraitSnapshot({ retouchStrength: Number(e.target.value) })
-                      }
-                    />
-                  </label>
-                  <div className="makeup-controls">
-                    <div className="section-title">
-                      <div>
-                        <p className="eyebrow">FACE-AWARE EFFECTS</p>
-                        <h3>Makeup</h3>
-                      </div>
-                      <button
-                        type="button"
-                        className="text-button"
-                        onClick={() => commitPortraitSnapshot({ faceMakeup: DEFAULT_FACE_MAKEUP })}
-                        disabled={!hasImage}
-                      >
-                        Reset
-                      </button>
-                    </div>
-                    <p className="retouch-hint">
-                      Local landmark-aligned blush, lip tint and eye color. Run Auto face detect
-                      first.
-                    </p>
-                    {(
-                      [
-                        ['blush', 'Blush'],
-                        ['lipstick', 'Lip color'],
-                        ['eyeshadow', 'Eye color'],
-                      ] as const
-                    ).map(([key, label]) => (
-                      <label className="range-control" key={key}>
-                        <span>
-                          <span>{label}</span>
-                          <strong>{faceMakeup[key]}%</strong>
-                        </span>
-                        <input
-                          type="range"
-                          min="0"
-                          max="100"
-                          value={faceMakeup[key]}
-                          disabled={!hasImage || !faceLandmarks.length}
-                          onChange={(event) =>
-                            commitPortraitSnapshot({
-                              faceMakeup: { ...faceMakeup, [key]: Number(event.target.value) },
-                            })
-                          }
-                        />
-                      </label>
-                    ))}
-                  </div>
-                  <div className="makeup-controls accessory-controls">
-                    <div className="section-title">
-                      <div>
-                        <p className="eyebrow">LANDMARK-TRACKED OVERLAYS</p>
-                        <h3>Accessories & lenses</h3>
-                      </div>
-                      <button
-                        type="button"
-                        className="text-button"
-                        onClick={() => {
-                          commitSnapshot(
-                            adjustments,
-                            manualAdjustments,
-                            localMasks,
-                            healStrokes,
-                            selection,
-                            {
-                              faceAccessory: 'none',
-                              faceAccessorySettings: DEFAULT_FACE_ACCESSORY_SETTINGS,
-                            },
-                          );
-                        }}
-                        disabled={!hasImage || faceAccessory === 'none'}
-                      >
-                        Remove
-                      </button>
-                    </div>
-                    <p className="retouch-hint">
-                      Choose a vector overlay anchored to detected facial landmarks. Run Auto face
-                      detect first.
-                    </p>
-                    <label className="range-control">
-                      <span>
-                        <span>Effect</span>
-                      </span>
-                      <select
-                        value={faceAccessory}
-                        disabled={!hasImage || !faceLandmarks.length}
-                        onChange={(event) =>
-                          commitPortraitSnapshot({
-                            faceAccessory: event.target.value as FaceAccessory,
-                          })
-                        }
-                      >
-                        <option value="none">No accessory</option>
-                        <option value="glasses">Classic glasses</option>
-                        <option value="sunglasses">Dark sunglasses</option>
-                        <option value="bunny-ears">Bunny ears</option>
-                        <option value="puppy">Puppy face</option>
-                        <option value="heart-eyes">Heart eyes</option>
-                        <option value="freckles">Freckles</option>
-                        <option value="flower-crown">Flower crown</option>
-                        <option value="crown">Golden crown</option>
-                      </select>
-                    </label>
-                    {faceAccessory !== 'none' && (
-                      <div className="accessory-adjustments">
-                        {(
-                          [
-                            ['scale', 'Size', 50, 160, '%'],
-                            ['offsetX', 'Horizontal position', -50, 50, ''],
-                            ['offsetY', 'Vertical position', -50, 50, ''],
-                            ['rotation', 'Rotation', -45, 45, '°'],
-                            ['opacity', 'Opacity', 0, 100, '%'],
-                          ] as const
-                        ).map(([key, label, min, max, suffix]) => (
-                          <label className="range-control" key={key}>
-                            <span>
-                              <span>{label}</span>
-                              <strong>
-                                {faceAccessorySettings[key]}
-                                {suffix}
-                              </strong>
-                            </span>
-                            <input
-                              type="range"
-                              min={min}
-                              max={max}
-                              value={faceAccessorySettings[key]}
-                              disabled={!hasImage || !faceLandmarks.length}
-                              onChange={(event) =>
-                                commitPortraitSnapshot({
-                                  faceAccessorySettings: {
-                                    ...faceAccessorySettings,
-                                    [key]: Number(event.target.value),
-                                  },
-                                })
-                              }
-                            />
-                          </label>
-                        ))}
-                        <button
-                          type="button"
-                          className="text-button"
-                          onClick={() =>
-                            commitPortraitSnapshot({
-                              faceAccessorySettings: DEFAULT_FACE_ACCESSORY_SETTINGS,
-                            })
-                          }
-                        >
-                          Reset positioning
-                        </button>
-                      </div>
-                    )}
-                    <span className="tool-note">
-                      {faceLandmarks.length
-                        ? `${faceLandmarks.length} face(s) tracked`
-                        : 'Waiting for face detection'}
-                    </span>
-                  </div>
-                  {retouchMode === 'brush' && (
-                    <label className="range-control">
-                      <span>
-                        <span>Brush size</span>
-                        <strong>{brushSize}</strong>
-                      </span>
-                      <input
-                        type="range"
-                        min="8"
-                        max="80"
-                        value={brushSize}
-                        onChange={(e) => setBrushSize(Number(e.target.value))}
-                      />
-                    </label>
-                  )}
-                  <div className="retouch-actions">
-                    <button
-                      className="text-button"
-                      onClick={() => {
-                        commitSnapshot(
-                          adjustments,
-                          manualAdjustments,
-                          localMasks,
-                          healStrokes,
-                          selection,
-                          {
-                            faceLandmarks: [],
-                            retouchStrokes: [],
-                            faceMakeup: DEFAULT_FACE_MAKEUP,
-                            faceAccessory: 'none',
-                            faceAccessorySettings: DEFAULT_FACE_ACCESSORY_SETTINGS,
-                          },
-                        );
-                        setRetouchMode('off');
-                        setMessage('Portrait retouch cleared.');
-                      }}
-                      disabled={!hasImage || (!faceLandmarks.length && !retouchStrokes.length)}
-                    >
-                      Clear retouch
-                    </button>
-                    <span className="tool-note">
-                      {faceLandmarks.length
-                        ? `${faceLandmarks.length} detected face(s)`
-                        : `${retouchStrokes.length} brush stroke(s)`}
-                    </span>
-                  </div>
-                  {retouchMode === 'brush' && (
-                    <p className="retouch-hint">
-                      Paint directly over skin in the preview. Avoid eyes, eyebrows, lips, and hair.
-                    </p>
-                  )}
-                </section>
-              )}
-              <section className="tool-panel assistant-panel">
-                <div className="section-title">
-                  <div>
-                    <p className="eyebrow">LOCAL EDITING HELPER</p>
-                    <h2>Describe the look</h2>
-                  </div>
-                  <span className="offline-tag">OFFLINE</span>
-                </div>
-                <p>
-                  Describe the look in plain language. The on-device assistant converts recognized
-                  directions into editable color settings, filter choices, and optional face-aware
-                  smoothing. Nothing is sent to a cloud model.
-                </p>
-                <div className="prompt-row">
-                  <input
-                    value={prompt}
-                    onChange={(e) => setPrompt(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && hasImage && suggestFromPrompt()}
-                    placeholder="e.g. warm luxury fashion campaign, soft skin"
-                    disabled={!hasImage}
-                  />
-                  <button
-                    onClick={suggestFromPrompt}
-                    disabled={!hasImage || !prompt.trim()}
-                    aria-label="Interpret style instruction"
-                  >
-                    ↗
-                  </button>
-                </div>
-                {styleInterpretation && (
-                  <div className="style-assistant-result">
-                    <strong>Proposed editing recipe</strong>
-                    <ul>
-                      {styleInterpretation.explanation.map((line, index) => (
-                        <li key={`${index}-${line}`}>{line}</li>
-                      ))}
-                    </ul>
-                    <div className="style-assistant-values">
-                      <span>Brightness {Math.round(styleInterpretation.settings.brightness)}%</span>
-                      <span>Contrast {Math.round(styleInterpretation.settings.contrast)}%</span>
-                      <span>Saturation {Math.round(styleInterpretation.settings.saturation)}%</span>
-                      <span>Warmth {Math.round(styleInterpretation.settings.warmth)}</span>
-                    </div>
-                    <button
-                      className="button button-primary style-save-button"
-                      onClick={() => {
-                        void saveCurrentStyle(styleRecipeName.trim() || 'AI Style Recipe');
-                      }}
-                      disabled={!hasImage || batchBusy}
-                    >
-                      Save proposed look as Style Recipe
-                    </button>
-                  </div>
-                )}
-                <p className="tool-note">
-                  This is a local rule-based assistant, not a connected generative AI model.
-                  Advanced effects and cloud language-model interpretation are not enabled.
-                </p>
-              </section>
-            </aside>
-          </div>
-        )}
-      </main>
-      <footer className="studio-footer">
-        <span>EVERY FRAME FIRST STUDIO</span>
-        <span>Private by default · Processing stays in your browser</span>
-        <span>AI features require a configured secure service</span>
-      </footer>
+              <LayersPanel
+                layers={layers}
+                hasImage={hasImage}
+                selectedLayerId={selectedLayerId}
+                selectedLayer={selectedLayer}
+                selectedLayerMask={selectedLayerMask}
+                draggedLayerId={draggedLayerId}
+                layerMaskView={layerMaskView}
+                layerMaskTool={layerMaskTool}
+                layerMaskBrushSize={layerMaskBrushSize}
+                selectedCurveChannel={selectedCurveChannel}
+                selectedHslChannel={selectedHslChannel}
+                maskThumbnailRef={maskThumbnailRef}
+                setDraggedLayerId={setDraggedLayerId}
+                setSelectedLayerId={setSelectedLayerId}
+                setSelectedLayerMaskId={setSelectedLayerMaskId}
+                setLayerMaskView={setLayerMaskView}
+                setLayerMaskTool={setLayerMaskTool}
+                setLayerMaskBrushSize={setLayerMaskBrushSize}
+                setSelectedCurveChannel={setSelectedCurveChannel}
+                setSelectedHslChannel={setSelectedHslChannel}
+                addLayerGroup={addLayerGroup}
+                addAdjustmentLayer={addAdjustmentLayer}
+                addTextLayer={addTextLayer}
+                updateLayer={updateLayer}
+                toggleGroupExpanded={toggleGroupExpanded}
+                moveLayer={moveLayer}
+                reorderLayer={reorderLayer}
+                addLayerMask={addLayerMask}
+                updateSelectedLayerMask={updateSelectedLayerMask}
+                removeSelectedLayer={removeSelectedLayer}
+              />
+              <HistoryPanel
+                history={history}
+                historyIndex={historyIndex}
+                canUndo={canUndo}
+                canRedo={canRedo}
+                undo={undo}
+                redo={redo}
+                setHistoryIndex={setHistoryIndex}
+                setAdjustments={setAdjustments}
+                setManualAdjustments={setManualAdjustments}
+                setLocalMasks={setLocalMasks}
+                setHealStrokes={setHealStrokes}
+                setSelection={setSelection}
+                setDocumentTransform={setDocumentTransform}
+                setLayers={setLayers}
+                setSelectedLayerId={setSelectedLayerId}
+              />
+              <BatchWorkspace
+                styleRecipes={styleRecipes}
+                styleRecipeName={styleRecipeName}
+                setStyleRecipeName={setStyleRecipeName}
+                hasImage={hasImage}
+                batchBusy={batchBusy}
+                saveCurrentStyle={saveCurrentStyle}
+                selectedStyleRecipeId={selectedStyleRecipeId}
+                setSelectedStyleRecipeId={setSelectedStyleRecipeId}
+                setAdHocBatchRecipe={setAdHocBatchRecipe}
+                clearBatchPreviews={clearBatchPreviews}
+                setStyleRecipes={setStyleRecipes}
+                batchFileInputRef={batchFileInputRef}
+                syncCurrentEditsToBatch={syncCurrentEditsToBatch}
+                loadStyleOnReference={loadStyleOnReference}
+                selectedBatchRecipe={selectedBatchRecipe}
+                adHocBatchRecipe={adHocBatchRecipe}
+                batchItems={batchItems}
+                setBatchItems={setBatchItems}
+                removeBatchPhoto={removeBatchPhoto}
+                previewBatch={previewBatch}
+                exportBatch={exportBatch}
+                batchFormat={batchFormat}
+                setBatchFormat={setBatchFormat}
+                batchProgress={batchProgress}
+                batchCancelRef={batchCancelRef}
+              />
+              <EffectsPanel
+                hasImage={hasImage}
+                sourceUrl={sourceUrl}
+                filterQuery={filterQuery}
+                setFilterQuery={setFilterQuery}
+                filterCategory={filterCategory}
+                setFilterCategory={setFilterCategory}
+                favoriteFilterIds={favoriteFilterIds}
+                visibleFilters={visibleFilters}
+                filterVisibleCount={filterVisibleCount}
+                setFilterVisibleCount={setFilterVisibleCount}
+                selectedFilterId={selectedFilterId}
+                filterIntensity={filterIntensity}
+                applyLibraryFilter={applyLibraryFilter}
+                toggleFavoriteFilter={toggleFavoriteFilter}
+                presets={PRESETS}
+                activePreset={activePreset}
+                applyPreset={applyPreset}
+              />
+              <AdjustmentPanel
+                hasImage={hasImage}
+                adjustments={adjustments}
+                manualAdjustments={manualAdjustments}
+                reset={reset}
+                updateAdjustment={updateAdjustment}
+                updateManualAdjustment={updateManualAdjustment}
+                selectedCurveChannel={selectedCurveChannel}
+                setSelectedCurveChannel={setSelectedCurveChannel}
+                selectedHslChannel={selectedHslChannel}
+                setSelectedHslChannel={setSelectedHslChannel}
+                documentTransform={documentTransform}
+                defaultDocumentTransform={DEFAULT_DOCUMENT_TRANSFORM}
+                commitDocumentTransform={commitDocumentTransform}
+                rotateDocument={rotateDocument}
+                cropDraft={cropDraft}
+                setCropDraft={setCropDraft}
+                applyCropDraft={applyCropDraft}
+              />
+              <div id="masking-workspace">
+              <MaskingPanel
+                hasImage={hasImage}
+                localTool={localTool}
+                setLocalTool={setLocalTool}
+                tonalBrush={tonalBrush}
+                setTonalBrush={setTonalBrush}
+                selectionMode={selectionMode}
+                setSelectionMode={setSelectionMode}
+                selection={selection}
+                setSelection={setSelection}
+                selectionBrushSize={selectionBrushSize}
+                setSelectionBrushSize={setSelectionBrushSize}
+                selectionFeather={selectionFeather}
+                setSelectionFeather={setSelectionFeather}
+                commitSelection={commitSelection}
+                localBrushSize={localBrushSize}
+                setLocalBrushSize={setLocalBrushSize}
+                localExposure={localExposure}
+                setLocalExposure={setLocalExposure}
+                localTemperature={localTemperature}
+                setLocalTemperature={setLocalTemperature}
+                localSaturation={localSaturation}
+                setLocalSaturation={setLocalSaturation}
+                localRadius={localRadius}
+                setLocalRadius={setLocalRadius}
+                localFeather={localFeather}
+                setLocalFeather={setLocalFeather}
+                localMasks={localMasks}
+                selectedMaskId={selectedMaskId}
+                setSelectedMaskId={setSelectedMaskId}
+                healStrokes={healStrokes}
+                adjustments={adjustments}
+                manualAdjustments={manualAdjustments}
+                commitSnapshot={commitSnapshot}
+                updateSelectedMask={updateSelectedMask}
+                setRetouchMode={setRetouchMode}
+              />
+              </div>
+              <BackgroundPanel
+                hasImage={hasImage}
+                backgroundBusy={backgroundBusy}
+                personMask={personMask}
+                backgroundOps={backgroundOps}
+                runBackgroundDetection={runBackgroundDetection}
+                setPersonMask={setPersonMask}
+                setBackgroundOps={setBackgroundOps}
+              />
+              <RetouchPanel
+                hasImage={hasImage}
+                busy={busy}
+                detectingFaces={detectingFaces}
+                localTool={localTool}
+                setLocalTool={setLocalTool}
+                localBrushSize={localBrushSize}
+                setLocalBrushSize={setLocalBrushSize}
+                retouchMode={retouchMode}
+                setRetouchMode={setRetouchMode}
+                retouchStrength={retouchStrength}
+                retouchStrokes={retouchStrokes}
+                brushSize={brushSize}
+                setBrushSize={setBrushSize}
+                faceLandmarks={faceLandmarks}
+                faceStrengths={faceStrengths}
+                setFaceStrengths={setFaceStrengths}
+                glareSoftness={glareSoftness}
+                setGlareSoftness={setGlareSoftness}
+                faceMakeup={faceMakeup}
+                faceAccessory={faceAccessory}
+                faceAccessorySettings={faceAccessorySettings}
+                adjustments={adjustments}
+                manualAdjustments={manualAdjustments}
+                localMasks={localMasks}
+                healStrokes={healStrokes}
+                selection={selection}
+                runFaceDetection={runFaceDetection}
+                applyBlemishes={applyBlemishes}
+                commitSnapshot={commitSnapshot}
+                commitPortraitSnapshot={commitPortraitSnapshot}
+                setMessage={setMessage}
+              />
+              <StyleAssistantPanel
+                prompt={prompt}
+                setPrompt={setPrompt}
+                hasImage={hasImage}
+                suggestFromPrompt={suggestFromPrompt}
+                styleInterpretation={styleInterpretation}
+                styleRecipeName={styleRecipeName}
+                batchBusy={batchBusy}
+                saveCurrentStyle={saveCurrentStyle}
+              />
+              <AIDock onOpenMia={() => navigateStudio('mia', 'mia-workspace')} />
+              </aside>
     </div>
   );
 }

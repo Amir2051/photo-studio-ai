@@ -27,9 +27,20 @@ export interface Preferences {
   audioScrubbing: boolean;
   timecodeFormat: 'timecode' | 'frames' | 'seconds';
   thumbnailSize: number;
+  // height of the generated preview proxy in pixels; the original always
+  // drives exports, the proxy only stands in while editing
+  proxyHeight: number;
   // session-only consent: never restore a localhost agent connection on reload
   claudeBridge: boolean;
   claudePort: number;
+}
+
+// proxy heights stay sane whatever the UI passes; an even number keeps
+// encoders that require even dimensions happy
+export function normalizeProxyHeight(input: number): number {
+  if (!Number.isFinite(input)) return 540;
+  const clamped = Math.min(1080, Math.max(144, Math.round(input)));
+  return Math.max(2, Math.floor(clamped / 2) * 2);
 }
 
 const defaults: Preferences = {
@@ -48,6 +59,7 @@ const defaults: Preferences = {
   audioScrubbing: false,
   timecodeFormat: 'timecode',
   thumbnailSize: 96,
+  proxyHeight: 540,
   claudeBridge: false,
   claudePort: 7331,
 };

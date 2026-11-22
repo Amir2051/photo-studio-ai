@@ -6,9 +6,9 @@
 <svelte:head>
   <title>Imprint | brainCUT</title>
   <meta name="description" content="Legal notice and contact information for brainCUT, a free browser-based video editor by Braian Plaku." />
-  <link rel="canonical" href="https://cut.swimmingbrain.dev/imprint" />
+  <link rel="canonical" href="https://studio.safenestt.com/imprint" />
   <meta property="og:title" content="Imprint | brainCUT" />
-  <meta property="og:url" content="https://cut.swimmingbrain.dev/imprint" />
+  <meta property="og:url" content="https://studio.safenestt.com/imprint" />
 </svelte:head>
 
 <div class="legal">
@@ -27,7 +27,7 @@
     <h2>Responsible for Content</h2>
     <p>
       Braian Plaku<br />
-      <a href="https://swimmingbrain.dev" target="_blank" rel="noopener">swimmingbrain.dev</a>
+      <a href="https://studio.safenestt.com" target="_blank" rel="noopener">swimmingbrain.dev</a>
     </p>
 
     <h2>Contact</h2>

@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://cut.swimmingbrain.dev/sitemap.xml
+Sitemap: https://studio.safenestt.com/sitemap.xml

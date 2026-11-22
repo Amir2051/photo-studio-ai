@@ -21,7 +21,7 @@ export function addToast(message: string, type: ToastType = 'info', duration = 3
 
 export const commandPaletteOpen = writable(false);
 
-export type Workspace = 'edit' | 'color' | 'effects' | 'audio';
+export type Workspace = 'edit' | 'color' | 'effects' | 'audio' | 'record';
 export const workspace = writable<Workspace>('edit');
 
 export const activeTool = writable<ToolId>('select');
@@ -51,9 +51,19 @@ export const sourceMedia = writable<{
   time: number;
 } | null>(null);
 
-export type LeftPanelTab = 'source' | 'effect-controls' | 'audio-mixer' | 'color' | 'multicam';
-export type BottomPanelTab = 'project' | 'effects' | 'markers' | 'history' | 'text' | 'ai-review' | 'mia';
-export const leftPanelTab = writable<LeftPanelTab>('source');
+export type LeftPanelTab =
+  | 'source'
+  | 'effect-controls'
+  | 'color'
+  | 'scopes'
+  | 'audio-mixer'
+  | 'record'
+  | 'capture'
+  | 'analysis'
+  | 'multicam'
+  | 'production';
+export type BottomPanelTab = 'project' | 'effects' | 'markers' | 'history' | 'text' | 'ai-review' | 'mia' | 'visual-intelligence';
+export const leftPanelTab = writable<LeftPanelTab>('capture');
 export const bottomPanelTab = writable<BottomPanelTab>('project');
 
 export type Dialog =

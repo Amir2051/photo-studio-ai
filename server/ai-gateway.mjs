@@ -1,6 +1,8 @@
 import { createServer } from 'node:http';
+import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
+import { createCentralGateway } from './ai/central-gateway.mjs';
 
 const BODY_LIMIT = 128 * 1024;
 const MAX_MESSAGES = 20;
@@ -11,6 +13,7 @@ const DEFAULT_RATE_LIMIT = 20;
 const MAX_RATE_BUCKETS = 10000;
 const RATE_BUCKET_CLEANUP_INTERVAL = 256;
 const UPSTREAM_TIMEOUT_MS = 30000;
+const MINU_STUDIO_SUPABASE_URL = 'https://texgwxmizyxsdzcfsjpo.supabase.co';
 
 function sendJson(res, status, body, headers = {}) {
   res.writeHead(status, {
@@ -111,9 +114,18 @@ export function createAiGatewayServer({
     res.setHeader('referrer-policy', 'no-referrer');
 
     if (req.method === 'GET' && req.url === '/health') {
-      return sendJson(res, 200, { status: 'ok', service: 'every-frame-ai-gateway' });
+      return sendJson(res, 200, { status: 'ok', service: 'minu-studio-ai-gateway' });
     }
-    if (req.method !== 'POST' || !['/api/ai/chat', '/api/ai/scene'].includes(req.url)) {
+    if (
+      req.method !== 'POST' ||
+      ![
+        '/api/ai/chat',
+        '/api/ai/scene',
+        '/api/ai/segment',
+        '/api/ai/retouch',
+        '/api/ai/cull-score',
+      ].includes(req.url)
+    ) {
       return sendJson(res, 404, { error: 'Not found.', requestId });
     }
 
@@ -207,70 +219,71 @@ export function createAiGatewayServer({
         requestId,
       });
     }
+    if (req.url === '/api/ai/segment') {
+      return sendJson(res, 501, {
+        error: 'Background segmentation is not enabled. No image was uploaded.',
+        requestId,
+      });
+    }
+    if (req.url === '/api/ai/retouch') {
+      return sendJson(res, 501, {
+        error: 'Cloud retouching is not enabled. No image was uploaded.',
+        requestId,
+      });
+    }
+    if (req.url === '/api/ai/cull-score') {
+      return sendJson(res, 501, {
+        error: 'Cloud cull scoring is not enabled. No image was uploaded.',
+        requestId,
+      });
+    }
 
     try {
       const body = await readJson(req);
       const messages = validateMessages(body?.messages);
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
-      try {
-        const upstream = await fetchImpl('https://openrouter.ai/api/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            authorization: `Bearer ${config.openRouterApiKey}`,
-            'content-type': 'application/json',
-            'http-referer': config.appUrl || 'http://localhost',
-            'x-title': 'Every Frame First Studio',
-          },
-          body: JSON.stringify({
-            model: config.defaultModel,
-            messages,
-            max_tokens: 700,
-            temperature: 0.4,
-          }),
-          signal: controller.signal,
-        });
-        if (!upstream.ok)
-          return sendJson(res, upstream.status === 429 ? 503 : 502, {
-            error: 'The configured AI provider could not complete the request.',
-            requestId,
-          });
-        const result = await upstream.json();
-        const content = result?.choices?.[0]?.message?.content;
-        if (typeof content !== 'string' || !content.trim()) {
-          return sendJson(res, 502, {
-            error: 'The AI provider returned no usable text.',
-            requestId,
-          });
-        }
-        return sendJson(res, 200, { content, requestId });
-      } finally {
-        clearTimeout(timeout);
+      // All provider access now goes through the single policy-enforcing
+      // gateway. No direct provider fetch remains in this server.
+      const gateway = createCentralGateway({
+        apiKey: config.openRouterApiKey,
+        fetchImpl,
+      });
+      const result = await gateway.run({
+        task: 'chat',
+        modelId: config.defaultModel,
+        messages,
+        consentRef: body?.consentRef ?? null,
+        userRef: userId,
+        maxTokens: 500,
+      });
+      if (!result.ok) {
+        const status =
+          result.error?.code === 'credentials_missing' ||
+          result.error?.code === 'privacy_policy_missing' ||
+          result.error?.code === 'privacy_policy_unsupported' ||
+          result.error?.code === 'live_execution_disabled'
+            ? 503
+            : 400;
+        return sendJson(res, status, { error: result.error?.message ?? 'The request was rejected.', requestId });
       }
+      return sendJson(res, 200, { content: result.content, requestId });
     } catch (error) {
       if (res.headersSent) return;
-      const status = error?.name === 'AbortError' ? 504 : error?.status || 500;
-      const message =
-        status >= 500 && status !== 504
-          ? 'The AI request could not be completed.'
-          : status === 504
-            ? 'The AI provider timed out.'
-            : error.message;
-      return sendJson(res, status, { error: message, requestId });
+      const status = error?.status || 500;
+      return sendJson(res, status, { error: status >= 500 ? 'The AI request could not be completed.' : error.message, requestId });
     }
   });
 }
 
-if (process.argv[1] && new URL(import.meta.url).pathname === process.argv[1]) {
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const config = {
     host: process.env.AI_GATEWAY_HOST || '127.0.0.1',
     port: Number(process.env.AI_GATEWAY_PORT || 18787),
-    authJwksUrl: process.env.AUTH_JWKS_URL,
-    authIssuer: process.env.AUTH_ISSUER,
-    authAudience: process.env.AUTH_AUDIENCE,
+    authJwksUrl: MINU_STUDIO_SUPABASE_URL + '/auth/v1/.well-known/jwks.json',
+    authIssuer: MINU_STUDIO_SUPABASE_URL + '/auth/v1',
+    authAudience: 'authenticated',
     openRouterApiKey: process.env.OPENROUTER_API_KEY,
-    defaultModel: process.env.AI_DEFAULT_MODEL,
-    allowedModels: (process.env.AI_ALLOWED_MODELS || '')
+    defaultModel: process.env.AI_DEFAULT_MODEL || 'qwen/qwen3.8-27b',
+    allowedModels: (process.env.AI_ALLOWED_MODELS || 'qwen/qwen3.8-27b')
       .split(',')
       .map((item) => item.trim())
       .filter(Boolean),

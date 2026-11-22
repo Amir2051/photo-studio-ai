@@ -21,6 +21,7 @@ import { restoreSources } from '#lib/media/sources.ts';
 import { createProject, createSequence } from '#lib/project/defaults.ts';
 import { presets } from '#lib/templates/sequences.ts';
 import { importFiles, isMediaFile } from '#lib/media/import.ts';
+import { checkLegacyCompatibility } from '#lib/suite/adapters/braincut.ts';
 import { downloadBlob } from '#lib/export/download.ts';
 import { addToast, dialog, projectHandle, sourceMedia } from '#lib/stores/app.ts';
 import { preferences } from '#lib/stores/preferences.ts';
@@ -36,9 +37,20 @@ type SavePicker = (opts: {
   id?: string;
 }) => Promise<FileSystemFileHandle>;
 
+type OpenPicker = (opts: {
+  multiple?: boolean;
+  types?: FilePickerAcceptType[];
+  id?: string;
+}) => Promise<FileSystemFileHandle[]>;
+
 function savePicker(): SavePicker | null {
   const w = window as Window & { showSaveFilePicker?: SavePicker };
   return typeof w.showSaveFilePicker === 'function' ? w.showSaveFilePicker.bind(w) : null;
+}
+
+function openPicker(): OpenPicker | null {
+  const w = window as Window & { showOpenFilePicker?: OpenPicker };
+  return typeof w.showOpenFilePicker === 'function' ? w.showOpenFilePicker.bind(w) : null;
 }
 
 function aborted(e: unknown): boolean {
@@ -59,6 +71,16 @@ async function writeToHandle(handle: FileSystemFileHandle, text: string): Promis
 // without the file system access api the browser downloads it instead
 async function write(p: Project, askForFile: boolean): Promise<boolean> {
   const text = serializeProject(p);
+  // Read-only compatibility checkpoint: the suite adapter verifies it can
+  // still wrap/unwrap this native project. It never changes the bytes written.
+  const check = checkLegacyCompatibility(text);
+  if (!check.ok) {
+    addToast(
+      `Suite compatibility warning: ${check.reason ?? 'unknown'} — the project file is unchanged`,
+      'warning',
+      6000,
+    );
+  }
   let handle = askForFile ? null : get(projectHandle);
   try {
     if (!handle) {
@@ -79,12 +101,22 @@ async function write(p: Project, askForFile: boolean): Promise<boolean> {
     return true;
   } catch (e) {
     if (aborted(e)) return false;
-    addToast(
-      `Could not save the project: ${message(e, 'the file could not be written')}`,
-      'error',
-      6000,
-    );
-    return false;
+    // the user agent or platform denied the direct-write path — fall back to
+    // a regular browser download of the serialized project, the same
+    // strategy the Export path already uses when the save picker is blocked.
+    // nothing is reported saved until the download has actually been kicked off.
+    try {
+      downloadBlob(new Blob([text], { type: 'application/json' }), projectFileName(p));
+      addToast('Could not write to that location — downloaded a project file instead', 'info', 6000);
+      return true;
+    } catch {
+      addToast(
+        `Could not save the project: ${message(e, 'the file could not be written')}`,
+        'error',
+        6000,
+      );
+      return false;
+    }
   }
 }
 
@@ -121,7 +153,7 @@ async function open(p: Project, handle: FileSystemFileHandle | null): Promise<vo
 // Route footage selected through the Open dialog to the media importer instead
 // of trying to parse the binary video as a JSON project. This also makes the
 // distinction between Open project and Import video explicit to the user.
-export function ensureProjectForImport(): void {
+export function ensureProjectForImport(createdMessage = 'Video project created. Importing your footage…'): void {
   if (get(project)) return;
   const preset = presets[1] ?? presets[0];
   const next = createProject('Untitled project');
@@ -136,7 +168,7 @@ export function ensureProjectForImport(): void {
   loadProject(next);
   void touchRecent(next);
   void setLastOpenedId(next.id);
-  addToast('Video project created. Importing your footage…', 'success', 3500);
+  addToast(createdMessage, 'success', 3500);
 }
 
 async function openSelectedFile(file: File, handle: FileSystemFileHandle | null): Promise<void> {
@@ -166,11 +198,19 @@ export async function openProjectFromFile(file: File): Promise<void> {
 
 async function openFromFile(file: File, handle: FileSystemFileHandle | null): Promise<void> {
   let p: Project;
+  let text: string;
   try {
-    p = parseProject(await file.text());
+    text = await file.text();
+    p = parseProject(text);
   } catch (e) {
     addToast(message(e, `${file.name} is not a brainCUT project`), 'error', 6000);
     return;
+  }
+  // Verify suite compatibility without migrating: the project that gets opened
+  // is the original parsed object, never an adapter reconstruction.
+  const check = checkLegacyCompatibility(text);
+  if (!check.ok) {
+    addToast(`Opened with a compatibility warning: ${check.reason ?? 'unknown'}`, 'warning', 6000);
   }
   await open(p, handle);
 }
@@ -212,15 +252,21 @@ export async function openProjectFile(): Promise<void> {
   // The selected file determines whether this is a project replacement or
   // media import; only project replacement should ask about discarding work.
   try {
-    if ('showOpenFilePicker' in window) {
-      const [handle] = await window.showOpenFilePicker({
-        multiple: false,
-        types: PICKER_TYPES,
-        id: 'braincut-project',
-      });
-      if (!handle) return;
-      await openSelectedFile(await handle.getFile(), handle);
-      return;
+    const picker = openPicker();
+    if (picker) {
+      try {
+        const [handle] = await picker({
+          multiple: false,
+          types: PICKER_TYPES,
+          id: 'braincut-project',
+        });
+        if (!handle) return;
+        await openSelectedFile(await handle.getFile(), handle);
+        return;
+      } catch (e) {
+        if (aborted(e)) return;
+        // a denied or unusable picker must not prevent reopening a project
+      }
     }
     const file = await inputFallback();
     if (file) await openSelectedFile(file, null);

@@ -6,9 +6,9 @@
 <svelte:head>
   <title>Privacy Policy | brainCUT</title>
   <meta name="description" content="brainCUT privacy policy. Your footage stays on your machine, nothing is uploaded to any server." />
-  <link rel="canonical" href="https://cut.swimmingbrain.dev/privacy" />
+  <link rel="canonical" href="https://studio.safenestt.com/privacy" />
   <meta property="og:title" content="Privacy Policy | brainCUT" />
-  <meta property="og:url" content="https://cut.swimmingbrain.dev/privacy" />
+  <meta property="og:url" content="https://studio.safenestt.com/privacy" />
 </svelte:head>
 
 <div class="legal">

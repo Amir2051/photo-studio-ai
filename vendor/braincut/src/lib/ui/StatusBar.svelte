@@ -117,7 +117,7 @@
     {/if}
     <span class="status-item credit">
       made with <span class="heart">&hearts;</span> by
-      <a href="https://swimmingbrain.dev" target="_blank" rel="noopener">Braian Plaku</a>
+      <a href="https://studio.safenestt.com" target="_blank" rel="noopener">Braian Plaku</a>
     </span>
   </div>
 </div>

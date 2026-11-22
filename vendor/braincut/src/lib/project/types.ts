@@ -126,9 +126,30 @@ export interface Clip {
   label: Label;
   // fixed ones first: transform + opacity for anything visual, volume + pan for audio
   effects: EffectInstance[];
+  noiseReduction?: ClipNoiseReduction;
   title?: TitleData;
   // kind 'color': #rrggbb
   color?: string;
+}
+
+
+export interface ClipNoiseReduction {
+  enabled: boolean;
+  profile: {
+    version: 1;
+    sampleRate: number;
+    fftSize: number;
+    hopSize: number;
+    magnitudes: number[];
+    capturedFrames: number;
+    capturedAt: number;
+    sourceStart: number;
+    sourceEnd: number;
+  };
+  strength: number;
+  floor: number;
+  threshold: number;
+  frequencySmoothing: number;
 }
 
 export interface TitleData {

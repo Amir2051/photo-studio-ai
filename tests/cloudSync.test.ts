@@ -1,17 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  invoke: vi.fn(),
+  fetch: vi.fn(),
+  getUser: vi.fn(),
   getToken: vi.fn(),
   getRecipes: vi.fn(),
   saveRecipe: vi.fn(),
 }));
 
-vi.mock('../src/lib/base44Client', () => ({
-  base44Client: { functions: { invoke: mocks.invoke } },
-}));
-vi.mock('../src/lib/firebase', () => ({
-  getCurrentFirebaseIdToken: mocks.getToken,
+vi.mock('../src/lib/supabase', () => ({
+  SUPABASE_URL: 'https://supabase.test',
+  SUPABASE_PUBLISHABLE_KEY: 'publishable-test-key',
+  getSupabaseAccessToken: mocks.getToken,
+  getSupabaseUser: mocks.getUser,
 }));
 vi.mock('../src/lib/storage', () => ({
   getStyleRecipes: mocks.getRecipes,
@@ -38,53 +39,60 @@ const remoteRecipe = {
   createdAt: '2026-11-07T10:00:00.000Z',
 };
 
+function okJson(body: unknown): Response {
+  return new Response(JSON.stringify(body), { status: 201 });
+}
+
 describe('private cloud recipe sync', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.getToken.mockResolvedValue('firebase-id-token');
+    vi.stubGlobal('fetch', mocks.fetch);
+    mocks.getToken.mockResolvedValue('access-token');
+    mocks.getUser.mockResolvedValue({ id: 'user-123', email: 'studio@example.com' });
     mocks.getRecipes.mockResolvedValue([localRecipe]);
     mocks.saveRecipe.mockResolvedValue(undefined);
-    mocks.invoke.mockImplementation((_name: string, data: { action: string }) => {
-      if (data.action === 'listRecipes') {
-        return Promise.resolve({
-          recipes: [
-            { local_recipe_id: localRecipe.id, recipe_json: JSON.stringify(localRecipe) },
-            { local_recipe_id: remoteRecipe.id, recipe_json: JSON.stringify(remoteRecipe) },
-          ],
-        });
+    mocks.fetch.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === 'POST') {
+        return okJson([]);
       }
-      return Promise.resolve({ success: true });
+      // listRecipes
+      return okJson([
+        { local_recipe_id: localRecipe.id, recipe_json: JSON.stringify(localRecipe) },
+        { local_recipe_id: remoteRecipe.id, recipe_json: JSON.stringify(remoteRecipe) },
+      ]);
     });
   });
 
   it('uploads local recipes and downloads remote-only recipes', async () => {
     const result = await syncStyleRecipesToCloud();
 
-    expect(mocks.invoke).toHaveBeenCalledTimes(2);
-    expect(mocks.invoke.mock.calls[0][1]).toMatchObject({
-      action: 'upsertRecipe',
-      firebaseIdToken: 'firebase-id-token',
-      recipe: { local_recipe_id: localRecipe.id, recipe_name: localRecipe.name },
-    });
+    expect(mocks.fetch).toHaveBeenCalledTimes(2);
+    const [upsertUrl, upsertInit] = mocks.fetch.mock.calls[0] as [string, RequestInit];
+    expect(upsertUrl).toContain('/rest/v1/style_recipes_sync?on_conflict=owner_uid,local_recipe_id');
+    expect(upsertInit?.method).toBe('POST');
+    expect(String(upsertInit?.body)).toContain('local-recipe-1');
     expect(mocks.saveRecipe).toHaveBeenCalledWith(remoteRecipe);
     expect(result).toEqual({ uploaded: 1, downloaded: 1, total: 2 });
   });
 
-  it('fails closed when there is no Firebase session', async () => {
+  it('fails closed when there is no Supabase session', async () => {
     mocks.getToken.mockResolvedValue(null);
+    mocks.getUser.mockResolvedValue(null);
 
     await expect(syncStyleRecipesToCloud()).rejects.toThrow(
       'Sign in to your studio account before syncing.',
     );
-    expect(mocks.invoke).not.toHaveBeenCalled();
+    expect(mocks.fetch).not.toHaveBeenCalled();
   });
 
   it('ignores malformed remote recipes without failing the sync', async () => {
-    mocks.invoke.mockImplementation((_name: string, data: { action: string }) =>
-      data.action === 'listRecipes'
-        ? Promise.resolve({ recipes: [{ local_recipe_id: 'broken', recipe_json: '{' }] })
-        : Promise.resolve({ success: true }),
-    );
+    mocks.fetch.mockImplementation(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        return okJson([]);
+      }
+      return okJson([{ local_recipe_id: 'broken', recipe_json: '{' }]);
+    });
 
     const result = await syncStyleRecipesToCloud();
     expect(result).toEqual({ uploaded: 1, downloaded: 0, total: 1 });

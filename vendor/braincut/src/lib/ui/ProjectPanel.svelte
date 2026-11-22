@@ -5,6 +5,7 @@
   import Icon from './Icon.svelte';
   import Menu from './Menu.svelte';
   import MediaTile, { labels, labelName } from './MediaTile.svelte';
+  import MediaAnalysisPanel from './MediaAnalysisPanel.svelte';
   import type { Bin, Id, Label, MediaItem, Sequence } from '#lib/project/types.ts';
   import { activeSequence, edit, editSequence, project, setActiveSequence } from '#lib/project/store.ts';
   import { createAdjustmentClip, createClipFromMedia, createColorClip, createSequence, createTitleClip } from '#lib/project/defaults.ts';
@@ -12,11 +13,12 @@
   import { id as newId } from '#lib/project/ids.ts';
   import { addToast, contextMenu, dialog, dragPayload, importProgress, leftPanelTab, playhead, sourceMedia, type MenuItem } from '#lib/stores/app.ts';
   import { preferences } from '#lib/stores/preferences.ts';
-  import { pickFiles, pickFolder } from '#lib/media/import.ts';
+  import { pickFiles, pickFolder, cancelImport } from '#lib/media/import.ts';
   import { forgetSource, getBlobForMedia, grantAccess, needsPermission, relinkMissing } from '#lib/media/sources.ts';
   import { createProxy, proxyStatus, removeProxy } from '#lib/media/proxy.ts';
   import { convertForEditing, ffmpegAvailable } from '#lib/media/transcode.ts';
   import { endDrag, readDrag, startDrag } from '#lib/editor/drag.ts';
+  import { duplicateMediaGroups } from '#lib/suite/media.ts';
 
   type View = 'icons' | 'list';
   type SortKey = 'name' | 'duration' | 'added';
@@ -41,6 +43,7 @@
   let collapsed = $state<Set<Id>>(new Set());
   let dropBin = $state<Id | null | 'root'>(null);
   let converting = $state<Map<Id, number>>(new Map());
+  let localAnalysis = $state<MediaItem | null>(null);
   let list = $state<HTMLDivElement | null>(null);
   let dragGhost: HTMLElement | null = null;
 
@@ -175,6 +178,8 @@
   }
 
   const missing = $derived(media.filter((m) => m.status === 'missing'));
+  // shared Suite identity: read-only duplicate candidates, no registry, no auto-merge
+  const duplicateRefs = $derived(duplicateMediaGroups(media));
 
   // one click for every handle the browser wants permission for again
   async function grant() {
@@ -274,6 +279,7 @@
           ...labels.map((l) => ({ label: labelName(l), checked: item.label === l, action: () => setLabel(ids, l) }))
         ]
       },
+      { label: 'Analyze locally…', action: () => { localAnalysis = item; }, disabled: many || item.status !== 'ready' },
       { label: 'New sequence from clip', action: () => sequenceFromMedia(item), disabled: many || item.status !== 'ready' },
       { separator: true, label: '' },
       item.proxy
@@ -581,6 +587,13 @@
     </div>
   {/if}
 
+  {#if duplicateRefs.length > 0}
+    <div class="missing-bar" title="Detected with the shared Suite media identity helper">
+      <Icon name="warning" size={12} />
+      <span class="missing-text">{duplicateRefs.length} possible duplicate media reference{duplicateRefs.length === 1 ? '' : 's'}</span>
+    </div>
+  {/if}
+
   {#if view === 'list' && media.length > 0}
     <div class="columns">
       <button class="col name" class:sorted={sortKey === 'name'} onclick={() => sortBy('name')}>
@@ -674,11 +687,16 @@
     {/if}
   </div>
 
+  {#if localAnalysis}
+    <MediaAnalysisPanel media={localAnalysis} onClose={() => localAnalysis = null} />
+  {/if}
+
   {#if $importProgress}
     <div class="import-bar" title="Importing">
       <span class="import-name">{$importProgress.name}</span>
       <span class="import-count">{$importProgress.done}/{$importProgress.total}</span>
       <span class="import-track"><span class="import-fill" style="width: {importPercent}%"></span></span>
+      <button class="import-cancel" onclick={() => cancelImport()} aria-label="Cancel import" title="Cancel import">×</button>
     </div>
   {/if}
 </div>
@@ -1157,5 +1175,25 @@
     height: 100%;
     background: var(--accent);
     transition: width 120ms linear;
+  }
+
+  .import-cancel {
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    display: grid;
+    place-items: center;
+    border: 0;
+    border-radius: 3px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .import-cancel:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
   }
 </style>

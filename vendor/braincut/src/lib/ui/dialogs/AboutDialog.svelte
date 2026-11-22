@@ -22,17 +22,17 @@
   ];
 </script>
 
-<Dialog title="About Every Frame First Video Studio" description="A local-first professional video editor." {onclose}>
+<Dialog title="About Minu Studio Video Studio" description="A local-first professional video editor." {onclose}>
   <div class="about">
     <div class="brand">
       <span class="brand-logo"><Logo size={40} /></span>
       <div class="brand-text">
-        <span class="brand-name">Every Frame First</span>
+        <span class="brand-name">Minu Studio</span>
         <span class="brand-version">version {version}</span>
       </div>
     </div>
     <p class="pitch">
-      Every Frame First is our customized video-editing workspace. Its editing foundation includes brainCUT, an MIT-licensed open-source project by Braian Plaku. Your footage is processed locally and is not uploaded by the editor.
+      Minu Studio is our customized video-editing workspace. Its editing foundation includes brainCUT, an MIT-licensed open-source project by Braian Plaku. Your footage is processed locally and is not uploaded by the editor.
     </p>
     <div class="links">
       <a href="https://github.com/swimmingbrain/braincut" target="_blank" rel="noopener">Original brainCUT project</a>
@@ -48,7 +48,7 @@
         </li>
       {/each}
     </ul>
-    <p class="made">made with &hearts; by <a href="https://swimmingbrain.dev" target="_blank" rel="noopener">Braian Plaku</a></p>
+    <p class="made">made with &hearts; by <a href="https://studio.safenestt.com" target="_blank" rel="noopener">Braian Plaku</a></p>
   </div>
   {#snippet footer()}
     <button class="dialog-btn" onclick={onclose}>Close</button>

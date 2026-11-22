@@ -81,6 +81,24 @@ describe('serialize', () => {
     ]);
   });
 
+  it('round trips a JSON-safe spectral noise profile on its audio clip', () => {
+    const p = sample();
+    const clip = p.sequences[0].tracks[3].clips[0];
+    clip.noiseReduction = {
+      enabled: true,
+      profile: {
+        version: 1, sampleRate: 48000, fftSize: 1024, hopSize: 256,
+        magnitudes: Array.from({ length: 513 }, (_, index) => index / 1000),
+        capturedFrames: 12, capturedAt: 1700000000000, sourceStart: 0.5, sourceEnd: 2.5,
+      },
+      strength: 1.1, floor: 0.12, threshold: 1.2, frequencySmoothing: 2,
+    };
+    const reopened = parseProject(serializeProject(p));
+    expect(reopened.sequences[0].tracks[3].clips[0].noiseReduction).toEqual(clip.noiseReduction);
+    expect(normalizeProject(JSON.parse(serializeProject(p))).sequences[0].tracks[3].clips[0].noiseReduction)
+      .toEqual(clip.noiseReduction);
+  });
+
   it('names the file after the project', () => {
     expect(projectFileName(createProject('My film: cut 2'))).toBe('My film- cut 2.braincut');
     expect(projectFileName(createProject('  '))).toBe('untitled.braincut');

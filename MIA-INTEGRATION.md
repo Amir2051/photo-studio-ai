@@ -1,56 +1,51 @@
-# MIA integration (local Phase 2 work)
+# MIA integration (Qwen / OpenRouter)
 
-The video studio MIA panel connects to the existing RZ Agent account API. The browser sends credentials only to the RZ Agent HTTPS origin and uses the RZ Agent `rz_session` HTTP-only cookie for subsequent requests. It does not store RZ passwords, API tokens, or service keys.
+## Current architecture
 
-## Configuration
+The Studio video editor's MIA chat and visual-analysis routes now terminate at the Studio-owned Node proxy (server/mia-proxy.mjs) and call the shared central AI gateway (server/ai/central-gateway.mjs). The RZ Agent upstream URL and its separate service-key forwarding path have been removed from the active implementation. The proxy no longer calls the old RZ Agent endpoint.
 
-- Studio build setting: `VITE_RZ_AGENT_URL=https://rz-ai.safenestt.com` (this is the default).
-- RZ Agent server setting: `STUDIO_ALLOWED_ORIGINS=https://studio.safenestt.com`. Keep `APP_ORIGIN` set to the RZ Agent origin. Use exact origins only; never `*`.
-- RZ Agent CORS allows credentialed `GET`, `POST`, and `OPTIONS` requests from the configured exact origins. Login/logout origin validation uses the same allowlist.
+MIA's selected model is **Qwen3.8 27B** through OpenRouter, pinned to the **Near AI** endpoint. The OpenRouter request policy is ZDR required, data collection denied, provider fallbacks disabled, and provider order pinned to Near AI. The browser never receives the OpenRouter credential.
 
-These are configuration instructions only. No production environment variables or deployments were changed.
+## Model, provider, and cost
 
-## Project context and privacy
+- Model: qwen/qwen3.8-27b
+- Provider pin: Near AI (OpenRouter endpoint tag near-ai/fp8)
+- OpenRouter ZDR endpoint registry rate checked 2026-11-21 (Near AI tag near-ai/fp8): $0.04 / 1M input tokens and $1.35 / 1M output tokens.
+- Per-request estimated-cost ceiling: $0.001.
+- Cumulative in-process ceiling: $0.05. This counter is currently in memory and resets if the proxy process restarts; it is not a durable monthly or lifetime cap.
+- No retries, no fallback provider, no automatic provider switching.
+- Qwen live execution remains disabled in the model registry pending a separate bounded Qwen pilot approval. This source change does not perform an inference request.
 
-Each MIA chat request includes bounded metadata for the open project, active sequence, imported media properties, clip IDs/timing, track structure, transitions, and markers. It does **not** upload original video/audio bytes, thumbnails, local file paths, or extracted frames. MIA must not claim it has visually or audibly inspected footage. Requests requiring scene recognition, pause detection, speaker identification, or transcription are disclosed as unavailable until a separate user-approved media-analysis path is implemented.
+The owner-confirmed OpenRouter account setting is ZDR Only. The server also sends request-level zdr: true and data_collection: deny; endpoint eligibility is checked against OpenRouter's public ZDR endpoint registry. These controls do not independently prove provider-side retention behavior beyond OpenRouter's published endpoint classification.
 
-## Edit safety
+## Server configuration
 
-MIA may return a bounded `edit_proposal` JSON block. The studio validates every operation against the existing allowlist and places it in AI Review. A proposal does not mutate the project. Each operation must be previewed and individually applied by the user; applying creates an undoable history entry. Rejecting or cancelling leaves the project unchanged. Source media is never overwritten.
-
-## Current limitations
-
-- The RZ Agent API and browser CORS configuration must be deployed/configured before live sign-in works from production studio.
-- This branch is not deployed.
-- The project context is metadata-only; no video vision/audio analysis or automatic footage upload is implemented.
-- Chat history/session ID is held in component memory; signing out clears it.
-
-
-## Local visual frame sampling
-
-The MIA panel includes a Visual Intelligence frame sampler for the active sequence. It reads original media locally through the editor's existing media source and Mediabunny thumbnail pipeline, samples up to 30 frames at a user-selected interval, and presents a contact sheet with per-frame selection. Frame pixels are held as browser-local data URLs for review only; they are not added to the RZ Agent chat payload, uploaded, persisted to the project, or sent to any provider. The UI currently offers a timestamp-list copy action, not a frame-send action. Vision analysis remains intentionally disconnected until a provider/model is selected and an explicit per-send approval flow is implemented.
-
-## Cloud visual analysis (explicit approval required)
-
-The Studio visual sampler can submit a user-selected set of up to 8 still frames to the authenticated RZ Agent endpoint `POST /v1/studio/vision/analyze`. The browser sends frames only after the user reviews the contact sheet, sees the configured OpenRouter model/destination, and presses **Approve & send selected frames**. The request is authenticated with the existing HttpOnly RZ session cookie; no provider key is exposed to the browser. The server accepts only JPEG/PNG/WebP data URLs, caps each frame at 1.4 MB and the total at 8 MB, uses `OPENROUTER_VISION_MODEL`, forces OpenRouter `zdr: true` and `data_collection: deny`, and disables provider fallbacks. A rejected request fails closed rather than sending frames to another model/provider. The endpoint does not write images or analysis to conversation history or project storage.
-
-Before cloud analysis is enabled on a deployment, configure `OPENROUTER_VISION_MODEL` to a vision-capable OpenRouter model whose endpoint is eligible under the account's ZDR and data-collection policies. If it is unset, the Studio displays that visual analysis is unavailable and does not offer a send action. No production environment variable or deployment was changed as part of this implementation.
-
-
-## Studio-owned authentication and RZ Agent service bridge
-
-The editor no longer uses RZ Agent's interactive /v1/auth/login, /v1/auth/me, or /v1/auth/logout endpoints. MIA inherits the user's existing Every Frame First Studio Firebase Authentication session from the same-origin parent shell. The parent shell responds only to messages from its own embedded /video-studio/ iframe and provides a short-lived Firebase ID token; the video editor never receives an RZ Agent password, cookie, API key, or service credential.
-
-The browser sends that Firebase ID token to the separate every-frame-first-mia Node service. The proxy verifies the token against Firebase Secure Token signing keys, validates the Studio Firebase project issuer/audience, applies per-user rate limits, and forwards only the supported chat and visual-analysis routes to RZ Agent. The proxy authenticates upstream with X-Api-Key: STUDIO_MIA_SERVICE_API_KEY. That key exists only in Render server environment variables. The RZ Agent's existing OpenRouter credentials, chat model, vision model, ZDR setting, and no-fallback policy remain authoritative.
-
-### Proxy service environment
-
-- FIREBASE_PROJECT_ID=photo-editor-rz
-- STUDIO_MIA_SERVICE_API_KEY=<same dedicated service key configured on the RZ Agent service>
-- RZ_AGENT_URL=https://rz-ai.safenestt.com
+Required on the MIA proxy service:
+- OPENROUTER_API_KEY — server-side secret only; never use a VITE_ prefix.
 - STUDIO_ALLOWED_ORIGINS=https://every-frame-first-studio.onrender.com,https://studio.safenestt.com
 - MIA_RATE_LIMIT_PER_MINUTE=20
 
-Run with node server/mia-proxy.mjs (Render supplies PORT). Health check: /health. Browser routes: /api/mia/chat, /api/mia/vision/status, and /api/mia/vision/analyze. The proxy accepts only Firebase bearer tokens, never cookies or browser-supplied upstream credentials. CORS is an additional browser boundary, not the authentication mechanism.
+MIA authentication is pinned in source to the dedicated Mini Studio Supabase project (texgwxmizyxsdzcfsjpo), using its JWKS and issuer. The proxy does not accept a configurable cross-project auth issuer.
 
-The Studio static build uses VITE_MIA_API_BASE_URL=https://every-frame-first-mia.onrender.com/api/mia (the code has this as its default). The proxy does not store prompts, frame payloads, or project data. The existing explicit still-frame selection/approval flow remains unchanged; the proxy validates 1–8 JPEG/PNG/WebP frames and enforces the 1.4 MB per-frame / 8 MB aggregate limits before forwarding.
+The legacy STUDIO_MIA_SERVICE_API_KEY, if still present in Render, is not read or forwarded by the proxy and has not been deleted or rotated. RZ_AGENT_URL is no longer read by any active application code.
+
+Run with node server/mia-proxy.mjs (Render supplies PORT). Health check: /health. Browser routes: /api/mia/chat, /api/mia/vision/status, and /api/mia/vision/analyze. The proxy verifies Supabase bearer tokens against the pinned Mini Studio JWKS, applies exact-origin CORS and per-user rate limits, and invokes the central gateway.
+
+Production MIA chat and selected-frame analysis use https://every-frame-first-mia.onrender.com/api/mia, matching the actual Render service. Local development defaults to http://localhost:10000/api/mia and may be overridden with VITE_MIA_API_BASE_URL.
+
+## Project context and edit safety
+
+Each MIA chat request includes bounded metadata for the open project, active sequence, imported media properties, clip IDs/timing, track structure, transitions, and markers. It does not upload original video/audio bytes, thumbnails, or local file paths. MIA must not claim it has visually or audibly inspected footage.
+
+MIA may return a bounded edit_proposal JSON block. The Studio validates operations against its allowlist and places them in AI Review. A proposal does not mutate the project. Each operation must be previewed and individually applied by the user; applying creates an undoable history entry. Source media is never overwritten.
+
+## Visual frame analysis
+
+The frame sampler decodes media locally and creates a contact sheet. Only 1–8 selected still frames can be submitted, and the user must explicitly approve the send action. The proxy accepts JPEG/PNG/WebP data URLs, caps each frame at 1.4 MB and the aggregate at 8 MB, and sends selected still images—not full video or audio—to the central gateway. Current Qwen live execution is disabled, so the status route reports unavailable and no frame request reaches OpenRouter.
+
+## Remaining gates
+
+- A separate bounded Qwen live test must be approved before live inference is enabled.
+- The $0.05 cumulative budget is process-local, not durable across restarts. A durable cap/ledger is required before treating it as a persistent spending limit.
+- Deployment environment must contain the existing OPENROUTER_API_KEY. Supabase authentication is pinned to the Mini Studio project in source. This local change does not update Render.
+- This branch is not deployed by this change.

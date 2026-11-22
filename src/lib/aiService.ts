@@ -3,6 +3,13 @@ import type { AiMessage, AiMessageContext, ScenePrompt } from './types';
 export interface AiProvider {
   name: string;
   supportsImages: boolean;
+  /** Capability flags so the UI can honestly enable/disable AI affordances. */
+  capabilities: {
+    chat: boolean;
+    retouch: boolean;
+    segment: boolean;
+    cullScore: boolean;
+  };
   getModel(): string;
   chat(messages: AiMessage[], options?: { context?: AiMessageContext }): Promise<string>;
   generateScene(
@@ -10,6 +17,9 @@ export interface AiProvider {
     prompt: string,
     options?: Record<string, unknown>,
   ): Promise<ScenePrompt[]>;
+  segmentImage(imageBase64: string): Promise<unknown>;
+  retouchImage(imageBase64: string, options?: Record<string, unknown>): Promise<unknown>;
+  scoreCull(imageBase64: string): Promise<unknown>;
   canUploadToCloud(): boolean;
 }
 
@@ -17,6 +27,7 @@ export interface AiProvider {
 export class OfflineProvider implements AiProvider {
   name = 'offline';
   supportsImages = false;
+  capabilities = { chat: true, retouch: false, segment: false, cullScore: false } as const;
   getModel(): string {
     return 'local-guidance';
   }
@@ -32,6 +43,21 @@ export class OfflineProvider implements AiProvider {
       'Scene generation is unavailable: configure a secure server-side image-generation service first. No placeholder result was created.',
     );
   }
+  async segmentImage(): Promise<unknown> {
+    throw new Error(
+      'Background segmentation is unavailable: cloud AI is not configured. No image was uploaded.',
+    );
+  }
+  async retouchImage(): Promise<unknown> {
+    throw new Error(
+      'Cloud retouching is unavailable: cloud AI is not configured. No image was uploaded.',
+    );
+  }
+  async scoreCull(): Promise<unknown> {
+    throw new Error(
+      'Cloud cull scoring is unavailable: cloud AI is not configured. No image was uploaded.',
+    );
+  }
   canUploadToCloud(): boolean {
     return false;
   }
@@ -44,6 +70,7 @@ export class OfflineProvider implements AiProvider {
 export class OpenRouterProvider implements AiProvider {
   name = 'server-ai';
   supportsImages = false;
+  capabilities = { chat: true, retouch: false, segment: false, cullScore: false } as const;
   private modelId: string;
   private endpoint: string;
   private accessTokenProvider?: () => Promise<string | null>;
@@ -114,13 +141,53 @@ export class OpenRouterProvider implements AiProvider {
       throw new Error('Scene service returned an invalid response.');
     return data.scenes as ScenePrompt[];
   }
+
+  private async callImageEndpoint(
+    path: '/segment' | '/retouch' | '/cull-score',
+    payload: Record<string, unknown>,
+  ): Promise<unknown> {
+    const response = await fetch(this.endpoint + path, {
+      method: 'POST',
+      headers: await this.authorizationHeaders(),
+      credentials: 'same-origin',
+      body: JSON.stringify(payload),
+    });
+    if (response.status === 501) {
+      throw new Error(
+        'This cloud AI feature is not enabled on the server yet. No image was uploaded or changed.',
+      );
+    }
+    if (!response.ok)
+      throw new Error(
+        `AI service request failed (${response.status}). Check the server-side AI gateway configuration.`,
+      );
+    return response.json();
+  }
+
+  async segmentImage(imageBase64: string): Promise<unknown> {
+    if (!imageBase64) throw new Error('An image is required for background segmentation.');
+    return this.callImageEndpoint('/segment', { image: imageBase64 });
+  }
+
+  async retouchImage(
+    imageBase64: string,
+    options: Record<string, unknown> = {},
+  ): Promise<unknown> {
+    if (!imageBase64) throw new Error('An image is required for cloud retouching.');
+    return this.callImageEndpoint('/retouch', { image: imageBase64, options });
+  }
+
+  async scoreCull(imageBase64: string): Promise<unknown> {
+    if (!imageBase64) throw new Error('An image is required for cull scoring.');
+    return this.callImageEndpoint('/cull-score', { image: imageBase64 });
+  }
 }
 
 /**
- * Creates the browser AI adapter using the current Firebase user's ID token.
- * The token is fetched on demand so refreshed Firebase sessions are respected.
+ * Creates the browser AI adapter using the current session access token.
+ * The token is fetched on demand so refreshed sessions are respected.
  */
-export function createFirebaseAiProvider(
+export function createSupabaseAiProvider(
   getIdToken: () => Promise<string | null>,
 ): OpenRouterProvider {
   return new OpenRouterProvider(undefined, 'server-configured-model', getIdToken);

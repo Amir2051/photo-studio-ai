@@ -657,7 +657,7 @@ button:disabled {
   }
 }
 
-/* In-house Firebase email/password access */
+/* Supabase email/password access */
 .auth-screen {
   min-height: 100vh;
   display: grid;
@@ -723,6 +723,45 @@ button:disabled {
   color: #101827;
   font-weight: 800;
   cursor: pointer;
+}
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 18px 0 14px;
+  color: #7e8ca6;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+.auth-divider::before,
+.auth-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: #26314a;
+}
+.auth-google {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 46px;
+  border: 1px solid #354158;
+  border-radius: 8px;
+  background: #f8fafd;
+  color: #1f1f1f;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.auth-google:hover:not(:disabled) {
+  background: #eef1f6;
+}
+.auth-google:disabled {
+  opacity: 0.6;
+  cursor: wait;
 }
 .auth-submit:disabled {
   opacity: 0.6;

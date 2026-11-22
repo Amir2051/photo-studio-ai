@@ -36,10 +36,10 @@
     <a
       href="{resolve('')}/"
       class="logo"
-      title="Every Frame First Video Studio"
+      title="Minu Studio Video Studio"
     >
       <span class="logo-icon"><Logo size={20} /></span>
-      <span class="logo-text">EVERY FRAME FIRST</span>
+      <span class="logo-text">MINU STUDIO</span>
     </a>
     <span class="separator"></span>
     {#if $project}
@@ -70,7 +70,7 @@
       <Icon name="importIcon" size={14} />
       <span>Add media</span>
     </button>
-    <button class="action-btn" onclick={onsave} title="Save the project (Ctrl+S)">
+    <button class="action-btn" onclick={onsave} title="Save the project file (Ctrl+S)">
       <Icon name="save" size={14} />
       <span>Save</span>
     </button>
@@ -106,7 +106,7 @@
       aria-label="Preferences">
       <Icon name="settings" size={14} />
     </button>
-    <button class="action-btn accent" onclick={onexport} title="Export the sequence (Ctrl+M)">
+    <button class="action-btn accent" onclick={onexport} title="Export video (Ctrl+M)">
       <Icon name="export" size={14} />
       <span>Export</span>
     </button>
