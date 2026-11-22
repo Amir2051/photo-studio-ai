@@ -5,7 +5,7 @@
 import { randomUUID } from 'node:crypto';
 import { routeTask } from './router.mjs';
 import { requirePaidConsent } from './consent.mjs';
-import { reserveSpend, releaseSpend, confirmSpend } from './budget.mjs';
+import { reserveSpend, releaseSpend, confirmSpend, withinRequestCostLimit } from './budget.mjs';
 import { appendAttempt } from './ledger.mjs';
 import { getProvider } from './provider-registry.mjs';
 import { toPublicError } from './errors.mjs';
@@ -55,11 +55,12 @@ export async function executeMiaTask({
   purpose = null,
   operationId = null,
   maxEstimatedCostUsd = null,
+  modelId = null,
 } = {}) {
   const requestId = randomUUID();
   const timestamp = now();
 
-  const routed = routeTask({ task, inputModalities, outputModalities, miaIdentity, freeOnly });
+  const routed = routeTask({ task, inputModalities, outputModalities, miaIdentity, freeOnly, modelId });
   if (!routed.ok) {
     return reject({ ledger, requestId, timestamp, userRef, task, miaIdentity, error: routed.error, failureCategory: routed.error.code });
   }
@@ -97,6 +98,13 @@ export async function executeMiaTask({
   if (!consent.ok) {
     return reject({ ledger, requestId, timestamp, userRef, task, miaIdentity, decision, consentRef, error: consent.error });
   }
+  if (decision.costClass === 'paid' && maxEstimatedCostUsd !== null &&
+      !withinRequestCostLimit(consent.consent?.estimatedCostUsd, maxEstimatedCostUsd)) {
+    return reject({
+      ledger, requestId, timestamp, userRef, task, miaIdentity, decision, consentRef,
+      error: { code: 'request_cost_ceiling_exceeded', message: 'The estimated request cost exceeds the approved per-request ceiling. No request was sent.' },
+    });
+  }
 
   let reservation = { ok: true };
   if (decision.costClass === 'paid') {
@@ -126,6 +134,7 @@ export async function executeMiaTask({
     const provider = getProvider(decision.providerId);
     result = await provider.chat({
       model: decision.providerModelId,
+      providerOrder: decision.providerOrder,
       messages,
       apiKey,
       maxTokens,

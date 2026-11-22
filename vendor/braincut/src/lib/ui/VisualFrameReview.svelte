@@ -46,7 +46,7 @@
   import { activeSequence } from '#lib/project/store.ts';
   import { getStudioAuth } from './studioAuth';
 
-  const apiBase = (import.meta.env.VITE_MIA_API_BASE_URL || 'https://minu-studio-mia.onrender.com/api/mia').replace(/\/$/, '');
+  const apiBase = (import.meta.env.PROD ? 'https://every-frame-first-mia.onrender.com/api/mia' : (import.meta.env.VITE_MIA_API_BASE_URL || 'http://localhost:10000/api/mia')).replace(/\/$/, '');
 
   let { onClose, onUseAnalysis }: { onClose: () => void; onUseAnalysis: (analysis: string) => void } = $props();
   type Candidate = { key: string; mediaId: string; mediaName: string; clipName: string; sequenceTime: number; sourceTime: number };
@@ -244,7 +244,7 @@
     </div>
     <div class="next-step">
       <strong>Ready for visual review</strong>
-      <p>These frames are selected locally. A vision provider has not been connected, so there is no send action yet. Your approval will be required before any future provider receives image data.</p>
+      <p>These frames are selected locally. Qwen is configured for approved still-frame analysis, but live execution is currently disabled. Your approval will still be required before selected frames are shared.</p>
       <div class="analysis-actions">
         <button disabled={!frames.some((frame) => frame.selected) || frames.filter((frame) => frame.selected).length > 8 || !visionStatus?.available} onclick={() => showApproval = true}><Icon name="eye" size={13} />Analyze selected with MIA</button>
         <button class="copy" disabled={!frames.some((frame) => frame.selected)} onclick={copyReviewSummary}><Icon name="copy" size={13} />{copied ? 'Summary copied' : 'Copy timestamps'}</button>
@@ -253,7 +253,7 @@
         <p class="provider-note">Select no more than 8 frames for a single cloud analysis request.</p>
       {/if}
       {#if !visionStatus?.available}
-        <p class="provider-note">Cloud visual analysis is not configured on RZ Agent yet. No frames have been sent. The server needs OPENROUTER_VISION_MODEL plus the required Zero Data Retention and no-fallback settings.</p>
+        <p class="provider-note">Qwen 3.8 27B is configured through OpenRouter with Near AI ZDR routing. Live AI remains disabled until a separate bounded Qwen test is approved. No frames have been sent.</p>
       {/if}
       {#if showApproval}
         <div class="approval">

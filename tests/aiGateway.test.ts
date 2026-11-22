@@ -3,8 +3,8 @@ import { createAiGatewayServer } from '../server/ai-gateway.mjs';
 
 const config = {
   openRouterApiKey: 'server-only-test-key',
-  defaultModel: 'test/model',
-  allowedModels: ['test/model'],
+  defaultModel: 'qwen/qwen3.8-27b',
+  allowedModels: ['qwen/qwen3.8-27b'],
   maxRequestsPerMinute: 2,
 };
 

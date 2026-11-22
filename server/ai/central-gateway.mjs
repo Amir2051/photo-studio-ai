@@ -40,14 +40,16 @@ export function createCentralGateway(options = {}) {
     }
 
     const policy = { ...MIA_PRIVACY_POLICY };
-    // account-level ZDR configuration is not verified; the request-level flags
-    // can only tighten routing, never relax it. Fail closed if callers try.
+    // Account-level ZDR Only is owner-confirmed but is not read from this
+    // service. Request-level ZDR/data-collection flags are always enforced;
+    // fail closed if callers attempt to relax them.
     if (request.privacyPolicy && JSON.stringify(request.privacyPolicy) !== JSON.stringify(policy)) {
       return publicFailure({ error: { code: 'privacy_policy_mismatch', message: 'The request does not match the enforced privacy policy.' } });
     }
 
     const result = await executeMiaTask({
       task: request.task,
+      modelId: request.modelId ?? null,
       inputModalities: request.inputModalities ?? [],
       outputModalities: request.outputModalities ?? [],
       miaIdentity: request.miaIdentity ?? null,

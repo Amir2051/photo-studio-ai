@@ -8,7 +8,7 @@ import { createCentralGateway } from './central-gateway.mjs';
 
 export async function executeTextTask({
   providerId = 'openrouter',
-  modelId = 'mistralai/mistral-nemo',
+  modelId = 'qwen/qwen3.8-27b',
   messages = [],
   apiKey = null,
   maxTokens = 500,
@@ -28,6 +28,7 @@ export async function executeTextTask({
   return gateway.run({
     task: 'chat',
     miaIdentity: model.miaIdentity,
+    modelId,
     messages,
     maxTokens,
     signal,

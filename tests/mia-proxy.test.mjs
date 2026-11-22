@@ -2,16 +2,20 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createMiaProxyServer } from '../server/mia-proxy.mjs';
 
 const origin = 'https://every-frame-first-studio.onrender.com';
-const serviceKey = 'test-service-key';
 let server;
 let baseUrl;
+let gateway;
 
 async function start(options = {}) {
+  gateway = options.gateway ?? {
+    run: vi.fn(async () => ({
+      ok: false,
+      error: { code: 'live_execution_disabled', message: 'Qwen live execution is disabled. No request was sent.' },
+    })),
+  };
   server = createMiaProxyServer({
     config: {
-      projectId: 'supabase-test',
-      serviceApiKey: serviceKey,
-      rzAgentUrl: 'https://rz-ai.safenestt.com',
+      openRouterApiKey: 'test-openrouter-key',
       allowedOrigins: [origin],
       ...options.config,
     },
@@ -19,7 +23,8 @@ async function start(options = {}) {
       if (token !== 'valid-token') throw new Error('invalid');
       return 'user-123';
     }),
-    fetchImpl: options.fetchImpl ?? vi.fn(async () => Response.json({ reply: 'Hello from MIA', session_id: 's1' })),
+    fetchImpl: options.fetchImpl ?? vi.fn(),
+    gateway,
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   baseUrl = 'http://127.0.0.1:' + server.address().port;
@@ -29,9 +34,10 @@ async function start(options = {}) {
 afterEach(async () => {
   if (server?.listening) await new Promise((resolve) => server.close(resolve));
   server = undefined;
+  gateway = undefined;
 });
 
-describe('Every Frame First MIA proxy', () => {
+describe('Mini Studio MIA OpenRouter gateway', () => {
   it('serves a health check without exposing configuration', async () => {
     await start();
     const response = await fetch(baseUrl + '/health');
@@ -47,27 +53,53 @@ describe('Every Frame First MIA proxy', () => {
       body: JSON.stringify({ message: 'hello', system: 'system' }),
     });
     expect(response.status).toBe(401);
+    expect(gateway.run).not.toHaveBeenCalled();
   });
 
-  it('forwards chat with the server-only RZ service credential', async () => {
-    const fetchImpl = vi.fn(async () => Response.json({ reply: 'Hello from RZ', session_id: 'session-2' }));
+  it('routes MIA chat to the selected Qwen model through the central gateway', async () => {
+    const fetchImpl = vi.fn();
     await start({ fetchImpl });
     const response = await fetch(baseUrl + '/api/mia/chat', {
       method: 'POST',
       headers: { origin, authorization: 'Bearer valid-token', 'content-type': 'application/json' },
       body: JSON.stringify({ message: 'Help edit this', system: 'Project metadata only' }),
     });
-    expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ reply: 'Hello from RZ' });
-    expect(fetchImpl).toHaveBeenCalledOnce();
-    expect(fetchImpl.mock.calls[0][0]).toBe('https://rz-ai.safenestt.com/v1/chat');
-    expect(fetchImpl.mock.calls[0][1].headers['X-Api-Key']).toBe(serviceKey);
-    expect(fetchImpl.mock.calls[0][1].headers['X-Studio-User-Id']).toBe('user-123');
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ code: 'live_execution_disabled' });
+    expect(gateway.run).toHaveBeenCalledOnce();
+    expect(gateway.run.mock.calls[0][0]).toMatchObject({
+      modelId: 'qwen/qwen3.8-27b',
+      task: 'chat',
+      inputModalities: ['text'],
+      outputModalities: ['text'],
+      messages: [
+        { role: 'system', content: 'Project metadata only' },
+        { role: 'user', content: 'Help edit this' },
+      ],
+      maxTokens: 500,
+      maxEstimatedCostUsd: 0.001,
+      userRef: 'user-123',
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
-  it('rejects more than eight frames before forwarding them', async () => {
-    const fetchImpl = vi.fn();
-    await start({ fetchImpl });
+  it('reports the configured provider and model while keeping live execution disabled', async () => {
+    await start();
+    const response = await fetch(baseUrl + '/api/mia/vision/status', {
+      headers: { origin, authorization: 'Bearer valid-token' },
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      available: false,
+      provider: 'OpenRouter · Near AI (ZDR-pinned)',
+      model: 'qwen/qwen3.8-27b',
+      max_frames: 8,
+      live_execution_enabled: false,
+    });
+  });
+
+  it('rejects more than eight frames before invoking the central gateway', async () => {
+    await start();
     const frame = { timestamp_seconds: 1, clip_name: 'clip', image_data_url: 'data:image/jpeg;base64,YWJj' };
     const response = await fetch(baseUrl + '/api/mia/vision/analyze', {
       method: 'POST',
@@ -75,12 +107,11 @@ describe('Every Frame First MIA proxy', () => {
       body: JSON.stringify({ approved: true, instruction: 'Analyze', frames: Array.from({ length: 9 }, () => frame) }),
     });
     expect(response.status).toBe(400);
-    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(gateway.run).not.toHaveBeenCalled();
   });
 
-  it('refuses to forward vision frames unless the approval flag is explicit', async () => {
-    const fetchImpl = vi.fn();
-    await start({ fetchImpl });
+  it('refuses to analyze frames unless the approval flag is explicit', async () => {
+    await start();
     const response = await fetch(baseUrl + '/api/mia/vision/analyze', {
       method: 'POST',
       headers: { origin, authorization: 'Bearer valid-token', 'content-type': 'application/json' },
@@ -91,11 +122,11 @@ describe('Every Frame First MIA proxy', () => {
       }),
     });
     expect(response.status).toBe(400);
-    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(gateway.run).not.toHaveBeenCalled();
   });
 
-  it('forwards approved frames only through the authenticated service proxy', async () => {
-    const fetchImpl = vi.fn(async () => Response.json({ analysis: 'A test frame.' }));
+  it('sends only explicitly approved still frames to the central gateway and makes no provider request while disabled', async () => {
+    const fetchImpl = vi.fn();
     await start({ fetchImpl });
     const response = await fetch(baseUrl + '/api/mia/vision/analyze', {
       method: 'POST',
@@ -106,11 +137,22 @@ describe('Every Frame First MIA proxy', () => {
         frames: [{ timestamp_seconds: 1, clip_name: 'clip', image_data_url: 'data:image/jpeg;base64,YWJj' }],
       }),
     });
-    expect(response.status).toBe(200);
-    expect(fetchImpl).toHaveBeenCalledOnce();
-    expect(fetchImpl.mock.calls[0][0]).toBe('https://rz-ai.safenestt.com/v1/studio/vision/analyze');
-    expect(fetchImpl.mock.calls[0][1].headers['X-Api-Key']).toBe(serviceKey);
-    expect(JSON.parse(fetchImpl.mock.calls[0][1].body).approved).toBe(true);
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ code: 'live_execution_disabled' });
+    expect(gateway.run).toHaveBeenCalledOnce();
+    expect(gateway.run.mock.calls[0][0]).toMatchObject({
+      modelId: 'qwen/qwen3.8-27b',
+      task: 'scene_analysis',
+      inputModalities: ['image'],
+      outputModalities: ['text'],
+      maxTokens: 500,
+      maxEstimatedCostUsd: 0.001,
+    });
+    expect(gateway.run.mock.calls[0][0].messages[0].content[1]).toMatchObject({
+      type: 'image_url',
+      image_url: { url: 'data:image/jpeg;base64,YWJj' },
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it('rejects unapproved browser origins', async () => {
@@ -119,5 +161,6 @@ describe('Every Frame First MIA proxy', () => {
       headers: { origin: 'https://attacker.example', authorization: 'Bearer valid-token' },
     });
     expect(response.status).toBe(403);
+    expect(gateway.run).not.toHaveBeenCalled();
   });
 });

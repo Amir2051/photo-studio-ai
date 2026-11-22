@@ -3,9 +3,9 @@ export type StudioAuth = { token: string; user: StudioIdentity };
 
 const REQUEST_TIMEOUT_MS = 8000;
 
-/** Requests the already-authenticated Studio user's Firebase ID token from the same-origin parent shell. */
+/** Requests the already-authenticated Studio user's Supabase access token from the same-origin parent shell. */
 export async function getStudioAuth(): Promise<StudioAuth> {
-  if (window.parent === window) throw new Error('Open the video editor inside Minu Studio Studio.');
+  if (window.parent === window) throw new Error('Open the video editor inside Minu Studio.');
   const requestId = crypto.randomUUID();
   return new Promise((resolve, reject) => {
     const cleanup = () => {
@@ -14,14 +14,14 @@ export async function getStudioAuth(): Promise<StudioAuth> {
     };
     const timeout = window.setTimeout(() => {
       cleanup();
-      reject(new Error('Studio sign-in could not be verified. Sign in to Minu Studio Studio and reopen MIA.'));
+      reject(new Error('Studio sign-in could not be verified. Sign in to Minu Studio and reopen MIA.'));
     }, REQUEST_TIMEOUT_MS);
     const onMessage = (event: MessageEvent) => {
       if (event.origin !== window.location.origin || event.source !== window.parent) return;
       if (event.data?.type !== 'studio-auth-token-response' || event.data.requestId !== requestId) return;
       cleanup();
       if (typeof event.data.token !== 'string' || !event.data.token || !event.data.user?.id) {
-        reject(new Error('Sign in to Minu Studio Studio to use MIA.'));
+        reject(new Error('Sign in to Minu Studio to use MIA.'));
         return;
       }
       resolve({ token: event.data.token, user: { id: event.data.user.id, email: event.data.user.email || '' } });

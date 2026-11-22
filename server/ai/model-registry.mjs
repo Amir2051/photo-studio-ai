@@ -10,6 +10,7 @@ export const COST_UNKNOWN = 'unknown';
 
 export const MIA_IDENTITIES = {
   assistant: 'MIA Assistant',
+  qwenAssistant: 'MIA Qwen Assistant',
   video: 'MIA Video Intelligence',
   advanced: 'MIA Advanced Analysis',
 };
@@ -96,6 +97,37 @@ export const MODELS = [
     pricingSource: 'none — provider/model not selected',
     availability: 'planned',
     adapterAvailable: false,
+    liveExecutionEnabled: false,
+  },
+  {
+    // Primary MIA model: pinned to the Near AI endpoint listed in OpenRouter's
+    // ZDR endpoint registry. Prices are USD per token for that exact endpoint.
+    id: 'qwen/qwen3.8-27b',
+    provider: 'openrouter',
+    name: 'Qwen3.8 27B (Near AI · ZDR)',
+    declaredCost: COST_PAID,
+    pricing: { promptPerToken: 0.04 / 1_000_000, completionPerToken: 1.35 / 1_000_000 },
+    capabilities: {
+      ...noCapabilities,
+      text: true,
+      generalChat: true,
+      editingInstructions: true,
+      vision: true,
+      sceneAnalysis: true,
+    },
+    verified: true,
+    miaIdentity: MIA_IDENTITIES.qwenAssistant,
+    providerModelId: 'qwen/qwen3.8-27b',
+    providerOrder: ['Near AI'],
+    modelVersion: '2026-08-14',
+    inputModalities: ['text', 'image'],
+    outputModalities: ['text'],
+    contextWindow: 262144,
+    pricingStatus: 'verified',
+    pricingSource: 'OpenRouter ZDR endpoint registry: Near AI / near-ai/fp8, retrieved 2026-11-21',
+    availability: 'adapter-ready',
+    adapterAvailable: true,
+    // Keep live execution disabled until a separate bounded Qwen pilot is approved.
     liveExecutionEnabled: false,
   },
 ];

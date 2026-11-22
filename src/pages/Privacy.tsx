@@ -33,7 +33,7 @@ export default function Privacy(): React.JSX.Element {
         </li>
         <li>
           <strong>Client galleries</strong> — when you publish a gallery, only the photos you select are
-          uploaded to the public <code>gallery-shares</code> bucket (unguessable path, 6 MB per photo).
+          uploaded to the private <code>gallery-shares</code> bucket (unguessable path, 6 MB per photo).
           Photo URLs are short-lived signed links served by an edge function that enforces share expiry;
           expired galleries are not readable. The "Local ZIP" delivery mode never uses the network.
         </li>

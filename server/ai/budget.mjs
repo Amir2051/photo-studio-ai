@@ -1,13 +1,21 @@
-// Server-side spending control. The only authorized pilot ceiling is the
-// Mistral/OpenRouter $0.05 cumulative maximum. It is a hard ceiling: no
-// automatic increases, no resets on restart, no use of the account balance as
-// an authorization mechanism.
+// Server-side spending controls. A per-request ceiling is supplied by the MIA
+// route and checked before provider access; the cumulative ceiling is
+// process-local until durable storage is configured. Neither limit increases automatically.
 
-export const MISTRAL_PILOT_CEILING_USD = 0.05;
+export const MAX_MIA_REQUEST_COST_USD = 0.001;
+export const MIA_CUMULATIVE_PROCESS_CEILING_USD = 0.05;
+// Backward-compatible name retained for the existing controlled-pilot tests.
+export const MISTRAL_PILOT_CEILING_USD = MIA_CUMULATIVE_PROCESS_CEILING_USD;
+
+export function withinRequestCostLimit(estimatedCostUsd, maxEstimatedCostUsd = MAX_MIA_REQUEST_COST_USD) {
+  return typeof estimatedCostUsd === 'number' && Number.isFinite(estimatedCostUsd) && estimatedCostUsd > 0 &&
+    typeof maxEstimatedCostUsd === 'number' && Number.isFinite(maxEstimatedCostUsd) && maxEstimatedCostUsd > 0 &&
+    estimatedCostUsd <= maxEstimatedCostUsd;
+}
 
 export function createBudget() {
   return {
-    ceilingUsd: MISTRAL_PILOT_CEILING_USD,
+    ceilingUsd: MIA_CUMULATIVE_PROCESS_CEILING_USD,
     reservedUsd: 0,
     confirmedUsd: 0,
     reservations: new Map(),

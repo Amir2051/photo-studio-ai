@@ -13,6 +13,7 @@ const DEFAULT_RATE_LIMIT = 20;
 const MAX_RATE_BUCKETS = 10000;
 const RATE_BUCKET_CLEANUP_INTERVAL = 256;
 const UPSTREAM_TIMEOUT_MS = 30000;
+const MINU_STUDIO_SUPABASE_URL = 'https://texgwxmizyxsdzcfsjpo.supabase.co';
 
 function sendJson(res, status, body, headers = {}) {
   res.writeHead(status, {
@@ -248,6 +249,7 @@ export function createAiGatewayServer({
       });
       const result = await gateway.run({
         task: 'chat',
+        modelId: config.defaultModel,
         messages,
         consentRef: body?.consentRef ?? null,
         userRef: userId,
@@ -276,12 +278,12 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const config = {
     host: process.env.AI_GATEWAY_HOST || '127.0.0.1',
     port: Number(process.env.AI_GATEWAY_PORT || 18787),
-    authJwksUrl: process.env.AUTH_JWKS_URL,
-    authIssuer: process.env.AUTH_ISSUER,
+    authJwksUrl: MINU_STUDIO_SUPABASE_URL + '/auth/v1/.well-known/jwks.json',
+    authIssuer: MINU_STUDIO_SUPABASE_URL + '/auth/v1',
     authAudience: process.env.AUTH_AUDIENCE,
     openRouterApiKey: process.env.OPENROUTER_API_KEY,
-    defaultModel: process.env.AI_DEFAULT_MODEL,
-    allowedModels: (process.env.AI_ALLOWED_MODELS || '')
+    defaultModel: process.env.AI_DEFAULT_MODEL || 'qwen/qwen3.8-27b',
+    allowedModels: (process.env.AI_ALLOWED_MODELS || 'qwen/qwen3.8-27b')
       .split(',')
       .map((item) => item.trim())
       .filter(Boolean),

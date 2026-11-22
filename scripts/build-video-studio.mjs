@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -37,5 +37,9 @@ if (!existsSync(path.join(editorBuild, 'index.html'))) {
 }
 
 mkdirSync(path.dirname(publishedEditor), { recursive: true });
+// The nested editor's hashed assets are build artifacts. Remove the previous
+// generated asset directory before copying so stale chunks cannot remain
+// publicly addressable after a deployment (including chunks with old endpoints).
+rmSync(path.join(publishedEditor, '_app'), { recursive: true, force: true });
 cpSync(editorBuild, publishedEditor, { recursive: true });
 console.log('Synced vendor/braincut/build into public/video-studio.');

@@ -19,7 +19,7 @@ export function createOpenRouterAdapter(options = {}) {
   const baseUrl = (options.baseUrl ?? OPENROUTER_BASE_URL).replace(/\/$/, '');
 
   async function chat({
-    model, messages, apiKey, maxTokens = 500, signal, fetchImpl: callFetch,
+    model, providerOrder = null, messages, apiKey, maxTokens = 500, signal, fetchImpl: callFetch,
     privacyPolicy = null, testGrant = null, purpose = null, source = 'browser',
     maxEstimatedCostUsd = null, toolsPresent = false, attachmentCount = 0,
     operationId = null,
@@ -70,10 +70,11 @@ export function createOpenRouterAdapter(options = {}) {
         data_collection: privacyPolicy.dataCollection === 'deny' ? 'deny' : 'allow',
         allow_fallbacks: privacyPolicy.allowFallbacks === false ? false : true,
         ...(privacyPolicy.requireParameters === true ? { require_parameters: true } : {}),
+        ...(Array.isArray(providerOrder) && providerOrder.length > 0 ? { order: [...providerOrder] } : {}),
       };
     }
     // If the policy cannot be applied, fail before transmission.
-    if (!body.provider || body.provider.zdr !== true || body.provider.data_collection !== 'deny' || body.provider.allow_fallbacks !== false) {
+    if (!body.provider || body.provider.zdr !== true || body.provider.data_collection !== 'deny' || body.provider.allow_fallbacks !== false || (providerOrder && (!Array.isArray(body.provider.order) || body.provider.order.length !== providerOrder.length || body.provider.order.some((name, index) => name !== providerOrder[index])))) {
       throw new ProviderUnavailableError('The privacy policy cannot be applied to this provider.');
     }
 

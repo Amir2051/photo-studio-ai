@@ -25,10 +25,24 @@ export function routeTask({
   outputModalities = [],
   miaIdentity = null,
   freeOnly = false,
+  modelId = null,
 } = {}) {
   const spec = TASKS[task];
   if (!spec) {
     return failure('unsupported_task', `Task ${String(task)} is not recognized.`, 'MIA cannot route this task.');
+  }
+  if (spec.inputAnyOf.some((m) => m !== 'text') && inputModalities.length === 0) {
+    const matchingMediaModel = listModels().some((model) =>
+      (!miaIdentity || model.miaIdentity === miaIdentity) &&
+      model.capabilities[spec.capability] &&
+      model.inputModalities.some((modality) => spec.inputAnyOf.includes(modality)),
+    );
+    if (matchingMediaModel) {
+      const rejected = listModels()
+        .filter((model) => (!miaIdentity || model.miaIdentity === miaIdentity) && model.capabilities[spec.capability])
+        .map((model) => ({ modelId: model.id, reason: 'missing explicit media input' }));
+      return failure('unsupported_modality', 'An explicit image, video, or audio input modality is required for this task.', 'MIA cannot perform this task without an explicit media input.', rejected);
+    }
   }
   if (inputModalities.some((m) => !spec.inputAnyOf.includes(m))) {
     return failure('unsupported_modality', 'The requested input modality is not supported for this task.', 'MIA cannot accept this kind of input for the task.');
@@ -40,7 +54,8 @@ export function routeTask({
   const rejected = [];
   for (const model of listModels()) {
     let reason = null;
-    if (miaIdentity && model.miaIdentity !== miaIdentity) reason = 'different MIA identity';
+    if (modelId && model.id !== modelId) reason = 'different selected model';
+    else if (miaIdentity && model.miaIdentity !== miaIdentity) reason = 'different MIA identity';
     else if (!model.capabilities[spec.capability]) reason = `missing capability ${spec.capability}`;
     else if (!model.inputModalities.some((m) => spec.inputAnyOf.includes(m))) reason = 'input modality unsupported';
     else if (!model.outputModalities.some((m) => spec.outputAnyOf.includes(m))) reason = 'output modality unsupported';
@@ -57,6 +72,7 @@ export function routeTask({
       modelId: model.id,
       providerId: model.provider,
       providerModelId: model.providerModelId,
+      providerOrder: model.providerOrder ?? null,
       modelVersion: model.modelVersion,
       miaIdentity: model.miaIdentity,
       task,
